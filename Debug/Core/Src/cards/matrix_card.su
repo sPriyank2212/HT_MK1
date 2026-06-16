@@ -1,0 +1,9 @@
+../Core/Src/cards/matrix_card.c:29:13:matrix_map_pin	32	static
+../Core/Src/cards/matrix_card.c:38:13:matrix_drive_select	24	static
+../Core/Src/cards/matrix_card.c:51:20:matrix_bank_dev	16	static
+../Core/Src/cards/matrix_card.c:56:28:matrix_bank_sel	16	static
+../Core/Src/cards/matrix_card.c:63:19:MatrixCard_Init	40	static
+../Core/Src/cards/matrix_card.c:91:19:MatrixCard_BankOff	16	static
+../Core/Src/cards/matrix_card.c:100:19:MatrixCard_AllOff	24	static
+../Core/Src/cards/matrix_card.c:116:19:MatrixCard_SelectPin	24	static
+../Core/Src/cards/matrix_card.c:144:19:MatrixCard_ConnectPair	24	static

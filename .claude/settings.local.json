@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -c ' *)",
+      "Bash(cd \"c:/Users/psoni/STM32CubeIDE/workspace_1.19.0/HT_MK1\" && rm -f _sad_text.txt && echo done)"
+    ],
+    "additionalDirectories": [
+      "c:\\Users\\psoni\\STM32CubeIDE\\workspace_1.19.0\\HT_MK1"
+    ]
+  }
+}

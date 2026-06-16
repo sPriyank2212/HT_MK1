@@ -1,0 +1,137 @@
+================================================================================
+ HT_MK1  -  AUTOMATED HARNESS TEST SYSTEM  -  FIRMWARE STATUS
+ MCU: STM32G474RET6 (Cortex-M4F, FreeRTOS, STM32CubeIDE / HAL)
+ Last updated: 2026-06-16
+================================================================================
+
+SOURCE OF TRUTH
+--------------------------------------------------------------------------------
+The finalised KiCad schematics (Control_Card.pdf, Matrix_Card.pdf, HV_Card.pdf)
+are authoritative. The SAD Word document (Harness_Tester_SAD_v1.0) is STALE and
+must NOT be relied on where it disagrees with the schematics.
+
+ARCHITECTURE (key fact)
+--------------------------------------------------------------------------------
+Single-MCU design. The STM32G474 on the Control Card is the ONLY processor in
+the instrument. The Matrix Card and HV Cards have NO MCU - they are just I2C
+GPIO expanders (MCP23017), analogue muxes (CD4067), reed relays, DACs and ADCs
+driven by this one firmware over I2C / SPI / GPIO. All test logic lives here.
+
+Code layout (new layers compile automatically - "Core" is a recursive CubeIDE
+source path; include as "drivers/xxx.h" / "cards/xxx.h"):
+    Core/Inc/drivers, Core/Src/drivers   - device drivers
+    Core/Inc/cards,   Core/Src/cards     - per-card abstraction
+    (planned) Core/.../test              - continuity / kelvin / insulation
+
+MCU PERIPHERAL MAP (from generated Core/ config)
+--------------------------------------------------------------------------------
+    I2C2  PC4(SCL)/PA8(SDA), CS PC2      I2C3  PC8(SCL)/PC9(SDA), CS PC3
+    SPI1  PA5/6/7  (DAC8775 Kelvin Idac) SPI2  PB13/14/15
+    SPI3  PB3/4/5, CS PB1/PB2            GPIO  OPT0_CNTR=PC12, GPIO0..3_ISO,
+                                               HV_CARD_DT_x lines
+
+
+================================================================================
+ COMPLETED
+================================================================================
+
+1) MCP23017 driver  -  Core/{Inc,Src}/drivers/mcp23017.{h,c}
+--------------------------------------------------------------------------------
+   WHAT : Bus-agnostic driver for the 16-bit I2C GPIO expander used everywhere
+          (2x on Matrix Card, 8x per HV Card).
+   HOW  : - Instance binds an I2C handle + 7-bit address (0x20 | A2:A0 strap).
+          - Assumes power-on default IOCON.BANK=0 with sequential addressing, so
+            a 16-bit access auto-increments port A -> port B.
+          - HAL_I2C_Mem_Write/Read, blocking, 100 ms timeout.
+          - API: Init (sets HAEN, drives latch low, all pins -> outputs),
+            IsReady, WriteReg/ReadReg (8-bit), WriteReg16/ReadReg16,
+            SetDirection, SetPullups, WritePins, ReadPins,
+            WritePin (single bit via shadow latch = one bus write).
+   STATE: Complete. Compiles (HAL-only deps).
+
+2) Matrix Card layer  -  Core/{Inc,Src}/cards/matrix_card.{h,c}
+--------------------------------------------------------------------------------
+   WHAT : Routes any of 256 harness pins onto the HI or LO analogue bus.
+   HOW  : - Addressing confirmed from updated Matrix_Card.pdf:
+            * Channel select = SHARED 4-bit bus per bank (HI_S0..3 / LO_S0..3),
+              driven by MCU GPIO over the J101 ribbon.
+            * Mux select = ONE-HOT enable (HI_EN1..16 from MCP23017 U101=0x20,
+              LO_EN1..16 from MCP23017 U102=0x21).
+            * Route pin p(1..256): mux=(p-1)>>4, channel=(p-1)&0x0F.
+          - MatrixCard_Init (inits both expanders, forces all-open),
+            SelectPin(bank,pin) [break-before-make], ConnectPair(hi,lo),
+            BankOff, AllOff.
+          - Enable polarity #define MATRIX_EN_ACTIVE_LOW (=1). CONFIRMED from
+            updated schematic: HI_EN/LO_EN run direct from MCP23017 to CD4067 E
+            pin (pin 15, active-low), no buffer/inverter. Init forces all-open
+            because generic MCP Init leaves outputs low (= active-low muxes ON).
+          - Pin->(mux,channel) is a single linear function matrix_map_pin();
+            swap for a LUT if PCB routes I0..I15 differently. NOT yet verifiable
+            from the PDF (muxer sheet too dense) - confirm from netlist.
+          - Select GPIOs tolerate NULL ports (usable before the Control-Card
+            connector is wired).
+   STATE: Code complete. Verified against updated Matrix_Card.pdf. One assumption
+          left (pin->mux/channel mapping); see OPEN ITEMS.
+   NOTE : Updated schematic removed pull resistors on the EN lines (only S0..3 +
+          LO_COM are pulled down now) -> mux enables FLOAT at power-up until the
+          MCP23017s are initialised. Minor power-up safety note (HW).
+
+3) Schematic review / cross-check
+--------------------------------------------------------------------------------
+   - Full read of all three schematics; mismatches vs the SAD documented (2-wire
+     HI/LO matrix not 4-wire Kelvin; single MHV05 reed relay per position;
+     isolation centralised on Control Card; all ribbons 50-pin; AD7476 12-bit
+     SAR not 24-bit; MOSFET not BJT relay drivers).
+   - Updated Matrix_Card.pdf adds the connector sheet (J101 ribbon + harness
+     fixture connectors DE9/DA15/DB25/DC37/headers) and resolves mux topology.
+
+
+================================================================================
+ PENDING  -  FIRMWARE
+================================================================================
+
+   [ ] ad7476.{h,c}            - SPI SAR ADC driver (Control Card + each HV Card)
+   [ ] dac8775.{h,c}           - Kelvin precision current source (Control, SPI1)
+   [ ] dac8830.{h,c}           - HV 0-500 V program DAC (HV Card, isolated SPI)
+   [ ] control_frontend layer  - OPT0_CNTR mode switch (continuity vs Kelvin),
+                                  continuity divider read, IDAC drive, ADC read
+   [ ] hv_card layer           - 8x MCP23017 -> 128 reed-relay drivers (64 inj +
+                                  64 ret), DAC8830 set, AD7476 leakage read,
+                                  HV enable / discharge GPIO, per-board address
+   [ ] test/continuity.c       - scan pin pairs over matrix, classify open/short
+   [ ] test/kelvin.c           - 4-wire resistance (note: HW is 2-wire as drawn)
+   [ ] test/insulation.c       - 500 V leakage -> insulation resistance, discharge
+   [ ] board config / BSP      - bind handles, addresses, select-line GPIOs
+   [ ] host/USART command layer + result reporting (USART2/3, UART4 available)
+   [ ] integrate module init + tasks into main.c / app_freertos.c
+
+================================================================================
+ PENDING  -  HARDWARE / CONFIG (affects firmware, to resolve with design)
+================================================================================
+
+   [ ] Control-Card <-> Matrix connector NOT yet drawn (user doing later).
+       Needs: HI_COM/LO_COM analogue buses, HI_S0..3 / LO_S0..3 (8 MCU GPIO),
+       isolated I2C, power. Until then matrix select-line GPIOs are placeholders.
+   [ ] Control-Card "IN" net is a stub on the HV connectors (not received on HV
+       side) - unfinished LV analogue path.
+   [ ] SPI DataSize is SPI_DATASIZE_4BIT for SPI1/2/3 in generated code. Must be
+       8/16-bit for DAC8775, DAC8830, AD7476. Fix in CubeMX before those drivers.
+   [ ] Control-Card AD7476 nets are named I2C2_* but the part is SPI-serial;
+       confirm intended bus before writing ad7476 wiring.
+   [ ] Matrix I2C isolator U103 (ADuM3201) appears WRITE-ONLY (5V->3V3 both
+       channels): MCU cannot receive slave ACK / read expanders. HAL I2C master
+       writes may NAK/timeout even when bits land. Confirm on bring-up; may need
+       a true bidirectional I2C isolator or to ignore the ACK result.
+
+================================================================================
+ OPEN ITEMS / ASSUMPTIONS TO CONFIRM
+================================================================================
+
+   - MCP23017 addresses: U101(HI)=0x20, U102(LO)=0x21  [CONFIRMED by user]
+   - Matrix enable polarity active-low (CD4067 E)       [CONFIRMED from schematic]
+   - Matrix EN lines float at power-up (no pull res)    [HW note; verify on board]
+   - Pin->(mux,channel) linear mapping                  [assumed; need netlist]
+   - HV-card MCP23017 addresses (8 per board) + bus     [TBD]
+   - Which I2C bus serves Matrix vs HV expanders        [TBD]
+   - Number of HV boards in initial build (1..4)        [TBD]
+================================================================================
