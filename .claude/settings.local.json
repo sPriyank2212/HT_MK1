@@ -2,7 +2,12 @@
   "permissions": {
     "allow": [
       "Bash(python -c ' *)",
-      "Bash(cd \"c:/Users/psoni/STM32CubeIDE/workspace_1.19.0/HT_MK1\" && rm -f _sad_text.txt && echo done)"
+      "Bash(cd \"c:/Users/psoni/STM32CubeIDE/workspace_1.19.0/HT_MK1\" && rm -f _sad_text.txt && echo done)",
+      "Bash(arm-none-eabi-gcc --version)",
+      "Bash(ls -d /c/ST/STM32CubeIDE*/STM32CubeIDE/plugins/com.st.stm32cube.ide.mcu.externaltools.gnu-tools-for-stm32.*/tools/bin 2>/dev/null | head; echo \"---try Program Files---\"; ls -d \"/c/Program Files/STMicroelectronics\"/*/STM32CubeIDE/plugins/com.st.stm32cube.ide.mcu.externaltools.gnu-tools-for-stm32.*/tools/bin 2>/dev/null | head)",
+      "Read(//c/ST/**)",
+      "Read(//c/Program Files/**)",
+      "Bash(grep -vE '\\\\.pdf$|\\\\.docx$')"
     ],
     "additionalDirectories": [
       "c:\\Users\\psoni\\STM32CubeIDE\\workspace_1.19.0\\HT_MK1"

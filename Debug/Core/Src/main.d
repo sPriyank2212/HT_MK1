@@ -44,7 +44,11 @@ Core/Src/main.o: ../Core/Src/main.c ../Core/Inc/main.h \
  ../Middlewares/Third_Party/FreeRTOS/Source/include/list.h \
  ../Middlewares/Third_Party/FreeRTOS/Source/CMSIS_RTOS_V2/cmsis_os2.h \
  ../Core/Inc/i2c.h ../Core/Inc/main.h ../Core/Inc/spi.h \
- ../Core/Inc/usart.h ../Core/Inc/gpio.h
+ ../Core/Inc/usart.h ../Core/Inc/gpio.h ../Core/Inc/bsp/board.h \
+ ../Core/Inc/cards/matrix_card.h ../Core/Inc/drivers/mcp23017.h \
+ ../Core/Inc/cards/control_frontend.h ../Core/Inc/drivers/dac8775.h \
+ ../Core/Inc/drivers/ad7476.h ../Core/Inc/cards/hv_card.h \
+ ../Core/Inc/drivers/dac8830.h
 ../Core/Inc/main.h:
 ../Drivers/STM32G4xx_HAL_Driver/Inc/stm32g4xx_hal.h:
 ../Core/Inc/stm32g4xx_hal_conf.h:
@@ -95,3 +99,11 @@ Core/Src/main.o: ../Core/Src/main.c ../Core/Inc/main.h \
 ../Core/Inc/spi.h:
 ../Core/Inc/usart.h:
 ../Core/Inc/gpio.h:
+../Core/Inc/bsp/board.h:
+../Core/Inc/cards/matrix_card.h:
+../Core/Inc/drivers/mcp23017.h:
+../Core/Inc/cards/control_frontend.h:
+../Core/Inc/drivers/dac8775.h:
+../Core/Inc/drivers/ad7476.h:
+../Core/Inc/cards/hv_card.h:
+../Core/Inc/drivers/dac8830.h:

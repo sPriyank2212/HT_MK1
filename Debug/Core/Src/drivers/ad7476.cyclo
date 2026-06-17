@@ -1,0 +1,4 @@
+../Core/Src/drivers/ad7476.c:12:19:AD7476_Init	4
+../Core/Src/drivers/ad7476.c:28:19:AD7476_ReadRaw	5
+../Core/Src/drivers/ad7476.c:50:7:AD7476_CodeToVolts	1
+../Core/Src/drivers/ad7476.c:55:19:AD7476_ReadVolts	3

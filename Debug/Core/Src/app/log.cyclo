@@ -1,0 +1,5 @@
+../Core/Src/app/log.c:25:13:log_level_char	5
+../Core/Src/app/log.c:37:19:Log_Init	3
+../Core/Src/app/log.c:44:6:Log_Write	7
+../Core/Src/app/log.c:88:6:Log_Task	3
+../Core/Src/app/log.c:110:21:Log_HwInit_LPUART1	3

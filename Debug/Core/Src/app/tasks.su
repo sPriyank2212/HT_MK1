@@ -1,0 +1,12 @@
+../Core/Src/app/tasks.c:36:6:Safety_SignalFault	16	static
+../Core/Src/app/tasks.c:42:6:Safety_ClearFault	4	static
+../Core/Src/app/tasks.c:43:6:Safety_InFault	4	static
+../Core/Src/app/tasks.c:46:13:force_safe_all	16	static
+../Core/Src/app/tasks.c:57:13:SafetyTask	24	static
+../Core/Src/app/tasks.c:88:13:run_command	80	static
+../Core/Src/app/tasks.c:139:13:SequencerTask	32	static
+../Core/Src/app/tasks.c:155:13:post_simple	48	static
+../Core/Src/app/tasks.c:161:13:CommsTask	24	static
+../Core/Src/app/tasks.c:192:5:Tasks_PostCommand	16	static
+../Core/Src/app/tasks.c:203:13:console_puts	24	static
+../Core/Src/app/tasks.c:211:6:Tasks_Init	8	static

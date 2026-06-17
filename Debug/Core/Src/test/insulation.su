@@ -1,0 +1,2 @@
+../Core/Src/test/insulation.c:14:13:insulation_safe	16	static
+../Core/Src/test/insulation.c:24:19:Insulation_TestPair	32	static

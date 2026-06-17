@@ -1,0 +1,5 @@
+../Core/Src/drivers/dac8775.c:14:19:DAC8775_WriteReg	3
+../Core/Src/drivers/dac8775.c:35:19:DAC8775_Init	4
+../Core/Src/drivers/dac8775.c:50:19:DAC8775_SelectChannel	1
+../Core/Src/drivers/dac8775.c:55:19:DAC8775_ConfigCurrentRange	2
+../Core/Src/drivers/dac8775.c:66:19:DAC8775_SetCode	2

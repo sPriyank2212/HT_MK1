@@ -1,0 +1,4 @@
+../Core/Src/bsp/board.c:47:26:board_init_matrix	1
+../Core/Src/bsp/board.c:55:26:board_init_frontend	1
+../Core/Src/bsp/board.c:70:26:board_init_hv	2
+../Core/Src/bsp/board.c:94:19:Board_Init	5

@@ -5,12 +5,18 @@
 
 # Add inputs and outputs from these tool invocations to the build variables 
 C_SRCS += \
+../Core/Src/cards/control_frontend.c \
+../Core/Src/cards/hv_card.c \
 ../Core/Src/cards/matrix_card.c 
 
 OBJS += \
+./Core/Src/cards/control_frontend.o \
+./Core/Src/cards/hv_card.o \
 ./Core/Src/cards/matrix_card.o 
 
 C_DEPS += \
+./Core/Src/cards/control_frontend.d \
+./Core/Src/cards/hv_card.d \
 ./Core/Src/cards/matrix_card.d 
 
 
@@ -21,7 +27,7 @@ Core/Src/cards/%.o Core/Src/cards/%.su Core/Src/cards/%.cyclo: ../Core/Src/cards
 clean: clean-Core-2f-Src-2f-cards
 
 clean-Core-2f-Src-2f-cards:
-	-$(RM) ./Core/Src/cards/matrix_card.cyclo ./Core/Src/cards/matrix_card.d ./Core/Src/cards/matrix_card.o ./Core/Src/cards/matrix_card.su
+	-$(RM) ./Core/Src/cards/control_frontend.cyclo ./Core/Src/cards/control_frontend.d ./Core/Src/cards/control_frontend.o ./Core/Src/cards/control_frontend.su ./Core/Src/cards/hv_card.cyclo ./Core/Src/cards/hv_card.d ./Core/Src/cards/hv_card.o ./Core/Src/cards/hv_card.su ./Core/Src/cards/matrix_card.cyclo ./Core/Src/cards/matrix_card.d ./Core/Src/cards/matrix_card.o ./Core/Src/cards/matrix_card.su
 
 .PHONY: clean-Core-2f-Src-2f-cards
 

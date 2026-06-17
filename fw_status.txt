@@ -1,7 +1,7 @@
 ================================================================================
  HT_MK1  -  AUTOMATED HARNESS TEST SYSTEM  -  FIRMWARE STATUS
  MCU: STM32G474RET6 (Cortex-M4F, FreeRTOS, STM32CubeIDE / HAL)
- Last updated: 2026-06-16
+ Last updated: 2026-06-17
 ================================================================================
 
 SOURCE OF TRUTH
@@ -26,9 +26,24 @@ source path; include as "drivers/xxx.h" / "cards/xxx.h"):
 MCU PERIPHERAL MAP (from generated Core/ config)
 --------------------------------------------------------------------------------
     I2C2  PC4(SCL)/PA8(SDA), CS PC2      I2C3  PC8(SCL)/PC9(SDA), CS PC3
-    SPI1  PA5/6/7  (DAC8775 Kelvin Idac) SPI2  PB13/14/15
+    SPI1  PA5/6/7                        SPI2  PB13/14/15
     SPI3  PB3/4/5, CS PB1/PB2            GPIO  OPT0_CNTR=PC12, GPIO0..3_ISO,
                                                HV_CARD_DT_x lines
+
+SPI ALLOCATION (verified from .ioc pins + Control_Card isolator wiring)
+--------------------------------------------------------------------------------
+    SPI2  PB13/14/15        -> DAC8775 (Kelvin Idac), via isolators ("SPI1_ISO")
+    SPI3  PB3/4/5 +CS        -> HV cards: DAC8830 + AD7476, via isol ("SPI2_ISO")
+    SPI1  PA5/6/7            -> AD7476 on Control Card (the free SPI)  [ASSIGNED]
+    Note: the SPI1_ISO/SPI2_ISO net names are crossed vs the MCU instance; by
+    PINS, SPI2->DAC8775, SPI3->HV, SPI1 free. Per-device SPI settings below.
+
+PER-BUS SPI SETTINGS NEEDED (change in CubeMX - generated default is 4-bit!)
+--------------------------------------------------------------------------------
+    SPI1 (AD7476)        : 16-bit, RX-only, SCLK <= 20 MHz (drop one prescaler
+                           notch from 32 MHz), soft-NSS CS GPIO (TBD pin).
+    SPI2 (DAC8775)       : 8-bit (24-bit frame sent as 3 bytes), <= ~50 MHz ok.
+    SPI3 (DAC8830+AD7476): 16-bit, <= 20 MHz (AD7476 limits the bus).
 
 
 ================================================================================
@@ -76,7 +91,17 @@ MCU PERIPHERAL MAP (from generated Core/ config)
           LO_COM are pulled down now) -> mux enables FLOAT at power-up until the
           MCP23017s are initialised. Minor power-up safety note (HW).
 
-3) Schematic review / cross-check
+3) AD7476 driver  -  Core/{Inc,Src}/drivers/ad7476.{h,c}
+--------------------------------------------------------------------------------
+   WHAT : SPI read-only driver for the 12-bit SAR ADC. Reusable: Control-Card
+          front-end ADC (now on SPI1) AND each HV-Card leakage/Vmon ADC (SPI3).
+   HOW  : - Instance binds SPI handle + soft-NSS CS GPIO (port/pin).
+          - CS low starts conversion; reads one 16-bit frame, masks low 12 bits.
+          - API: Init (parks CS high), ReadRaw, CodeToVolts(vref), ReadVolts.
+   STATE: Code complete. Requires SPI1 set to 16-bit / <=20 MHz / soft CS in
+          CubeMX (see PER-BUS SPI SETTINGS). CS pin TBD (reuse PC2 or dedicate).
+
+4) Schematic review / cross-check
 --------------------------------------------------------------------------------
    - Full read of all three schematics; mismatches vs the SAD documented (2-wire
      HI/LO matrix not 4-wire Kelvin; single MHV05 reed relay per position;
@@ -85,25 +110,100 @@ MCU PERIPHERAL MAP (from generated Core/ config)
    - Updated Matrix_Card.pdf adds the connector sheet (J101 ribbon + harness
      fixture connectors DE9/DA15/DB25/DC37/headers) and resolves mux topology.
 
+5) Full driver/card/test stack (this session)
+--------------------------------------------------------------------------------
+   All of the below compile clean (arm-none-eabi-gcc, -Wall -Wextra, real HAL):
+   Drivers  Core/{Inc,Src}/drivers/
+     dac8830.{h,c}  - 16-bit voltage DAC (HV V_PGM). WriteCode/Fraction. Solid.
+     dac8775.{h,c}  - quad IDAC (Kelvin). 24-bit transport solid; REGISTER MAP
+                      constants are placeholders to VERIFY vs datasheet.
+   Cards    Core/{Inc,Src}/cards/
+     control_frontend.{h,c} - DAC8775 + AD7476 + OPT0_CNTR mode switch behind
+                      SetMode/SetCurrent/Read.
+     hv_card.{h,c}  - per board: 8x MCP23017 (4 inject + 4 return, break-before-
+                      make), DAC8830 set, AD7476 sense, HV enable/discharge,
+                      OpenAll. Relay drivers active-high (MCP all-low = safe).
+   BSP      Core/{Inc,Src}/bsp/board.{h,c}
+     Board_Init() instantiates g_matrix, g_frontend, g_hv[] and brings all to a
+     safe idle state. All open-point bindings (buses/CS/select GPIOs) live here
+     as clearly-marked TODO #defines.
+   Tests    Core/{Inc,Src}/test/
+     continuity.{h,c} - TestPair: route HI/LO, continuity mode, classify. Done.
+     kelvin.{h,c}     - MeasurePair: force I, R=(V/gain)/I. Done (2-wire as HW).
+     insulation.{h,c} - TestPair: full safe HV sequence (set V -> connect cold
+                      -> enable -> settle -> measure -> discharge -> open).
+                      Sequencing/safety complete; leakage->ohms STUBBED (OPEN #4,
+                      verdict TEST_ERROR until measurement chain confirmed).
+   Integration: main.c calls Board_Init() in USER CODE 2. Tests are NOT auto-run
+   (HV safety); they are an API for the future host-command layer to call.
+
+6) Logging + RTOS task architecture (this session)
+--------------------------------------------------------------------------------
+   Logging  Core/{Inc,Src}/app/log.{h,c}
+     - Levels ERROR/WARN/INFO/DEBUG, compile-time gated by LOG_LEVEL.
+     - Non-blocking: LOG_x() formats a short "<L>[tick] tag: msg" line and drops
+       it in a queue (drop-if-full, ISR-safe) -> never stalls a task. A low-prio
+       logger task drains the queue to the UART.
+     - UART-agnostic; Log_HwInit_LPUART1() brings up LPUART1 on PA2/PA3 (AF12,
+       115200) = the Nucleo ST-LINK VCP, so logs stream over the USB cable.
+   Tasks    Core/{Inc,Src}/app/tasks.{h,c}  (cmsis_os2)
+     tSafety(High)  - forces safe-all on fault; backstops HV-disable when idle;
+                      IWDG-refresh hook (TODO when watchdog enabled).
+     tSequencer(Nrm)- runs one test command at a time under the HW mutex.
+     tComms(BelowN) - VCP console: c/k/i = continuity/kelvin/insulation,
+                      s = force-safe, f = fault, r = clear fault.
+     tLogger(Low)   - drains the log queue.
+     - Single HW mutex serialises all shared I2C/SPI access (sequencer+safety).
+     - Wired via Tasks_Init() in app_freertos.c (USER CODE RTOS_THREADS).
+   Free UART decision: USART2/3 + UART4 are in the schematic; free peripherals
+   are USART1 / UART5 / LPUART1. LPUART1 chosen (free AND reaches the Nucleo VCP
+   on PA2/PA3). In the PRODUCT those pins are USART2 -> production logging UART
+   is an open pin-budget item.
+
+NUCLEO-G474RE TEST PATH
+--------------------------------------------------------------------------------
+   - Same MCU; firmware runs as-is. Bare board has no Matrix/HV peripherals, so
+     I2C/SPI transactions NAK - Board_Init logs errors but the unit still boots.
+   - Open the ST-LINK VCP at 115200: you get the event log (Board_Init status,
+     task heartbeats) and the c/k/i/s/f/r console to trigger sequences.
+   - Pin conflicts on Nucleo: LD2=PA5 (=SPI1_SCK, no status LED), B1=PC13
+     (=HV_CARD_DT_1_0). Do CONFIG TODO (SPI sizes etc.) before bus waveforms
+     are meaningful. Add an MCP23017 breakout to exercise matrix/relay logic.
+
 
 ================================================================================
  PENDING  -  FIRMWARE
 ================================================================================
 
-   [ ] ad7476.{h,c}            - SPI SAR ADC driver (Control Card + each HV Card)
-   [ ] dac8775.{h,c}           - Kelvin precision current source (Control, SPI1)
-   [ ] dac8830.{h,c}           - HV 0-500 V program DAC (HV Card, isolated SPI)
-   [ ] control_frontend layer  - OPT0_CNTR mode switch (continuity vs Kelvin),
-                                  continuity divider read, IDAC drive, ADC read
-   [ ] hv_card layer           - 8x MCP23017 -> 128 reed-relay drivers (64 inj +
-                                  64 ret), DAC8830 set, AD7476 leakage read,
-                                  HV enable / discharge GPIO, per-board address
-   [ ] test/continuity.c       - scan pin pairs over matrix, classify open/short
-   [ ] test/kelvin.c           - 4-wire resistance (note: HW is 2-wire as drawn)
-   [ ] test/insulation.c       - 500 V leakage -> insulation resistance, discharge
-   [ ] board config / BSP      - bind handles, addresses, select-line GPIOs
-   [ ] host/USART command layer + result reporting (USART2/3, UART4 available)
-   [ ] integrate module init + tasks into main.c / app_freertos.c
+   [x] ad7476.{h,c}            - DONE
+   [x] dac8775.{h,c}           - DONE (register-map constants to VERIFY)
+   [x] dac8830.{h,c}           - DONE
+   [x] control_frontend layer  - DONE
+   [x] hv_card layer           - DONE
+   [x] test/continuity.c       - DONE
+   [x] test/kelvin.c           - DONE (2-wire as HW is drawn)
+   [x] test/insulation.c       - DONE except leakage->ohms (OPEN #4 stub)
+   [x] board config / BSP      - DONE (open-point bindings are TODO #defines)
+   [x] integrate Board_Init into main.c                       (USER CODE 2)
+   [x] logging module (app/log) - leveled, non-blocking, VCP-capable
+   [x] RTOS task architecture (app/tasks) - safety/sequencer/comms/logger
+   [~] host command layer - basic single-char VCP console done; full host
+       protocol + structured result reporting still TODO
+   [ ] full-scan orchestration (walk all pin pairs vs a wiring schedule) +
+       board-to-pin map for multi-HV-board insulation coverage
+   [ ] finish insulation leakage->resistance maths once OPEN #4 resolved
+   [ ] enable IWDG in CubeMX + refresh from tSafety (hook already in place)
+
+CONFIG TODO (CubeMX / .ioc - REQUIRED before the code runs on hardware)
+--------------------------------------------------------------------------------
+   [ ] SPI1 -> 16-bit, RX-only, SCLK <= 20 MHz  (AD7476)
+   [ ] SPI2 -> 8-bit                            (DAC8775 24-bit frame = 3 bytes)
+   [ ] SPI3 -> 16-bit, SCLK <= 20 MHz           (DAC8830 + AD7476)
+   [ ] OPT0_CNTR (PC12)        : INPUT -> OUTPUT (mode switch control)
+   [ ] HV_CARD_DT_x_0 / _1     : INPUT -> OUTPUT (HV enable / discharge per board)
+   [ ] Assign dedicated CS GPIOs for SPI1 (ADC) and SPI2 (IDAC); board.c uses
+       PC2 / PC3 as placeholders today.
+   [ ] Confirm matrix vs HV I2C bus assignment (board.c uses hi2c3 / hi2c2).
 
 ================================================================================
  PENDING  -  HARDWARE / CONFIG (affects firmware, to resolve with design)
@@ -115,13 +215,22 @@ MCU PERIPHERAL MAP (from generated Core/ config)
    [ ] Control-Card "IN" net is a stub on the HV connectors (not received on HV
        side) - unfinished LV analogue path.
    [ ] SPI DataSize is SPI_DATASIZE_4BIT for SPI1/2/3 in generated code. Must be
-       8/16-bit for DAC8775, DAC8830, AD7476. Fix in CubeMX before those drivers.
-   [ ] Control-Card AD7476 nets are named I2C2_* but the part is SPI-serial;
-       confirm intended bus before writing ad7476 wiring.
+       per-bus (SPI1=16, SPI2=8, SPI3=16) + SPI1/SPI3 baud <=20 MHz for AD7476.
+       RESOLVE: set in CubeMX and regenerate (see PER-BUS SPI SETTINGS).
+   [x] AD7476 bus  - RESOLVED: moved off I2C2 to the free SPI1. Driver written.
+       TODO in CubeMX: SPI1 16-bit/RX-only/<=20MHz + a CS GPIO (suggest reuse
+       PC2 ex-I2C2_CS, or dedicate a free pin); update schematic pins to match.
+   [x] DAC8775 SPI_ISO naming  - RESOLVED (intended): DAC8775 is on MCU SPI2 via
+       the Control-Card isolators; "SPI1_ISO" is just the post-isolator net name.
    [ ] Matrix I2C isolator U103 (ADuM3201) appears WRITE-ONLY (5V->3V3 both
        channels): MCU cannot receive slave ACK / read expanders. HAL I2C master
-       writes may NAK/timeout even when bits land. Confirm on bring-up; may need
-       a true bidirectional I2C isolator or to ignore the ACK result.
+       writes may NAK/timeout even when bits land.
+       RESOLVE: (a) confirm the part/direction; if truly unidirectional either
+       swap to a bidirectional I2C isolator (e.g. ADuM1250 / ISO1540), or (b)
+       add a "blind write" path in mcp23017 that ignores the NAK return.
+   [ ] HV leakage-current sense path unclear: one AD7476 reads HV_Sense (the
+       10M/50K divider off +500V); no dedicated leakage InAmp+shunt to ADC seen.
+       RESOLVE: confirm how leakage CURRENT (not just HV rail V) is digitised.
 
 ================================================================================
  OPEN ITEMS / ASSUMPTIONS TO CONFIRM

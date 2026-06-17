@@ -26,7 +26,7 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include "bsp/board.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -100,7 +100,10 @@ int main(void)
   MX_USART2_UART_Init();
   MX_USART3_UART_Init();
   /* USER CODE BEGIN 2 */
-
+  /* Bring every card/driver to a safe idle state (HV off, relays/muxes open).
+   * Return value intentionally not trapped during bring-up so a NAK from the
+   * (open-point) matrix I2C isolator does not hang the unit. */
+  (void)Board_Init();
   /* USER CODE END 2 */
 
   /* Init scheduler */
@@ -139,10 +142,15 @@ void SystemClock_Config(void)
   /** Initializes the RCC Oscillators according to the specified parameters
   * in the RCC_OscInitTypeDef structure.
   */
-  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSE;
-  RCC_OscInitStruct.HSEState = RCC_HSE_ON;
+  /* NUCLEO BENCH CLOCK: use the internal 16 MHz HSI instead of the product's
+   * external crystal (the Nucleo-G474RE has no 24/16 MHz HSE). 16 MHz x8 /2 =
+   * 64 MHz SYSCLK, and HSI_VALUE matches reality so UART baud / delays are
+   * correct. Revert to HSE for the product build (also set this in CubeMX). */
+  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI;
+  RCC_OscInitStruct.HSIState = RCC_HSI_ON;
+  RCC_OscInitStruct.HSICalibrationValue = RCC_HSICALIBRATION_DEFAULT;
   RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
-  RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSE;
+  RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSI;
   RCC_OscInitStruct.PLL.PLLM = RCC_PLLM_DIV1;
   RCC_OscInitStruct.PLL.PLLN = 8;
   RCC_OscInitStruct.PLL.PLLP = RCC_PLLP_DIV2;
