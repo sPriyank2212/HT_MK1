@@ -29,6 +29,7 @@ extern "C" {
 #endif
 
 #include "drivers/mcp23017.h"
+#include "drivers/ad7476.h"
 
 /* -------------------------------------------------------------------------- */
 /* Build-time configuration                                                   */
@@ -79,6 +80,8 @@ typedef struct
   MCP23017_t        hi_en;  /* U101 - HI_EN1..16 */
   MCP23017_t        lo_en;  /* U102 - LO_EN1..16 */
   MatrixSelectMap_t sel;
+  AD7476_t          adc;    /* U33 on SPI1 - reads HI_COM (resistance measure) */
+  float             vref;   /* matrix ADC reference, volts (+3V3)              */
 } MatrixCard_t;
 
 /* -------------------------------------------------------------------------- */
@@ -121,6 +124,21 @@ HAL_StatusTypeDef MatrixCard_SelectPin(MatrixCard_t *m, MatrixBank_t bank, uint1
   *         measurement setup: stimulus on HI_COM, return on LO_COM).
   */
 HAL_StatusTypeDef MatrixCard_ConnectPair(MatrixCard_t *m, uint16_t hi_pin, uint16_t lo_pin);
+
+/**
+  * @brief  Bind the on-card AD7476 (U33, reads HI_COM). This is the ADC used for
+  *         the RESISTANCE measurement: in impedance mode the Opto SPDT selects
+  *         I_OUT and disconnects ADC_IN, so the front-end ADC cannot see the
+  *         node - HI_COM (this ADC) does.
+  */
+HAL_StatusTypeDef MatrixCard_InitAdc(MatrixCard_t *m, SPI_HandleTypeDef *spi,
+                                     GPIO_TypeDef *cs_port, uint16_t cs_pin, float vref);
+
+/**
+  * @brief  Read the HI_COM node via the matrix ADC (raw 12-bit code / volts).
+  */
+HAL_StatusTypeDef MatrixCard_ReadRaw(MatrixCard_t *m, uint16_t *code);
+HAL_StatusTypeDef MatrixCard_ReadVolts(MatrixCard_t *m, float *volts);
 
 #ifdef __cplusplus
 }

@@ -23,11 +23,18 @@ extern "C" {
 #define CONTINUITY_SETTLE_MS    2U
 #endif
 
-/* Voltage window for a confirmed connection (volts). TUNE to the actual divider.
- * A connected pair collapses the divider toward this band; an open sits at the
- * unloaded reference (outside the band). */
+/* Voltage windows per the Operation Document (3V3 pull-up front end):
+ *   connected wire  -> ~1.5 V  (band 1.3 .. 1.7 V)
+ *   open  (no wire)  -> ~3.3 V  (>= ~3.0 V)
+ *   anything else    -> anomalous (relay/wiring fault). */
+#ifndef CONTINUITY_CONNECTED_V_MIN
+#define CONTINUITY_CONNECTED_V_MIN   1.3f
+#endif
 #ifndef CONTINUITY_CONNECTED_V_MAX
-#define CONTINUITY_CONNECTED_V_MAX   0.5f
+#define CONTINUITY_CONNECTED_V_MAX   1.7f
+#endif
+#ifndef CONTINUITY_OPEN_V_MIN
+#define CONTINUITY_OPEN_V_MIN        3.0f
 #endif
 
 typedef struct

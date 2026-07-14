@@ -42,10 +42,12 @@ HAL_StatusTypeDef Kelvin_MeasurePair(uint16_t hi_pin, uint16_t lo_pin,
 
   HAL_Delay(KELVIN_SETTLE_MS);
 
-  st = Frontend_ReadRaw(&g_frontend, &res->code);
+  /* In impedance mode the Opto SPDT routes I_OUT and disconnects ADC_IN, so the
+   * front-end ADC cannot see the node - read HI_COM via the matrix ADC (U33). */
+  st = MatrixCard_ReadRaw(&g_matrix, &res->code);
   if (st == HAL_OK)
   {
-    res->volts = AD7476_CodeToVolts(res->code, g_frontend.vref);
+    res->volts = AD7476_CodeToVolts(res->code, g_matrix.vref);
     /* R = Vsense / I, Vsense = Vadc / gain. */
     res->resistance_ohm = (res->volts / KELVIN_INAMP_GAIN) / KELVIN_FORCE_CURRENT_A;
     res->verdict = (res->resistance_ohm <= KELVIN_R_MAX_OHM) ? TEST_PASS : TEST_FAIL;

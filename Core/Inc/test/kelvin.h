@@ -34,7 +34,10 @@ extern "C" {
 #define KELVIN_FORCE_CURRENT_A  0.010f       /* amps actually forced at CODE   */
 #endif
 #ifndef KELVIN_INAMP_GAIN
-#define KELVIN_INAMP_GAIN       10.0f        /* instrumentation-amp gain V/V   */
+/* No instrumentation amp in the path (schematic: DAC8775 I_OUT -> TS5A3159 SPDT
+ * -> wire -> AD7476). ADC reads V_drop directly, so gain = 1. 100 ohm cal ->
+ * 1.000 V at 10 mA per the Operation Document. */
+#define KELVIN_INAMP_GAIN       1.0f         /* V/V, direct (no InAmp)         */
 #endif
 
 /* Acceptance limits (ohms). TUNE per harness spec. */

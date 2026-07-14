@@ -150,3 +150,28 @@ HAL_StatusTypeDef MatrixCard_ConnectPair(MatrixCard_t *m, uint16_t hi_pin, uint1
   }
   return MatrixCard_SelectPin(m, MATRIX_BANK_LO, lo_pin);
 }
+
+/* -------------------------------------------------------------------------- */
+/* On-card ADC (U33 on SPI1, reads HI_COM) - used for resistance measurement.  */
+/* -------------------------------------------------------------------------- */
+
+HAL_StatusTypeDef MatrixCard_InitAdc(MatrixCard_t *m, SPI_HandleTypeDef *spi,
+                                     GPIO_TypeDef *cs_port, uint16_t cs_pin, float vref)
+{
+  if (m == NULL)
+  {
+    return HAL_ERROR;
+  }
+  m->vref = vref;
+  return AD7476_Init(&m->adc, spi, cs_port, cs_pin);
+}
+
+HAL_StatusTypeDef MatrixCard_ReadRaw(MatrixCard_t *m, uint16_t *code)
+{
+  return (m == NULL) ? HAL_ERROR : AD7476_ReadRaw(&m->adc, code);
+}
+
+HAL_StatusTypeDef MatrixCard_ReadVolts(MatrixCard_t *m, float *volts)
+{
+  return (m == NULL) ? HAL_ERROR : AD7476_ReadVolts(&m->adc, m->vref, volts);
+}

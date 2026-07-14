@@ -16,40 +16,57 @@ ControlFrontend_t g_frontend;
 HvCard_t          g_hv[BOARD_HV_COUNT];
 
 /* ---------------------------------------------------------------------------
- * Bus assignment (TODO: confirm which MCU bus reaches which card)
+ * Bus assignment - corrected against the Doc/ schematics (2026-07):
+ *   SPI1 = Matrix-Card AD7476 (U33, HI_COM)      [not bound here yet]
+ *   SPI2 = DAC8775 (Kelvin) + HV-card AD7476s + DAC8830, all isolated (shared)
+ *   SPI3 = Control-Card AD7476 (U4, ADC_IN off the Opto SPDT)
+ * TODO(CubeMX): SPI2 carries 8-bit (DAC8775) and 16-bit (DAC8830/AD7476)
+ *   devices - data size must be set per transaction, or run 8-bit with the
+ *   drivers doing byte framing. See fw_status CONFIG TODO.
  * ------------------------------------------------------------------------- */
-#define BOARD_MATRIX_I2C      (&hi2c3)   /* TODO: matrix isolated I2C bus      */
-#define BOARD_HV_I2C          (&hi2c2)   /* TODO: HV isolated I2C bus          */
+#define BOARD_MATRIX_I2C      (&hi2c3)   /* TODO: confirm matrix vs HV I2C bus */
+#define BOARD_HV_I2C          (&hi2c2)   /* TODO: per-board bus when >1 board  */
 #define BOARD_IDAC_SPI        (&hspi2)   /* DAC8775 (Kelvin)                   */
-#define BOARD_ADC_SPI         (&hspi1)   /* AD7476 (Control front end)         */
-#define BOARD_HV_SPI          (&hspi3)   /* HV DAC8830 + AD7476                */
+#define BOARD_ADC_SPI         (&hspi3)   /* AD7476 (Control front end, U4)     */
+#define BOARD_HV_SPI          (&hspi2)   /* HV DAC8830 + both AD7476 (isolated)*/
+#define BOARD_MATRIX_ADC_SPI  (&hspi1)   /* AD7476 (Matrix U33, HI_COM)        */
+/* Matrix ADC CS = SPI1_CS (PB0). TODO(CubeMX): assign PB0 as a GPIO output. */
+#define BOARD_MATRIX_ADC_CS_PORT  GPIOB
+#define BOARD_MATRIX_ADC_CS_PIN   GPIO_PIN_0
 
 /* ---------------------------------------------------------------------------
- * CS / control pins. Several are placeholders reusing existing GPIO labels
- * until dedicated pins are assigned in CubeMX (TODO/VERIFY).
+ * CS / control pins. Confirmed where the schematic is unambiguous; the isolated
+ * HV DAC CS is still a placeholder pending the connector netlist (VERIFY).
  * ------------------------------------------------------------------------- */
-#define BOARD_ADC_CS_PORT     I2C2_CS_GPIO_Port   /* PC2 - reused; TODO dedicate */
-#define BOARD_ADC_CS_PIN      I2C2_CS_Pin
-#define BOARD_IDAC_CS_PORT    I2C3_CS_GPIO_Port   /* PC3 - placeholder; TODO    */
-#define BOARD_IDAC_CS_PIN     I2C3_CS_Pin
-#define BOARD_HV_DAC_CS_PORT  SPI3_CS_GPIO_Port   /* PB1                        */
-#define BOARD_HV_DAC_CS_PIN   SPI3_CS_Pin
-#define BOARD_HV_ADC_CS_PORT  SPI3_CSB2_GPIO_Port /* PB2                        */
-#define BOARD_HV_ADC_CS_PIN   SPI3_CSB2_Pin
+#define BOARD_ADC_CS_PORT     SPI3_CS_GPIO_Port   /* PB1 - Control ADC (U4)     */
+#define BOARD_ADC_CS_PIN      SPI3_CS_Pin
+#define BOARD_IDAC_CS_PORT    SPI3_CSB2_GPIO_Port /* PB2 = physical SPI2_CS     */
+#define BOARD_IDAC_CS_PIN     SPI3_CSB2_Pin
+#define BOARD_HV_DAC_CS_PORT  I2C2_CS_GPIO_Port   /* PC2 placeholder (CS_ISO); VERIFY */
+#define BOARD_HV_DAC_CS_PIN   I2C2_CS_Pin
 
-/* HV enable/discharge for board 0 use the two per-board control lines.
+/* HV-card ADC chip-selects = the two per-board control lines (isolated).
+ *   HV_Card_x.1 -> RAIL ADC (U301 HV_Sense) ; HV_Card_x.0 -> LEAK ADC (U302 HV_RET).
  * TODO: set these to OUTPUT in CubeMX (currently INPUT) and extend per board. */
-#define BOARD_HV0_EN_PORT     HV_CARD_DT_1_0_GPIO_Port
-#define BOARD_HV0_EN_PIN      HV_CARD_DT_1_0_Pin
-#define BOARD_HV0_DISCHG_PORT HV_CARD_DT_1_1_GPIO_Port
-#define BOARD_HV0_DISCHG_PIN  HV_CARD_DT_1_1_Pin
+#define BOARD_HV0_ADC_RAIL_CS_PORT  HV_CARD_DT_1_1_GPIO_Port  /* PC14 */
+#define BOARD_HV0_ADC_RAIL_CS_PIN   HV_CARD_DT_1_1_Pin
+#define BOARD_HV0_ADC_LEAK_CS_PORT  HV_CARD_DT_1_0_GPIO_Port  /* PC13 */
+#define BOARD_HV0_ADC_LEAK_CS_PIN   HV_CARD_DT_1_0_Pin
 
 static HAL_StatusTypeDef board_init_matrix(void)
 {
   /* Select-line GPIOs come over the (still-undrawn) Control<->Matrix connector;
    * leave them NULL so the layer is inert on the select lines for now. */
   MatrixSelectMap_t sel = {0};
-  return MatrixCard_Init(&g_matrix, BOARD_MATRIX_I2C, &sel);
+  HAL_StatusTypeDef st = MatrixCard_Init(&g_matrix, BOARD_MATRIX_I2C, &sel);
+  if (st != HAL_OK)
+  {
+    return st;
+  }
+  /* On-card ADC (U33 on SPI1) - the resistance-measurement sense point. */
+  return MatrixCard_InitAdc(&g_matrix, BOARD_MATRIX_ADC_SPI,
+                            BOARD_MATRIX_ADC_CS_PORT, BOARD_MATRIX_ADC_CS_PIN,
+                            BOARD_VREF);
 }
 
 static HAL_StatusTypeDef board_init_frontend(void)
@@ -78,16 +95,14 @@ static HAL_StatusTypeDef board_init_hv(uint8_t idx)
     cfg.inject_strap[i] = i;       /* 0x20..0x23 - TODO verify straps   */
     cfg.return_strap[i] = (uint8_t)(i + HV_MCP_PER_SIDE); /* 0x24..0x27  */
   }
-  cfg.spi          = BOARD_HV_SPI;
-  cfg.dac_cs_port  = BOARD_HV_DAC_CS_PORT;
-  cfg.dac_cs_pin   = BOARD_HV_DAC_CS_PIN;
-  cfg.adc_cs_port  = BOARD_HV_ADC_CS_PORT;
-  cfg.adc_cs_pin   = BOARD_HV_ADC_CS_PIN;
-  cfg.hv_en_port   = BOARD_HV0_EN_PORT;     /* TODO: per-board lines     */
-  cfg.hv_en_pin    = BOARD_HV0_EN_PIN;
-  cfg.dischg_port  = BOARD_HV0_DISCHG_PORT;
-  cfg.dischg_pin   = BOARD_HV0_DISCHG_PIN;
-  cfg.vref         = BOARD_VREF;
+  cfg.spi              = BOARD_HV_SPI;
+  cfg.dac_cs_port      = BOARD_HV_DAC_CS_PORT;
+  cfg.dac_cs_pin       = BOARD_HV_DAC_CS_PIN;
+  cfg.adc_rail_cs_port = BOARD_HV0_ADC_RAIL_CS_PORT;  /* TODO: per-board lines */
+  cfg.adc_rail_cs_pin  = BOARD_HV0_ADC_RAIL_CS_PIN;
+  cfg.adc_leak_cs_port = BOARD_HV0_ADC_LEAK_CS_PORT;
+  cfg.adc_leak_cs_pin  = BOARD_HV0_ADC_LEAK_CS_PIN;
+  cfg.vref             = BOARD_VREF_HV;   /* HV-card ADCs run off +5V_ISO */
   return HvCard_Init(&g_hv[idx], &cfg);
 }
 

@@ -36,9 +36,14 @@ extern "C" {
 #define BOARD_HV_COUNT        1
 #endif
 
-/* ADC reference voltage (precision Vref on the Control Card). TODO: confirm. */
+/* ADC reference voltages. Confirmed from schematics:
+ *   Control-Card AD7476 (U4) and Matrix-Card AD7476 (U33) run off +3V3.
+ *   HV-Card AD7476 (U301/U302) run off +5V_ISO -> full-scale 5.0 V. */
 #ifndef BOARD_VREF
-#define BOARD_VREF            3.0f
+#define BOARD_VREF            3.3f
+#endif
+#ifndef BOARD_VREF_HV
+#define BOARD_VREF_HV         5.0f
 #endif
 
 /* Global instances (defined in board.c). */

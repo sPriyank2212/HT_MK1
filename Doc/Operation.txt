@@ -1,0 +1,29 @@
+Initialization Communication:
+
+Communicate with all sensors and establish the link and get the address.
+
+DAC: Communicate via I2C.
+
+ADC 1: Communicate via SPI.
+
+ADC 2: Communicate via SPI.
+
+GPIO_Expander: Communicate via I2C.
+
+Initialize 500 V:
+
+Ensure all the reed relay are in off condition.
+
+Communicate with DAC to make the output of CA05P-5 to 500 V.
+
+Get feedback via ADC link for voltage feedback.
+
+ADC read voltage is of ~0.25 V when 500 V reached.
+
+Initialize the Harness plan connection:
+
+Fetch the connection details of each network.
+
+Interface that details in uC and ensure there should not be any direct link established from High side to low side.
+
+Other then interlink harness section power the voltage on adjacent/ other then contact lines and get the ADC value of the network and identify the voltage based on the ADC the impedance is redefined as the Voltage divider I have fix value of 1 K as R2 and in R1 with harness insulation impedance there is a series resistor of 1 MOhms to ensure any direct link if happen the  it can maintain the voltage drop so the uC or control line should not get hamper.

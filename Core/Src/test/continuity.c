@@ -38,8 +38,20 @@ HAL_StatusTypeDef Continuity_TestPair(uint16_t hi_pin, uint16_t lo_pin,
   st = Frontend_ReadRaw(&g_frontend, &res->code);
   if (st == HAL_OK)
   {
-    res->volts   = AD7476_CodeToVolts(res->code, g_frontend.vref);
-    res->verdict = (res->volts <= CONTINUITY_CONNECTED_V_MAX) ? TEST_PASS : TEST_OPEN;
+    res->volts = AD7476_CodeToVolts(res->code, g_frontend.vref);
+    if (res->volts >= CONTINUITY_OPEN_V_MIN)
+    {
+      res->verdict = TEST_OPEN;      /* sits at the unloaded 3V3 reference */
+    }
+    else if (res->volts >= CONTINUITY_CONNECTED_V_MIN &&
+             res->volts <= CONTINUITY_CONNECTED_V_MAX)
+    {
+      res->verdict = TEST_PASS;      /* ~1.5 V divider point -> wire present */
+    }
+    else
+    {
+      res->verdict = TEST_ERROR;     /* out of both bands -> anomaly */
+    }
   }
 
   /* Always release the matrix, but report the measurement error if any. */

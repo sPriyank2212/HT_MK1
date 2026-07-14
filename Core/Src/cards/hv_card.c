@@ -93,20 +93,26 @@ HAL_StatusTypeDef HvCard_Init(HvCard_t *hv, const HvCardCfg_t *cfg)
     }
   }
 
+  /* DAC8830 -> 0 V program (HV off). */
   st = DAC8830_Init(&hv->dac, cfg->spi, cfg->dac_cs_port, cfg->dac_cs_pin);
   if (st != HAL_OK)
   {
     return st;
   }
-  st = AD7476_Init(&hv->adc, cfg->spi, cfg->adc_cs_port, cfg->adc_cs_pin);
+  /* Two sense ADCs share the isolated SPI, each with its own soft-CS. */
+  st = AD7476_Init(&hv->adc_rail, cfg->spi, cfg->adc_rail_cs_port, cfg->adc_rail_cs_pin);
+  if (st != HAL_OK)
+  {
+    return st;
+  }
+  st = AD7476_Init(&hv->adc_leak, cfg->spi, cfg->adc_leak_cs_port, cfg->adc_leak_cs_pin);
   if (st != HAL_OK)
   {
     return st;
   }
 
-  /* Safe state: HV off, not actively discharging, all relays open, 0 V set. */
-  (void)HvCard_HvEnable(hv, 0U);
-  (void)HvCard_Discharge(hv, 0U);
+  /* Safe state: HV at 0 V, all relays open. */
+  (void)HvCard_HvOff(hv);
   return HvCard_OpenAllRelays(hv);
 }
 
@@ -140,34 +146,46 @@ HAL_StatusTypeDef HvCard_SetVoltageFraction(HvCard_t *hv, float fraction)
   return (hv == NULL) ? HAL_ERROR : DAC8830_WriteFraction(&hv->dac, fraction);
 }
 
+HAL_StatusTypeDef HvCard_HvOff(HvCard_t *hv)
+{
+  return (hv == NULL) ? HAL_ERROR : DAC8830_WriteCode(&hv->dac, 0U);
+}
+
+/* No dedicated HV-enable line: the only way to turn HV off is to zero the DAC.
+ * Enable(1) is therefore a no-op (the level was set via SetVoltage*). */
 HAL_StatusTypeDef HvCard_HvEnable(HvCard_t *hv, uint8_t on)
 {
-  if (hv == NULL || hv->cfg.hv_en_port == NULL)
+  if (hv == NULL)
   {
     return HAL_ERROR;
   }
-  HAL_GPIO_WritePin(hv->cfg.hv_en_port, hv->cfg.hv_en_pin,
-                    on ? HV_ENABLE_ACTIVE : (GPIO_PinState)!HV_ENABLE_ACTIVE);
-  return HAL_OK;
+  return (on != 0U) ? HAL_OK : HvCard_HvOff(hv);
 }
 
+/* No active discharge relay in the schematic: the HV bus bleeds passively
+ * through the ~11 Mohm sense divider. Kept for API compatibility. */
 HAL_StatusTypeDef HvCard_Discharge(HvCard_t *hv, uint8_t on)
 {
-  if (hv == NULL || hv->cfg.dischg_port == NULL)
-  {
-    return HAL_ERROR;
-  }
-  HAL_GPIO_WritePin(hv->cfg.dischg_port, hv->cfg.dischg_pin,
-                    on ? HV_DISCHARGE_ACTIVE : (GPIO_PinState)!HV_DISCHARGE_ACTIVE);
-  return HAL_OK;
+  (void)on;
+  return (hv == NULL) ? HAL_ERROR : HAL_OK;
 }
 
-HAL_StatusTypeDef HvCard_ReadSenseRaw(HvCard_t *hv, uint16_t *code)
+HAL_StatusTypeDef HvCard_ReadRailRaw(HvCard_t *hv, uint16_t *code)
 {
-  return (hv == NULL) ? HAL_ERROR : AD7476_ReadRaw(&hv->adc, code);
+  return (hv == NULL) ? HAL_ERROR : AD7476_ReadRaw(&hv->adc_rail, code);
 }
 
-HAL_StatusTypeDef HvCard_ReadSenseVolts(HvCard_t *hv, float *volts)
+HAL_StatusTypeDef HvCard_ReadRailVolts(HvCard_t *hv, float *volts)
 {
-  return (hv == NULL) ? HAL_ERROR : AD7476_ReadVolts(&hv->adc, hv->cfg.vref, volts);
+  return (hv == NULL) ? HAL_ERROR : AD7476_ReadVolts(&hv->adc_rail, hv->cfg.vref, volts);
+}
+
+HAL_StatusTypeDef HvCard_ReadLeakageRaw(HvCard_t *hv, uint16_t *code)
+{
+  return (hv == NULL) ? HAL_ERROR : AD7476_ReadRaw(&hv->adc_leak, code);
+}
+
+HAL_StatusTypeDef HvCard_ReadLeakageVolts(HvCard_t *hv, float *volts)
+{
+  return (hv == NULL) ? HAL_ERROR : AD7476_ReadVolts(&hv->adc_leak, hv->cfg.vref, volts);
 }
