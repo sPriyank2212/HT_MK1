@@ -48,13 +48,13 @@ BUS / PERIPHERAL MAP  (CORRECTED 2026-07-14 vs schematics - old map was wrong)
     - Each HV board has TWO AD7476: RAIL (U301 = HV_Sense) and LEAK (U302 =
       HV_RET, across R3004 1k = insulation). HV-card ADCs run off +5V_ISO ->
       vref 5.0 V. Control/Matrix ADCs = 3.3 V.
-    - HV_Sense SCALING CORRECTED (v1.3, 2026-07-17): the divider is R3001 10M
-      over R3003 50k, so V_HV_Sense = HV * 50k/10.05M = HV * 0.004975 ~= 2.49 V
-      @500 V - about 10x the "0.245 V / ratio 0.00049" used up to v1.2 (that
-      figure matches R3003 ~= 5k, NOT the 50k drawn). DECISION for HW owner:
-      keep R3003 = 50k (firmware scales to ~2.49 V) OR fit 5k (~0.245 V).
-      2.49 V is well inside the 5.0 V ADC ref either way. Firmware HV_Sense
-      scaling + ramp thresholds must match the fitted R3003.
+    - HV_Sense = HV * R3003/(R3001+R3003). INTENDED ~0.245 V @500 V (ratio
+      0.00049), which needs a ~1:2000 divider (10M:5k). SCHEMATIC LABEL CONFLICT
+      (v1.3): HV_Card sheet 2 draws R3001 10M with R3003 50k = ~1:200 -> that
+      would give 2.49 V (x10). HW owner confirms the TARGET is 0.245 V, so the
+      board must be a 1:2000 divider (R3003 = 5k, or R3001 = 100M) - correct the
+      50k label / confirm the fitted parts. Firmware scales HV_Sense to 0.245 V
+      @500 V (ratio 0.00049) to match the populated resistors.
 
 PER-BUS SPI SETTINGS NEEDED (change in CubeMX - generated default is 4-bit!)
 --------------------------------------------------------------------------------
@@ -139,19 +139,20 @@ PER-BUS SPI SETTINGS NEEDED (change in CubeMX - generated default is 4-bit!)
 ================================================================================
  PENDING  -  FIRMWARE
 ================================================================================
-   [!] insulation return-path (v1.3): the leakage loop only closes if a LOW-SIDE
-       reed relay (HV_RET) is energised - +500V -> R3002 1M -> HS relay -> HS wire
-       -> [insul] -> LS wire -> LS relay -> HV_RET -> R3004 1k -> GND. With all LS
-       relays open the HV_RET ADC reads ~0 = false PASS. insulation.c MUST close
-       the return (all LS relays, or a dedicated return) before stepping HS lines.
-   [!] resistance @10 mA NOT feasible through the +3V3 CD4067 muxes (v1.3): two
-       muxes in series ~1-2k on-resistance, 10 mA would need 10-20 V >> 3.3 V rail
-       -> node clamps. kelvin.c: drop test current to <=1 mA AND subtract a
-       measured two-mux R_offset (0-ohm loopback cal). 100 ohm->1.000 V @10 mA cal
-       is invalid as-is.
-   [!] continuity connected-band 1.3-1.7 V is NOT reliable (v1.3): the 3.3 V mux
-       on-resistance + LO_COM termination set the level; calibrate connected/open
-       thresholds against a known-good loopback at bring-up, do not hard-code 1.5 V.
+   [!] insulation return scheme (v1.3, per HW owner): the leakage loop is
+       +500V -> R3002 1M -> HS relay[n] -> HS wire -> [insul] -> adjacent conductor
+       -> its LS relay -> HV_RET -> R3004 1k -> GND. Per line: energise HS[n] and
+       close ALL Low-Side relays EXCEPT net n's own return (from the connection
+       map); the net is measured against every other conductor. insulation.c MUST
+       drive this LS pattern - with no LS relay closed the ADC reads ~0 = false PASS.
+   [~] resistance @10 mA - VERIFY at bring-up (v1.3): current source holds 10 mA
+       within compliance; HW owner expects the drop to stay < 3.3 V. Confirm with a
+       0-ohm loopback that V_HI_COM @10 mA is well under 3.3 V (2*R_on(mux)+R_wire
+       small). If it clamps, drop the current. kelvin.c: subtract a measured
+       two-mux R_offset -> R_wire = V/I - R_offset; fold into the 100-ohm cal.
+   [x] continuity connected-band 1.3-1.7 V OK (v1.3): the level is the divider of
+       the control-side ~10k pull-up (3.3 V) vs the matrix low-side pull-down;
+       wire+mux R is minor vs those pulls, so only small variation. Band is fine.
    [~] host command layer - single-char VCP console done; full host protocol +
        structured result reporting still TODO
    [ ] full-scan orchestration (walk all pin pairs vs a wiring schedule) +
@@ -159,8 +160,8 @@ PER-BUS SPI SETTINGS NEEDED (change in CubeMX - generated default is 4-bit!)
    [ ] per-card I2C bus-select: add a select GPIO per HV card (ISO1251 + CS,
        being added in schematic) asserted under the HW mutex, ONE card at a time
        (all 4 cards use identical MCP addresses 0x20-0x27 so cannot share a bus)
-   [ ] stepped HV ramp verification (10%/step, per-step HV_Sense check; use
-       ratio 0.004975 => ~2.49 V @500 V, NOT 0.00049 - see HV_Sense note above)
+   [ ] stepped HV ramp verification (10%/step, per-step HV_Sense check @0.00049
+       => ~0.245 V @500 V; confirm the divider is 1:2000 - see HV_Sense note above)
    [ ] enable IWDG in CubeMX + refresh from tSafety (hook already in place)
    [ ] dac8775 register-map constants: VERIFY vs datasheet (current-source mode)
 
@@ -215,18 +216,19 @@ CONFIG TODO (CubeMX / .ioc - REQUIRED before the code runs on hardware)
    _v1.2_corrected). Full review of the v1.3 doc against the re-issued
    Control_Card-1 / Matrix_Card-3 / HV_Card-1 schematics. Doc now carries inline
    "FIRMWARE REVIEW NOTE (v1.3)" call-outs + an "Open Hardware Decisions" block.
-   Firmware-relevant findings (all reflected in PENDING above):
-   - HV_Sense scaling was ~10x low: R3003=50k => ~2.49 V @500 V (ratio 0.004975),
-     not 0.245 V / 0.00049. Ramp table, checklists and fault text rescaled; R3003
-     value flagged as a HW decision.
+   Findings + HW-owner resolutions (2026-07-17):
+   - HV_Sense: TARGET 0.245 V @500 V (ratio 0.00049, 1:2000 divider). The drawn
+     10M:50k = ~1:200 would give 2.49 V (x10) - schematic label to be corrected
+     to a 1:2000 divider (R3003 5k or R3001 100M). FW keeps 0.245 V scaling.
    - Insulation dead-short reads ~0.50 V (not 0.049 V); 0.045 V = 10 Mohm go/no-go
-     is unchanged and correct. Interpretation tables re-derived over 0..0.50 V.
-   - Insulation needs a CLOSED low-side return relay to form the measure loop
-     (added Step 4.1.4 + Sec 4.0 notes). -> insulation.c action item above.
+     unchanged/correct. Interpretation tables re-derived over 0..0.50 V.
+   - Insulation return RESOLVED: energise HS[n], close all LS relays EXCEPT net n's
+     own return -> net measured vs all other conductors on HV_RET (Sec 4.0/4.1/4.2).
    - HV card = 64 HS + 64 LS PER card; 256 lines needs 4 HV cards on shared I2C
-     addr 0x20-0x27, bank-selected by ISO_HV_CARD_EN1..4 (already tracked below).
-   - Resistance @10 mA infeasible through +3V3 muxes; continuity 1.5 V not exact
-     -> kelvin.c / continuity.c action items above.
+     addr 0x20-0x27, bank-selected by ISO_HV_CARD_EN1..4 (confirmed by HW owner).
+   - Resistance @10 mA: current source holds 10 mA in compliance; VERIFY mux drop
+     < 3.3 V at bring-up (else reduce current). Continuity ~1.5 V is the pull-up/
+     pull-down divider - band OK. -> kelvin.c bring-up cal; continuity.c unchanged.
 
 
 ================================================================================
@@ -236,8 +238,8 @@ CONFIG TODO (CubeMX / .ioc - REQUIRED before the code runs on hardware)
    - HV DAC8830 CS pin (CS_ISO) + SPI2 mixed data-size    [VERIFY from netlist]
    - CA05P-5 output capacitance (sets discharge wait)     [TBD]
    - Number of HV boards in initial build (1..4)          [TBD]
-   - HV_Sense divider: keep R3003 50k (~2.49 V) or 5k (~0.245 V) [HW DECISION]
-   - Insulation low-side return scheme (all LS vs dedicated) [confirm w/ HW]
-   - Resistance test current (<=1 mA) + mux R_offset cal    [set at bring-up]
+   - HV_Sense divider label: fit 1:2000 (R3003 5k or R3001 100M) [FIX SCHEMATIC]
+   - Insulation return: close all LS except net's own      [RESOLVED - impl in FW]
+   - Resistance: confirm mux drop < 3.3 V @10 mA + R_offset [VERIFY at bring-up]
    - dac8775 current-source register map                  [VERIFY vs datasheet]
 ================================================================================
