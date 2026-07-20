@@ -81,7 +81,8 @@ PER-BUS SPI SETTINGS NEEDED (change in CubeMX - generated default is 4-bit!)
    U102=0x21), break-before-make. MATRIX_EN_ACTIVE_LOW=1 (CD4067 E active-low).
    NEW 2026-07-14: on-card AD7476 (U33 on SPI1, reads HI_COM) added -
    MatrixCard_InitAdc / ReadRaw / ReadVolts. This is the RESISTANCE sense point.
-   NOTE: S0..3 + LO_COM are pulled down (page 3), so the channel address is
+   NOTE: S0..3 pulled down + LO_COM pull-down = 100R (page 3) - the 100R also acts
+   as the current-source return and the continuity low leg. Channel address is
    defined at power-up; the mux ENABLE lines are not pulled and float until the
    MCP23017s init (low risk; EN pull-ups to be added next schematic rev).
 
@@ -143,14 +144,20 @@ PER-BUS SPI SETTINGS NEEDED (change in CubeMX - generated default is 4-bit!)
        close ALL Low-Side relays EXCEPT net n's own return (from the connection
        map); the net is measured against every other conductor. insulation.c MUST
        drive this LS pattern - with no LS relay closed the ADC reads ~0 = false PASS.
-   [~] resistance @10 mA - VERIFY at bring-up (v1.3): current source holds 10 mA
-       within compliance; HW owner expects the drop to stay < 3.3 V. Confirm with a
-       0-ohm loopback that V_HI_COM @10 mA is well under 3.3 V (2*R_on(mux)+R_wire
-       small). If it clamps, drop the current. kelvin.c: subtract a measured
-       two-mux R_offset -> R_wire = V/I - R_offset; fold into the 100-ohm cal.
-   [x] continuity connected-band 1.3-1.7 V OK (v1.3): the level is the divider of
-       the control-side ~10k pull-up (3.3 V) vs the matrix low-side pull-down;
-       wire+mux R is minor vs those pulls, so only small variation. Band is fine.
+   [~] resistance test (v1.3, LO_COM=100R): U33 reads HI_COM vs GND (2-wire), so
+       reading = I * (2*mux_Ron + 100R LO_COM return + R_wire). The 100R return lets
+       current flow (100k made 10 mA impossible). BUT compliance != calibration: if
+       mux Ron is high (CD4067B ~500R -> ~1.1k offset) the node needs ~11 V @10 mA and
+       clamps at 3.3 V - current collapses regardless of any cal. Need low-Ron mux
+       (~15R) and/or lower current so I*(offset+R_wire) < ~3.3 V. Planned self-cal: a
+       known reference wire per side (GPIO-driven CD4067) measured before each test to
+       characterise & subtract the offset - cal path MUST use the SAME switches as the
+       measure path, else the main-mux Ron is not cancelled. Floor after cal = ADC
+       LSB/I (~80 mR @10 mA) -> ohms-range OK, not milliohm (that needs 4-wire). kelvin.c.
+   [x] continuity level (v1.3): LO_COM pull-down = 100R. Connected node = divider of
+       ~10k pull-up (3.3 V) vs (2*mux_Ron + 100R) -> WELL below the old 1.5 V (a few
+       hundred mV, or tens of mV with low-Ron mux); open ~3.3 V. Large margin - set
+       thresholds from a bring-up loopback, not a fixed 1.5 V.
    [~] host command layer - single-char VCP console done; full host protocol +
        structured result reporting still TODO
    [ ] full-scan orchestration (walk all pin pairs vs a wiring schedule) +
@@ -224,9 +231,10 @@ CONFIG TODO (CubeMX / .ioc - REQUIRED before the code runs on hardware)
      own return -> net measured vs all other conductors on HV_RET (Sec 4.0/4.1/4.2).
    - HV card = 64 HS + 64 LS PER card; 256 lines needs 4 HV cards on shared I2C
      addr 0x20-0x27, bank-selected by ISO_HV_CARD_EN1..4 (confirmed by HW owner).
-   - Resistance @10 mA: current source holds 10 mA in compliance; VERIFY mux drop
-     < 3.3 V at bring-up (else reduce current). Continuity ~1.5 V is the pull-up/
-     pull-down divider - band OK. -> kelvin.c bring-up cal; continuity.c unchanged.
+   - LO_COM pull-down = 100R (HW decision): sets the current-source return AND the
+     continuity low leg. Resistance still needs low mux Ron / low current for
+     COMPLIANCE (100R alone doesn't fix the 3.3 V clamp); planned reference self-cal
+     removes the fixed offset. Continuity connected level is well below 1.5 V.
 
 
 ================================================================================
@@ -238,6 +246,7 @@ CONFIG TODO (CubeMX / .ioc - REQUIRED before the code runs on hardware)
    - Number of HV boards in initial build (1..4)          [TBD]
    - HV_Sense divider: R3003 50k -> 5k in next schematic rev (1:2000) [HW in progress]
    - Insulation return: close all LS except net's own      [RESOLVED - impl in FW]
-   - Resistance: confirm mux drop < 3.3 V @10 mA + R_offset [VERIFY at bring-up]
+   - LO_COM pull-down = 100R (return + continuity low leg)  [HW decided]
+   - Resistance: low-Ron mux / current for compliance, + ref self-cal [VERIFY/impl]
    - dac8775 current-source register map                  [VERIFY vs datasheet]
 ================================================================================
