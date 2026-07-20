@@ -48,13 +48,11 @@ BUS / PERIPHERAL MAP  (CORRECTED 2026-07-14 vs schematics - old map was wrong)
     - Each HV board has TWO AD7476: RAIL (U301 = HV_Sense) and LEAK (U302 =
       HV_RET, across R3004 1k = insulation). HV-card ADCs run off +5V_ISO ->
       vref 5.0 V. Control/Matrix ADCs = 3.3 V.
-    - HV_Sense = HV * R3003/(R3001+R3003). INTENDED ~0.245 V @500 V (ratio
-      0.00049), which needs a ~1:2000 divider (10M:5k). SCHEMATIC LABEL CONFLICT
-      (v1.3): HV_Card sheet 2 draws R3001 10M with R3003 50k = ~1:200 -> that
-      would give 2.49 V (x10). HW owner confirms the TARGET is 0.245 V, so the
-      board must be a 1:2000 divider (R3003 = 5k, or R3001 = 100M) - correct the
-      50k label / confirm the fitted parts. Firmware scales HV_Sense to 0.245 V
-      @500 V (ratio 0.00049) to match the populated resistors.
+    - HV_Sense = HV * R3003/(R3001+R3003) = HV * 0.00049 ~= 0.245 V @500 V, a
+      1:2000 divider (R3001 10M : R3003 5k). NOTE (v1.3): the present HV_Card
+      sheet 2 labels R3003 = 50k (1:200 -> 2.49 V, x10); HW owner is changing
+      R3003 to 5k in the next schematic revision. Firmware uses the 0.245 V /
+      0.00049 scaling; reading sits well inside the 5.0 V ADC ref.
 
 PER-BUS SPI SETTINGS NEEDED (change in CubeMX - generated default is 4-bit!)
 --------------------------------------------------------------------------------
@@ -217,9 +215,9 @@ CONFIG TODO (CubeMX / .ioc - REQUIRED before the code runs on hardware)
    Control_Card-1 / Matrix_Card-3 / HV_Card-1 schematics. Doc now carries inline
    "FIRMWARE REVIEW NOTE (v1.3)" call-outs + an "Open Hardware Decisions" block.
    Findings + HW-owner resolutions (2026-07-17):
-   - HV_Sense: TARGET 0.245 V @500 V (ratio 0.00049, 1:2000 divider). The drawn
-     10M:50k = ~1:200 would give 2.49 V (x10) - schematic label to be corrected
-     to a 1:2000 divider (R3003 5k or R3001 100M). FW keeps 0.245 V scaling.
+   - HV_Sense: 0.245 V @500 V (ratio 0.00049, 1:2000). R3003 being changed
+     50k -> 5k in the next schematic rev (drawn 50k = 2.49 V, x10). FW keeps
+     the 0.245 V scaling.
    - Insulation dead-short reads ~0.50 V (not 0.049 V); 0.045 V = 10 Mohm go/no-go
      unchanged/correct. Interpretation tables re-derived over 0..0.50 V.
    - Insulation return RESOLVED: energise HS[n], close all LS relays EXCEPT net n's
@@ -238,7 +236,7 @@ CONFIG TODO (CubeMX / .ioc - REQUIRED before the code runs on hardware)
    - HV DAC8830 CS pin (CS_ISO) + SPI2 mixed data-size    [VERIFY from netlist]
    - CA05P-5 output capacitance (sets discharge wait)     [TBD]
    - Number of HV boards in initial build (1..4)          [TBD]
-   - HV_Sense divider label: fit 1:2000 (R3003 5k or R3001 100M) [FIX SCHEMATIC]
+   - HV_Sense divider: R3003 50k -> 5k in next schematic rev (1:2000) [HW in progress]
    - Insulation return: close all LS except net's own      [RESOLVED - impl in FW]
    - Resistance: confirm mux drop < 3.3 V @10 mA + R_offset [VERIFY at bring-up]
    - dac8775 current-source register map                  [VERIFY vs datasheet]
