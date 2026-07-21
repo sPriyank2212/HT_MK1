@@ -9,6 +9,23 @@
 
 #include "test/kelvin.h"
 
+/**
+  * @brief  Measure the 4-wire (Kelvin) resistance of one harness pair.
+  * @note   Sequence: route the pair through the matrix, switch the control
+  *         front end to the current source, force KELVIN_FORCE_CODE, settle,
+  *         then read the node. In impedance mode the Opto SPDT disconnects the
+  *         control ADC, so the node is read through the matrix ADC (U33).
+  *         Resistance is R = (Vadc / INAMP_GAIN) / I_force and the verdict is
+  *         PASS when R <= KELVIN_R_MAX_OHM. The front end and matrix are always
+  *         released before returning, even on error.
+  * @param  hi_pin : [in]  1-based HI-side harness pin.
+  * @param  lo_pin : [in]  1-based LO-side harness pin.
+  * @param  res    : [out] result (raw code, volts, resistance, verdict). On any
+  *                       early error the verdict is left TEST_ERROR. Must be non-NULL.
+  * @retval HAL_OK    measurement completed (inspect res->verdict for pass/fail).
+  * @retval HAL_ERROR @p res is NULL.
+  * @retval other     first failing HAL status from routing/front-end/ADC access.
+  */
 HAL_StatusTypeDef Kelvin_MeasurePair(uint16_t hi_pin, uint16_t lo_pin,
                                      KelvinResult_t *res)
 {

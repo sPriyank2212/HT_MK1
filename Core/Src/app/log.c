@@ -22,6 +22,11 @@ typedef struct
 static osMessageQueueId_t s_logq;
 static UART_HandleTypeDef *s_uart;
 
+/**
+  * @brief  Map a log level to its single-character prefix.
+  * @param  lvl : [in] log level.
+  * @retval char 'E', 'W', 'I', 'D' for the known levels, '?' otherwise.
+  */
 static char log_level_char(LogLevel_t lvl)
 {
   switch (lvl)
@@ -34,6 +39,14 @@ static char log_level_char(LogLevel_t lvl)
   }
 }
 
+/**
+  * @brief  Initialise the logger: record the output UART and create the queue.
+  * @note   Must be called before Log_Write()/Log_Task(). Does not start the
+  *         drain thread; Log_Task() is created separately by the task layer.
+  * @param  huart : [in] UART used to drain log lines; must be non-NULL.
+  * @retval HAL_OK    queue created and UART recorded.
+  * @retval HAL_ERROR queue allocation failed or @p huart is NULL.
+  */
 HAL_StatusTypeDef Log_Init(UART_HandleTypeDef *huart)
 {
   s_uart = huart;
@@ -41,6 +54,18 @@ HAL_StatusTypeDef Log_Init(UART_HandleTypeDef *huart)
   return (s_logq != NULL && s_uart != NULL) ? HAL_OK : HAL_ERROR;
 }
 
+/**
+  * @brief  Format one log line and enqueue it for the drain task.
+  * @note   Builds "<L>[tick] tag: <message>\r\n", clamped to LOG_MSG_MAX, then
+  *         posts it non-blocking: if the queue is full the line is dropped
+  *         rather than stalling the caller, so this is safe from an ISR. No-op
+  *         if the logger has not been initialised. Prefer the LOG_x() macros.
+  * @param  lvl : [in] severity level (selects the prefix character).
+  * @param  tag : [in] short subsystem tag; NULL is treated as empty.
+  * @param  fmt : [in] printf-style format string for the message body.
+  * @param  ... : [in] arguments consumed by @p fmt.
+  * @retval None
+  */
 void Log_Write(LogLevel_t lvl, const char *tag, const char *fmt, ...)
 {
   LogMsg_t m;
@@ -85,6 +110,14 @@ void Log_Write(LogLevel_t lvl, const char *tag, const char *fmt, ...)
   (void)osMessageQueuePut(s_logq, &m, 0U, 0U);
 }
 
+/**
+  * @brief  Logger drain thread: block on the queue and transmit each line.
+  * @note   Runs forever; the only place that touches the UART for logging, so
+  *         formatting cost is kept off the producing threads. Bounded 100 ms
+  *         TX timeout per line.
+  * @param  argument : [in] unused FreeRTOS thread argument.
+  * @retval None (does not return).
+  */
 void Log_Task(void *argument)
 {
   LogMsg_t m;
@@ -107,6 +140,14 @@ void Log_Task(void *argument)
 /* -------------------------------------------------------------------------- */
 static UART_HandleTypeDef s_hlpuart1;
 
+/**
+  * @brief  Bring up LPUART1 on the Nucleo (PA2/PA3 -> ST-LINK VCP) at 115200 8N1.
+  * @note   Bring-up helper: selects the LPUART1 kernel clock, configures the
+  *         PA2/PA3 alternate-function pins and initialises the peripheral. Swap
+  *         for the product UART on the target hardware.
+  * @retval UART_HandleTypeDef* pointer to the initialised static handle, or
+  *                             NULL if clock or UART init failed.
+  */
 UART_HandleTypeDef *Log_HwInit_LPUART1(void)
 {
   GPIO_InitTypeDef gpio = {0};

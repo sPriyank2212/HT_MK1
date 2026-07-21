@@ -33,16 +33,37 @@ static const osThreadAttr_t s_attr_logger = { .name = "tLogger",    .priority = 
 
 /* ---- safety -------------------------------------------------------------- */
 
+/**
+  * @brief  Latch a global fault and log the reason.
+  * @note   Sets the fault flag the safety task polls; stays latched until
+  *         Safety_ClearFault(). Callable from any thread.
+  * @param  reason : [in] short human-readable cause; NULL logs as "?".
+  * @retval None
+  */
 void Safety_SignalFault(const char *reason)
 {
   s_fault = 1U;
   LOG_E("SAFE", "fault: %s", (reason != NULL) ? reason : "?");
 }
 
+/**
+  * @brief  Clear the latched fault so normal operation can resume.
+  * @retval None
+  */
 void Safety_ClearFault(void) { s_fault = 0U; }
+
+/**
+  * @brief  Query whether the instrument is currently in a latched fault.
+  * @retval int non-zero if a fault is latched, 0 otherwise.
+  */
 int  Safety_InFault(void)    { return (int)s_fault; }
 
-/* Drop the whole instrument to a safe state (HV off, relays + muxes open). */
+/**
+  * @brief  Force the whole instrument to a safe state.
+  * @note   Disables HV and opens all relays on every HV board, then opens the
+  *         matrix. Caller must already hold the hardware mutex.
+  * @retval None
+  */
 static void force_safe_all(void)
 {
   uint8_t i;
@@ -54,6 +75,15 @@ static void force_safe_all(void)
   (void)MatrixCard_AllOff(&g_matrix);
 }
 
+/**
+  * @brief  High-priority safety thread: enforce the safe state.
+  * @note   Runs forever on a 10 ms tick. While a fault is latched it forces the
+  *         instrument safe (under the bus mutex) and keeps it latched. When idle
+  *         and no HV is active it re-asserts HV-disabled as a backstop. The IWDG
+  *         refresh is a TODO pending the watchdog being enabled in CubeMX.
+  * @param  arg : [in] unused FreeRTOS thread argument.
+  * @retval None (does not return).
+  */
 static void SafetyTask(void *arg)
 {
   (void)arg;
@@ -85,6 +115,15 @@ static void SafetyTask(void *arg)
 
 /* ---- sequencer ----------------------------------------------------------- */
 
+/**
+  * @brief  Execute one test command under the hardware mutex.
+  * @note   Skips execution (logs a warning) if a fault is latched. Serialises
+  *         all bus access by holding s_hwmtx for the whole operation, dispatches
+  *         on the command type, and logs the result. For insulation it brackets
+  *         the run with s_hv_active so the safety task knows HV is expected up.
+  * @param  c : [in] command to run; must be non-NULL.
+  * @retval None
+  */
 static void run_command(const TestCmd_t *c)
 {
   if (s_fault)
@@ -136,6 +175,13 @@ static void run_command(const TestCmd_t *c)
   osMutexRelease(s_hwmtx);
 }
 
+/**
+  * @brief  Sequencer thread: run queued test commands one at a time.
+  * @note   Blocks on the command queue and hands each command to run_command(),
+  *         which serialises hardware access. Runs forever.
+  * @param  arg : [in] unused FreeRTOS thread argument.
+  * @retval None (does not return).
+  */
 static void SequencerTask(void *arg)
 {
   TestCmd_t cmd;
@@ -152,12 +198,31 @@ static void SequencerTask(void *arg)
 
 /* ---- comms (Nucleo bring-up console over the VCP) ------------------------- */
 
+/**
+  * @brief  Build a TestCmd_t from loose fields and post it to the queue.
+  * @note   Convenience helper for the bring-up console key handler.
+  * @param  t     : [in] command type.
+  * @param  a     : [in] first pin / primary argument.
+  * @param  b     : [in] second pin / secondary argument.
+  * @param  board : [in] HV board index (insulation only).
+  * @param  vf    : [in] HV fraction (insulation only).
+  * @retval None
+  */
 static void post_simple(TestCmdType_t t, uint16_t a, uint16_t b, uint8_t board, float vf)
 {
   TestCmd_t c = { t, a, b, board, vf };
   (void)Tasks_PostCommand(&c);
 }
 
+/**
+  * @brief  Bring-up console thread: turn single VCP keystrokes into commands.
+  * @note   Best-effort single-byte RX (shares the UART with the logger, so
+  *         HAL_BUSY just retries next loop). Key map: c/k/i = continuity/kelvin/
+  *         insulation, s = force-safe, f = signal fault, r = clear fault. Runs
+  *         forever.
+  * @param  arg : [in] unused FreeRTOS thread argument.
+  * @retval None (does not return).
+  */
 static void CommsTask(void *arg)
 {
   uint8_t ch;
@@ -189,6 +254,13 @@ static void CommsTask(void *arg)
 
 /* ---- public -------------------------------------------------------------- */
 
+/**
+  * @brief  Post a test command to the sequencer queue (non-blocking).
+  * @param  cmd : [in] command to enqueue; must be non-NULL.
+  * @retval 0  command enqueued.
+  * @retval -1 @p cmd is NULL or the queue does not exist.
+  * @retval 1  queue full (command dropped).
+  */
 int Tasks_PostCommand(const TestCmd_t *cmd)
 {
   if (cmd == NULL || s_cmdq == NULL)
@@ -198,8 +270,14 @@ int Tasks_PostCommand(const TestCmd_t *cmd)
   return (osMessageQueuePut(s_cmdq, cmd, 0U, 0U) == osOK) ? 0 : 1;
 }
 
-/* Synchronous, no-queue console write - works even if tasks/heap fail, so a
- * boot banner always appears if the UART itself is alive. */
+/**
+  * @brief  Write a string straight to the console UART, synchronously.
+  * @note   Bypasses the log queue so a boot banner / failure message appears
+  *         even if tasks or the heap failed to come up, as long as the UART
+  *         itself is alive. No-op if the console or @p s is NULL.
+  * @param  s : [in] NUL-terminated string to transmit.
+  * @retval None
+  */
 static void console_puts(const char *s)
 {
   if (s_console != NULL && s != NULL)
@@ -208,6 +286,15 @@ static void console_puts(const char *s)
   }
 }
 
+/**
+  * @brief  Bring up the console, logger, IPC objects and all RTOS threads.
+  * @note   Brings up the VCP first so boot progress is always visible, then
+  *         creates the hardware mutex, command queue and the four threads
+  *         (logger, safety, sequencer, comms). Allocation failures are reported
+  *         synchronously on the console (heap too small). Call once, after the
+  *         scheduler primitives are available.
+  * @retval None
+  */
 void Tasks_Init(void)
 {
   s_console = Log_HwInit_LPUART1();   /* Nucleo VCP; swap for the product UART */

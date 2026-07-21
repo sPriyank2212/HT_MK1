@@ -53,6 +53,14 @@ HvCard_t          g_hv[BOARD_HV_COUNT];
 #define BOARD_HV0_ADC_LEAK_CS_PORT  HV_CARD_DT_1_0_GPIO_Port  /* PC13 */
 #define BOARD_HV0_ADC_LEAK_CS_PIN   HV_CARD_DT_1_0_Pin
 
+/**
+  * @brief  Instantiate and bind the Matrix card (enable expanders + on-card ADC).
+  * @note   The Control<->Matrix select-line connector is not yet drawn, so the
+  *         select GPIOs are left NULL (the layer is inert on the select lines).
+  *         Binds the on-card AD7476 (U33, SPI1) used for resistance sensing.
+  * @retval HAL_OK    matrix card and its ADC initialised.
+  * @retval other     first failing HAL status from the two init calls.
+  */
 static HAL_StatusTypeDef board_init_matrix(void)
 {
   /* Select-line GPIOs come over the (still-undrawn) Control<->Matrix connector;
@@ -69,6 +77,13 @@ static HAL_StatusTypeDef board_init_matrix(void)
                             BOARD_VREF);
 }
 
+/**
+  * @brief  Instantiate and bind the Control-Card analogue front end.
+  * @note   Fills a ControlFrontendCfg_t from the board pin map (IDAC on SPI2,
+  *         control ADC on SPI3, OPT0_CNTR select GPIO, vref) and initialises
+  *         the front end, which comes up in continuity mode.
+  * @retval HAL status from Frontend_Init().
+  */
 static HAL_StatusTypeDef board_init_frontend(void)
 {
   ControlFrontendCfg_t cfg;
@@ -84,6 +99,15 @@ static HAL_StatusTypeDef board_init_frontend(void)
   return Frontend_Init(&g_frontend, &cfg);
 }
 
+/**
+  * @brief  Instantiate and bind one HV card at board index @p idx.
+  * @note   Fills an HvCardCfg_t: shared HV I2C bus, per-side expander straps
+  *         (inject 0x20..0x23, return 0x24..0x27), isolated SPI2 for the DAC8830
+  *         and both sense ADCs, and the HV-card ADC reference (+5V_ISO). Several
+  *         straps/CS lines are placeholders pending the connector netlist (TODO).
+  * @param  idx : [in] HV board index into g_hv[] (0..BOARD_HV_COUNT-1).
+  * @retval HAL status from HvCard_Init().
+  */
 static HAL_StatusTypeDef board_init_hv(uint8_t idx)
 {
   HvCardCfg_t cfg = {0};
@@ -106,6 +130,15 @@ static HAL_StatusTypeDef board_init_hv(uint8_t idx)
   return HvCard_Init(&g_hv[idx], &cfg);
 }
 
+/**
+  * @brief  Initialise the whole board: matrix, control front end and all HV cards.
+  * @note   Runs the per-subsystem init helpers in order and aborts on the first
+  *         failure. On success every layer is left in its safe idle state (HV at
+  *         0 V, relays and muxes open). Call once from the application after the
+  *         HAL peripherals (I2C/SPI/GPIO) have been initialised.
+  * @retval HAL_OK    all subsystems initialised.
+  * @retval other     first failing HAL status from a subsystem init.
+  */
 HAL_StatusTypeDef Board_Init(void)
 {
   HAL_StatusTypeDef st;

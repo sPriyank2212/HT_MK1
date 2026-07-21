@@ -9,6 +9,23 @@
 
 #include "test/continuity.h"
 
+/**
+  * @brief  Test continuity of one harness pair via the +3V3 divider.
+  * @note   Sequence: put the control front end in continuity mode, route the
+  *         pair through the matrix, settle, then read the node through the
+  *         control ADC. Verdict bands:
+  *           - >= CONTINUITY_OPEN_V_MIN                       -> TEST_OPEN (no wire)
+  *           - CONNECTED_V_MIN..CONNECTED_V_MAX (~1.5 V)      -> TEST_PASS (wire present)
+  *           - anything else                                  -> TEST_ERROR (anomaly)
+  *         The matrix is always released before returning.
+  * @param  hi_pin : [in]  1-based HI-side harness pin.
+  * @param  lo_pin : [in]  1-based LO-side harness pin.
+  * @param  res    : [out] result (raw code, volts, verdict). On any early error
+  *                       the verdict is left TEST_ERROR. Must be non-NULL.
+  * @retval HAL_OK    test completed (inspect res->verdict for the outcome).
+  * @retval HAL_ERROR @p res is NULL.
+  * @retval other     first failing HAL status from front-end/matrix/ADC access.
+  */
 HAL_StatusTypeDef Continuity_TestPair(uint16_t hi_pin, uint16_t lo_pin,
                                       ContinuityResult_t *res)
 {

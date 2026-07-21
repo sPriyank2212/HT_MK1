@@ -7,3 +7,6 @@
 ../Core/Src/cards/matrix_card.c:100:19:MatrixCard_AllOff	24	static
 ../Core/Src/cards/matrix_card.c:116:19:MatrixCard_SelectPin	24	static
 ../Core/Src/cards/matrix_card.c:144:19:MatrixCard_ConnectPair	24	static
+../Core/Src/cards/matrix_card.c:158:19:MatrixCard_InitAdc	32	static
+../Core/Src/cards/matrix_card.c:169:19:MatrixCard_ReadRaw	16	static
+../Core/Src/cards/matrix_card.c:174:19:MatrixCard_ReadVolts	16	static
