@@ -1,4 +1,4 @@
-../Core/Src/bsp/board.c:56:26:board_init_matrix	80	static
-../Core/Src/bsp/board.c:72:26:board_init_frontend	48	static
-../Core/Src/bsp/board.c:87:26:board_init_hv	64	static
-../Core/Src/bsp/board.c:109:19:Board_Init	16	static
+../Core/Src/bsp/board.c:64:26:board_init_matrix	16	static
+../Core/Src/bsp/board.c:87:26:board_init_frontend	48	static
+../Core/Src/bsp/board.c:111:26:board_init_hv	64	static
+../Core/Src/bsp/board.c:142:19:Board_Init	16	static

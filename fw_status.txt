@@ -238,15 +238,100 @@ CONFIG TODO (CubeMX / .ioc - REQUIRED before the code runs on hardware)
 
 
 ================================================================================
+ MATRIX CARD REV "2" (2026-07-30) - WHAT CHANGED
+================================================================================
+Supersedes Matrix_Card-6. Task tracking lives in PROJECT_LOG.md; this section is
+the firmware-facing summary.
+
+   MUX SWAP: CD4067B (16:1) -> CD74HC4051 (8:1), 128 parts. HC family is
+   characterised at 3.3 V, so the force loop drops from ~2 kohm to a few hundred
+   ohm and the excitation ceiling rises from ~0.8 mA to several mA.
+   Consequences for firmware:
+     - 32 muxes per bank (was 16); enables HI_EN1..32 / LO_EN1..32
+     - 3 channel-select bits S0..S2 (was 4); mux=(p-1)>>3, channel=(p-1)&0x07
+     - enable bit map is BYTE-SWAPPED: GPB0..7 = EN1..8, GPA0..7 = EN9..16,
+       so in the mcp23017 driver's packing: word = (val>>8)|(val<<8)
+
+   TWO BUFFERED I2C SEGMENTS: 9 expanders will not fit in the MCP23017's 8
+   addresses, so the bus is split by NTS0102DP level shifters:
+     U141 OE = HI_S3 -> BUFF1 : U101 0x20 HI_EN1-16,  U102 0x21 LO_EN1-16,
+                                U105 0x22 HI_EN17-32, U106 0x23 LO_EN17-32
+     U142 OE = LO_S3 -> BUFF2 : U66  0x24 HI_SENSE_EN1-16,  U67  0x25 ...17-32,
+                                U107 0x26 LO_SENSE_EN1-16,  U108 0x27 ...17-32
+   The select bit freed by 16:1 -> 8:1 became the segment select. Firmware must
+   enable exactly one segment before any expander access.
+
+   RESOLVED IN THIS REV: sense-enable net names (HI_SENSE_EN/LO_SENSE_EN now
+   driven); one clock net (SPI1_SCLK everywhere incl. J101); ADC anti-alias front
+   end fitted (R234/R235 4.99k 0.1% matched, C33 47nF differential, C142/C143
+   4.7nF common-mode, ~320 Hz differential corner); 100k pull-up per mux retained
+   on all 128; R131 still 100R 0.01%.
+
+================================================================================
  OPEN ITEMS / ASSUMPTIONS TO CONFIRM
 ================================================================================
+ BLOCKING
+   - I2C ADDRESS COLLISION: U101 (HI_EN1-16) and U69 (ADS124S08 control) are
+     BOTH strapped 0x20 on segment BUFF1. Every HI_EN write also lands on U69
+     GPB0-3 = ADC_RST_1 / DRDY_1 / ADC_CS_1 / Start_SYNC_1. Recommended fix:
+     move U69 to BUFF2 @ 0x20 (0x20-0x23 free there) rather than restrapping
+     within BUFF1 - a Kelvin measurement then needs ONE segment switch instead
+     of three.                                          [HW - awaiting decision]
+
+ MATRIX REV 2 FOLLOW-UPS
+   - AD7476 (U33) removed from the Matrix card. Continuity still works via
+     HI_COM -> J101 -> IN -> Control SPDT -> ADC_IN. BUT in resistance mode the
+     SPDT selects I_OUT and disconnects ADC_IN, so NOTHING can observe HI_COM
+     during current injection: the loopback compliance sweep cannot be done
+     directly. Workaround in FW: sweep current on a 0R loopback and watch for
+     R = V/I departing from linear. Proper fix: route HI_COM -> AIN2 and
+     LO_COM -> AIN3 (both free) - also closes the current-reference item below.
+   - HW-04 still NOT implemented: LO_COM is not routed to a spare ADC input, so
+     the 0.01% R131 cannot serve as a current reference and resistance accuracy
+     rides on the DAC8775 alone.                        [HW - awaiting decision]
+   - SPI1_CS is still on J101 but has no consumer now that the AD7476 is gone.
+   - HI_S3 / LO_S3 no longer reach any mux - they are the BUFF1/BUFF2 OE lines.
+     Confirm NTS0102DP OE polarity before writing them.
+
+ FIRMWARE REWORK QUEUED (matrix layer was built on the rev-6 geometry)
+   - matrix_card: 32 muxes/bank, 3 select bits, 4 force + 4 sense expanders,
+     segment switching via HI_S3/LO_S3 in the U21 word, byte-swapped enable map,
+     AD7476 binding removed.
+   - continuity: move the measurement to the Control front-end ADC; thresholds
+     still carry the stale 1.3-1.7 V band from the 100k-return era.
+   - kelvin: rewrite for 4-wire (compliance sweep, PGA auto-range, offset
+     subtraction, R = V/I).
+   - drivers/ads124s08: new. CS/RESET/START/DRDY are on an I2C expander, not
+     GPIO, so the driver takes an io vtable rather than port/pin.
+   - dac8775 current-source register map                 [VERIFY vs datasheet]
+
+ CARRIED OVER
    - Pin->(mux,channel) linear mapping (matrix + HV)      [assumed; need netlist]
    - HV DAC8830 CS pin (CS_ISO) + SPI2 mixed data-size    [VERIFY from netlist]
    - CA05P-5 output capacitance (sets discharge wait)     [TBD]
    - Number of HV boards in initial build (1..4)          [TBD]
+   - 4 card slots on the Control card vs 4 HV cards + 1 Matrix card = 5 [TBD]
    - HV_Sense divider: R3003 50k -> 5k in next schematic rev (1:2000) [HW in progress]
-   - Insulation return: close all LS except net's own      [RESOLVED - impl in FW]
-   - LO_COM pull-down = 100R (return + continuity low leg)  [HW decided]
-   - Resistance: low-Ron mux / current for compliance, + ref self-cal [VERIFY/impl]
-   - dac8775 current-source register map                  [VERIFY vs datasheet]
+
+================================================================================
+ BENCH SETUP - ADS1232 4-WIRE RIG (2026-07-30)
+================================================================================
+Stand-in for the ADS124S08 while the Matrix card does not exist yet. Built as a
+separate, macro-gated driver so it never ships in the product build.
+
+   Enable with:  -DHT_ENABLE_ADS1232=1     (default 0 = not compiled)
+   Files:        Core/Inc/drivers/ads1232.h, Core/Src/drivers/ads1232.c
+   Docs:         Doc/ADS1232_bench_wiring.md
+
+   KEY POINT: the ADS1232 is NOT an SPI device. There is no chip select and no
+   MOSI. It has one clock in (SCLK) and one data line out (DOUT/DRDY) that
+   doubles as the data-ready flag. It is driven bit-banged on two GPIOs; no SPI
+   peripheral is used. Gain, data rate and channel are set by STATIC PINS, not
+   registers - either strap them with jumpers or drive them from GPIO.
+
+   TODO before this rig is trusted:
+   - Add Datasheet/ads1232.pdf. Pin NUMBERS and the offset-calibration extra-
+     SCLK-pulse sequence are marked VERIFY in the driver until then.
+   - ADS1232 has NO internal reference: REFP/REFN must be supplied externally.
+   - Confirm measured excitation current with a DMM before trusting any ohms.
 ================================================================================

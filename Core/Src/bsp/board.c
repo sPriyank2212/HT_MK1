@@ -63,15 +63,15 @@ HvCard_t          g_hv[BOARD_HV_COUNT];
   */
 static HAL_StatusTypeDef board_init_matrix(void)
 {
-  /* Select-line GPIOs come over the (still-undrawn) Control<->Matrix connector;
-   * leave them NULL so the layer is inert on the select lines for now. */
-  MatrixSelectMap_t sel = {0};
-  HAL_StatusTypeDef st = MatrixCard_Init(&g_matrix, BOARD_MATRIX_I2C, &sel);
+  /* Five expanders on I2C3: U21 (channel address, Control-Card side of the
+   * isolator) plus the four Matrix-card enable expanders. */
+  HAL_StatusTypeDef st = MatrixCard_Init(&g_matrix, BOARD_MATRIX_I2C);
   if (st != HAL_OK)
   {
     return st;
   }
-  /* On-card ADC (U33 on SPI1) - the resistance-measurement sense point. */
+  /* On-card AD7476 (U33 on SPI1) - CONTINUITY sense point. Resistance is read
+   * by the ADS124S08 across HI_SENSE/LO_SENSE (see FW-01). */
   return MatrixCard_InitAdc(&g_matrix, BOARD_MATRIX_ADC_SPI,
                             BOARD_MATRIX_ADC_CS_PORT, BOARD_MATRIX_ADC_CS_PIN,
                             BOARD_VREF);

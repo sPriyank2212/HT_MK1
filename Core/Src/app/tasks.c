@@ -16,6 +16,9 @@
 #include "cmsis_os2.h"
 #include <string.h>
 
+/* Bench-only ADS1232 rig. Compiles to nothing unless HT_ENABLE_ADS1232=1. */
+#include "drivers/ads1232.h"
+
 /* ---- shared state -------------------------------------------------------- */
 static osMessageQueueId_t s_cmdq;
 static osMutexId_t        s_hwmtx;      /* serialises I2C/SPI bus access      */
@@ -30,6 +33,70 @@ static const osThreadAttr_t s_attr_safety = { .name = "tSafety",    .priority = 
 static const osThreadAttr_t s_attr_seq    = { .name = "tSequencer", .priority = osPriorityNormal,      .stack_size = 512 * 4 };
 static const osThreadAttr_t s_attr_comms  = { .name = "tComms",     .priority = osPriorityBelowNormal, .stack_size = 256 * 4 };
 static const osThreadAttr_t s_attr_logger = { .name = "tLogger",    .priority = osPriorityLow,         .stack_size = 256 * 4 };
+
+#if (HT_ENABLE_ADS1232 != 0)
+static osThreadId_t s_ads1232;
+static const osThreadAttr_t s_attr_ads1232 = { .name = "tAds1232",  .priority = osPriorityBelowNormal, .stack_size = 384 * 4 };
+
+/**
+  * @brief  BENCH ONLY. Bring up the ADS1232 4-wire rig and log a reading a second.
+  * @note   Not part of the product firmware - see Doc/ADS1232_bench_wiring.md.
+  *         Runs standalone: it touches no card, no bus mutex and no matrix, so
+  *         it cannot disturb the rest of the system.
+  * @param  arg : [in] unused.
+  * @retval Does not return.
+  */
+static void Ads1232BenchTask(void *arg)
+{
+  (void)arg;
+
+  LOG_W("ADS", "BENCH BUILD - ADS1232 rig active, not for release");
+
+  if (ADS1232_HwInit_Nucleo() != HAL_OK)
+  {
+    LOG_E("ADS", "hw init failed");
+    for (;;) { osDelay(1000U); }
+  }
+
+  /* Localise wiring faults before trying to read anything meaningful. */
+  ADS1232_BenchDiag();
+
+  /* If the first self-check fails, prove the MCU pin once (readback), then fall
+   * into a fast link-quality loop. The slow 10 s toggle is only worth running
+   * once - after that the useful number is the read success rate, which updates
+   * every couple of seconds while a joint is being soldered or wiggled. */
+  if (ADS1232_BenchSelfCheck() != HAL_OK)
+  {
+    LOG_E("ADS", "self-check failed - proving the MCU pin, then measuring link");
+    ADS1232_BenchPinTest(3U);
+
+    /* Do NOT demand a perfect link before showing data. Reads retry internally,
+     * so anything above a low floor still produces usable measurements - just
+     * more slowly. Blocking on 100% only hides the numbers the bench is for. */
+    while (ADS1232_BenchLinkTest(20U) < 25U)
+    {
+      LOG_E("ADS", "link too poor to measure - fix the SCLK joint");
+      osDelay(1000U);
+    }
+
+    while (ADS1232_BenchSelfCheck() != HAL_OK)
+    {
+      osDelay(1000U);
+    }
+    LOG_W("ADS", "running on a marginal link - readings valid, still solder it");
+  }
+  LOG_I("ADS", "self-check passed");
+
+  LOG_I("ADS", "rig ready, Rref=%ld ohm gain=128",
+        (long)ADS1232_BENCH_RREF_OHMS);
+
+  for (;;)
+  {
+    ADS1232_BenchOnce();
+    osDelay(1000U);
+  }
+}
+#endif /* HT_ENABLE_ADS1232 */
 
 /* ---- safety -------------------------------------------------------------- */
 
@@ -321,6 +388,14 @@ void Tasks_Init(void)
   {
     console_puts("[boot] TASK CREATE FAILED - increase configTOTAL_HEAP_SIZE\r\n");
   }
+
+#if (HT_ENABLE_ADS1232 != 0)
+  s_ads1232 = osThreadNew(Ads1232BenchTask, NULL, &s_attr_ads1232);
+  if (s_ads1232 == NULL)
+  {
+    console_puts("[boot] ADS1232 bench task alloc FAILED\r\n");
+  }
+#endif
 
   LOG_I("SYS", "tasks started (hv boards=%u)", (unsigned)BOARD_HV_COUNT);
 }

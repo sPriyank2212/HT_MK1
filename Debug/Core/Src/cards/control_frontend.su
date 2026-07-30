@@ -1,5 +1,5 @@
-../Core/Src/cards/control_frontend.c:12:19:Frontend_Init	24	static
-../Core/Src/cards/control_frontend.c:40:19:Frontend_SetMode	24	static
-../Core/Src/cards/control_frontend.c:56:19:Frontend_SetCurrentCode	16	static
-../Core/Src/cards/control_frontend.c:65:19:Frontend_ReadRaw	16	static
-../Core/Src/cards/control_frontend.c:74:19:Frontend_ReadVolts	16	static
+../Core/Src/cards/control_frontend.c:25:19:Frontend_Init	24	static
+../Core/Src/cards/control_frontend.c:64:19:Frontend_SetMode	24	static
+../Core/Src/cards/control_frontend.c:90:19:Frontend_SetCurrentCode	16	static
+../Core/Src/cards/control_frontend.c:107:19:Frontend_ReadRaw	16	static
+../Core/Src/cards/control_frontend.c:125:19:Frontend_ReadVolts	16	static
