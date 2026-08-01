@@ -247,15 +247,59 @@ uint16_t ADS1232_GainValue(ADS1232_Gain_t g);
 /* NUCLEO-G474RE bench rig                                                    */
 /* -------------------------------------------------------------------------- */
 
-/* Series reference resistor in the ratiometric arrangement. Full-scale DUT is
- * R_ref / gain, so 2k at gain 128 gives ~15.6 ohm of range. */
+/* Series reference resistance in the ratiometric arrangement - the SUM of the
+ * two divider resistors.
+ *
+ * Validated bench topology (2026-08-01), symmetric so the common mode lands at
+ * mid-supply, which gain 64/128 requires (SBAS350H: AGND+1.5 V .. AVDD-1.5 V):
+ *
+ *     5V --[4.7k]--o--[R_dut]--o--[4.7k]-- GND      REFP = 5V, REFN = GND
+ *                  |           |
+ *               AINP1       AINN1          common mode = 2.5 V
+ *
+ * REFP sits on the same rail that drives the divider, so the supply cancels:
+ *     I     = 5 / R_ref
+ *     Vin   = I * R_dut = 5 * R_dut / R_ref
+ *     code  = Vin / (0.5*VREF/(gain*2^23))
+ *     R_dut = R_ref * code / (2 * gain * 2^23)
+ *
+ * Accuracy therefore inherits the SUM tolerance - two 5% parts give 5% readings.
+ * Measured 33 mohm as 7570 counts against 7539 predicted, 0.4% agreement.
+ *
+ * Lower values buy signal: 4k7 pair = 0.53 mA, 470R pair = 5.3 mA and ~10x the
+ * counts for the same DUT. Power stays trivial either way. */
 #ifndef ADS1232_BENCH_RREF_OHMS
-#define ADS1232_BENCH_RREF_OHMS   2000.0f
+#define ADS1232_BENCH_RREF_OHMS   9400.0f   /* 4k7 + 4k7 */
 #endif
 
-/* Conversions averaged per reported reading. */
+/* 1 = tare at startup, 0 = leave the offset at zero.
+ * The tare must be taken with NO signal present - short the DUT, or fit a link
+ * in its place. Taring with the DUT connected stores the measurement itself as
+ * the offset and every later reading then comes out near zero. */
+#ifndef ADS1232_BENCH_TARE
+#define ADS1232_BENCH_TARE        0
+#endif
+
+/* Conversions averaged per reported reading. Keep it a multiple of 4 - the raw
+ * dump prints 4 per line to stay inside LOG_MSG_MAX. */
 #ifndef ADS1232_BENCH_AVG
 #define ADS1232_BENCH_AVG         16U
+#endif
+
+/* Reference voltage actually present on REFP-REFN, volts. On the bench rig
+ * REFP sits on the 5 V rail and REFN on GND. Sets the volts-per-count scale:
+ *     1 count = VREF / (gain * 2^23) = 4.657 nV at VREF=5 V, gain=128
+ *     full scale = +/- VREF / gain   = +/- 39.06 mV at those settings */
+#ifndef ADS1232_BENCH_VREF_V
+#define ADS1232_BENCH_VREF_V      5.0f
+#endif
+
+/* 1 = dump every raw conversion code, 0 = summary lines only.
+ * Default OFF now the rig is validated: the dump is 4 extra lines per reading,
+ * and with LOG_QUEUE_DEPTH at 24 that is enough to overrun the logger and lose
+ * the very lines you want. Turn it back on when debugging raw data. */
+#ifndef ADS1232_LOG_RAW
+#define ADS1232_LOG_RAW           0
 #endif
 
 /* The rig instance, defined in ads1232.c. */

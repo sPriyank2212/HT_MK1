@@ -14,7 +14,7 @@ ID prefixes: `HW-` schematic/hardware · `FW-` firmware · `BU-` bring-up/verify
 
 ---
 
-## Status snapshot — 2026-07-29
+## Status snapshot — 2026-08-01
 
 | Category | Count |
 |---|---|
@@ -22,16 +22,18 @@ ID prefixes: `HW-` schematic/hardware · `FW-` firmware · `BU-` bring-up/verify
 | Agreed, awaiting schematic edit | 5 |
 | Awaiting a decision | 2 |
 | Firmware work queued | 5 |
-| Verify at bring-up | 6 |
+| Verify at bring-up | 7 |
 | Closed to date | 7 |
 
-**Nothing blocks firmware any more.** The 2026-07-29 review round closed the three items that
-looked like routing gaps — the ADC control lines are driven locally by U69, the mux enables are
-all pull-ups, and the spare connector lines are deliberate.
+**The 4-wire method is now proven on real hardware**, not just on paper: the ADS1232 bench rig
+measured a 0.033 Ω resistor to **0.4 %** with no current calibration at all, because the
+ratiometric arrangement cancels the excitation. Write-up in
+`Doc/4wire_resistance_validation.md`.
 
-**Next actions:** answer HW-04 (one on-card net that decides whether the 0.01 % reference resistor
-earns anything) and HW-09 (four card slots, five cards). Then the next schematic revision can pick
-up HW-02, HW-03, HW-06, HW-08 and HW-10 in one pass.
+**Next actions:** answer HW-04 — the bench result is now the concrete argument for it — and
+HW-09 (four card slots, five cards). Then the next schematic revision can pick up HW-02, HW-03,
+HW-06, HW-08 and HW-10 in one pass. New at bring-up: **BU-07**, common-mode headroom shrank when
+the muxes were improved, and it is violated below ~0.85 mA.
 
 ---
 
@@ -72,7 +74,9 @@ up HW-02, HW-03, HW-06, HW-08 and HW-10 in one pass.
 | BU-02 | SPI1 is shared by U33 and U68 — confirm one CPOL/CPHA suits both, and that `SPI1_CS` and `ADC_CS_1` are never asserted together (the AD7476 drives SDATA whenever its CS is low). | 2026-07-27 |
 | BU-03 | U101 / U102 I2C addresses are set by strapping and not annotated, unlike the sheet-9 trio at 0x23 / 0x24 / 0x25. Scan and log. | 2026-07-27 |
 | BU-04 | JP1 (AINCOM → GND, Matrix sheet 9) must be fitted, or the ADC's analog common floats. Populate with a 0 Ω link by default and mark it on the assembly drawing. | 2026-07-27 |
-| BU-05 | No differential RC filter on `HI_SENSE` / `LO_SENSE` into AIN0/AIN1 — R83–R89 are digital damping on the SPI lines. Characterise noise before committing to the high PGA gains, or fit 1 kΩ in each leg + 100 nF differential + 10 nF to AINCOM. | 2026-07-27 |
+| BU-05 | ~~No differential RC filter~~ **DONE in Matrix rev 2** — R234/R235 4.99 k 0.1 % + C33 47 nF + C142/C143 4.7 nF fitted. | 2026-07-27 |
+| BU-07 | **Common-mode headroom is now marginal.** `LO_SENSE ≈ I × (R_LOmux + R131)`. With CD74HC4051 (~100 Ω) instead of CD4067B (~900 Ω) that is only ~0.20 V at 1 mA, against an ADS124S08 floor of 0.15 + 15.5·\|V_IN\| ≈ 0.166 V at gain 32 — and it is **violated below ~0.85 mA**. Improving the muxes made this worse, because R131 was sized when the mux drop did the lifting. Confirm HC4051 Rₒₙ at 3.3 V, then hold I ≥ 1 mA or raise R131. See Doc/4wire_resistance_validation.md §5.1. | 2026-08-01 |
+| BU-08 | **Do not copy the bench resistance formula.** ADS1232 full scale is ±0.5·VREF/Gain, ADS124S08 is ±VREF/Gain. The bench divides by `2 × gain × 2²³`; the product must divide by `gain × 2²³`. Copy-pasting gives a silent 2× error. | 2026-08-01 |
 | BU-06 | Harness build must encode `ISO_HV_CARD_ENx` per card slot (card 1 → EN1 … card 4 → EN4). HV_Card-1 sheet 1 states this is done in the cable, not the schematic. | 2026-07-27 |
 
 ---
@@ -92,6 +96,24 @@ up HW-02, HW-03, HW-06, HW-08 and HW-10 in one pass.
 ---
 
 ## Activity log
+
+### 2026-08-01
+- Built and validated a 4-wire Kelvin bench rig on a NUCLEO-G474RE with an **ADS1232** as a
+  stand-in for the ADS124S08. **Measured a 0.033 Ω resistor to 0.4 %** (predicted code
+  7,539, measured 7,553–7,705). Full write-up in `Doc/4wire_resistance_validation.md`.
+- Proved the ratiometric method end to end: because REFP sits on the same rail that drives
+  the divider, the excitation cancels and no current calibration was needed at all. This is
+  the concrete argument for HW-04 on the product board.
+- Measured noise floor **±0.6 mΩ at 0.53 mA** on flying leads with a marginal joint; scales
+  to ±0.06 mΩ with a 470 Ω divider pair.
+- Root causes found along the way, all now documented as recognisable signatures: floating
+  DOUT (`code = -1`), SCLK not reaching the ADC (`code = 0`), ~50 % silent link corruption,
+  **inputs at ground outside the PGA common-mode window** (the expensive one), a misread
+  full-scale convention, and a tare that captured the signal itself.
+- Raised BU-07 (common-mode headroom shrank when the muxes improved) and BU-08 (the two ADCs
+  use different full-scale conventions — do not copy the formula).
+- Added `drivers/ads1232` — bench-only, gated on `HT_ENABLE_ADS1232`, 0 bytes when off,
+  `#error` if left enabled in a Release build.
 
 ### 2026-07-29
 - Hardware owner answered the eight open HW items; each checkable claim was verified against the

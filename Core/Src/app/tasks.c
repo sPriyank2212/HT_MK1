@@ -50,7 +50,7 @@ static void Ads1232BenchTask(void *arg)
 {
   (void)arg;
 
-  LOG_W("ADS", "BENCH BUILD - ADS1232 rig active, not for release");
+  LOG_W("ADS", "BENCH BUILD - not for release");
 
   if (ADS1232_HwInit_Nucleo() != HAL_OK)
   {
@@ -58,37 +58,27 @@ static void Ads1232BenchTask(void *arg)
     for (;;) { osDelay(1000U); }
   }
 
-  /* Localise wiring faults before trying to read anything meaningful. */
+  /* Diagnostics only speak up when something is wrong, so a healthy rig goes
+   * straight to printing data. */
   ADS1232_BenchDiag();
 
-  /* If the first self-check fails, prove the MCU pin once (readback), then fall
-   * into a fast link-quality loop. The slow 10 s toggle is only worth running
-   * once - after that the useful number is the read success rate, which updates
-   * every couple of seconds while a joint is being soldered or wiggled. */
   if (ADS1232_BenchSelfCheck() != HAL_OK)
   {
-    LOG_E("ADS", "self-check failed - proving the MCU pin, then measuring link");
     ADS1232_BenchPinTest(3U);
 
-    /* Do NOT demand a perfect link before showing data. Reads retry internally,
-     * so anything above a low floor still produces usable measurements - just
-     * more slowly. Blocking on 100% only hides the numbers the bench is for. */
+    /* Do not demand a perfect link before showing data - reads retry
+     * internally, so a marginal joint slows the rig rather than stopping it. */
     while (ADS1232_BenchLinkTest(20U) < 25U)
     {
-      LOG_E("ADS", "link too poor to measure - fix the SCLK joint");
       osDelay(1000U);
     }
-
     while (ADS1232_BenchSelfCheck() != HAL_OK)
     {
       osDelay(1000U);
     }
-    LOG_W("ADS", "running on a marginal link - readings valid, still solder it");
   }
-  LOG_I("ADS", "self-check passed");
 
-  LOG_I("ADS", "rig ready, Rref=%ld ohm gain=128",
-        (long)ADS1232_BENCH_RREF_OHMS);
+  LOG_I("ADS", "Rref=%ld g=128", (long)ADS1232_BENCH_RREF_OHMS);
 
   for (;;)
   {

@@ -369,8 +369,9 @@ HAL_StatusTypeDef ADS1232_ReadVolts(ADS1232_t *dev, float *volts, uint32_t timeo
     return st;
   }
 
-  /* Full scale is +/- VREF / gain over +/- 2^23 codes. */
-  *volts = ((float)(code - dev->offset_code) * dev->cfg.vref)
+  /* SBAS350H: full-scale input = +/- 0.5 * VREF / Gain. Note the 0.5 - the
+   * span is HALF what a naive VREF/gain reading would suggest. */
+  *volts = ((float)(code - dev->offset_code) * dev->cfg.vref * 0.5f)
            / ((float)ADS1232_GainValue(dev->cfg.gain) * 8388608.0f);
 
   return HAL_OK;
@@ -436,7 +437,7 @@ HAL_StatusTypeDef ADS1232_ReadAverage(ADS1232_t *dev, uint16_t n, float *volts,
     acc += code;
   }
 
-  *volts = ((float)((acc / (int64_t)n) - dev->offset_code) * dev->cfg.vref)
+  *volts = ((float)((acc / (int64_t)n) - dev->offset_code) * dev->cfg.vref * 0.5f)
            / ((float)ADS1232_GainValue(dev->cfg.gain) * 8388608.0f);
 
   return HAL_OK;
@@ -494,8 +495,12 @@ HAL_StatusTypeDef ADS1232_OhmsRatiometric(ADS1232_t *dev, float r_ref_ohms,
     acc += code;
   }
 
+  /* With VREF taken from the same rail that drives R_ref, the supply cancels:
+   *   code  = Vin / (0.5*VREF/(gain*2^23)) = 2 * R_dut/R_ref * gain * 2^23
+   *   R_dut = R_ref * code / (2 * gain * 2^23)
+   * The factor 2 comes from the +/-0.5*VREF/Gain full-scale definition. */
   *ohms = (r_ref_ohms * (float)((acc / (int64_t)n) - dev->offset_code))
-          / ((float)ADS1232_GainValue(dev->cfg.gain) * 8388608.0f);
+          / (2.0f * (float)ADS1232_GainValue(dev->cfg.gain) * 8388608.0f);
 
   return HAL_OK;
 }
@@ -634,19 +639,38 @@ HAL_StatusTypeDef ADS1232_BenchSelfCheck(void)
   {
     return st;
   }
-  LOG_I("ADS", "alive, first code=%ld", (long)code);
-
   /* Near full scale with the inputs shorted means they are not actually
    * shorted - at gain 128 a floating pair rails. */
   if (labs((long)code) > 8000000L)
   {
-    LOG_W("ADS", "code near full scale - sense inputs open, not shorted?");
+    LOG_W("ADS", "input open? code=%ld", (long)code);
   }
 
+#if (ADS1232_BENCH_TARE != 0)
   st = ADS1232_Tare(&g_ads1232, 16U, 500U);
-  if (st == HAL_OK)
+  if (st != HAL_OK)
   {
-    LOG_I("ADS", "tare offset=%ld", (long)g_ads1232.offset_code);
+    return st;
+  }
+#else
+  /* Tare disabled: the ratiometric reading needs no offset correction unless
+   * amplifier offset matters, and taring with the DUT in circuit would store
+   * the signal itself. Enable ADS1232_BENCH_TARE only with the DUT shorted. */
+  g_ads1232.offset_code = 0;
+  LOG_I("ADS", "tare skipped, offset=0");
+#endif
+
+  /* A railed tare is worthless and silently corrupts every later reading by
+   * full scale. Refuse it and zero the offset instead. */
+  if (labs((long)g_ads1232.offset_code) > 8300000L)
+  {
+    LOG_E("ADS", "tare RAILED (%ld) - offset forced to 0",
+          (long)g_ads1232.offset_code);
+    g_ads1232.offset_code = 0;
+  }
+  else
+  {
+    LOG_I("ADS", "offset=%ld", (long)g_ads1232.offset_code);
   }
   return st;
 }
@@ -661,7 +685,7 @@ void ADS1232_BenchOnce(void)
 {
   int32_t codes[ADS1232_BENCH_AVG];
   int64_t acc = 0;
-  int32_t mn, mx, median, trimmed;
+  int32_t mn, mx, median, trimmed, drift, nv, uohm;
   float   ohms;
   uint16_t i;
 
@@ -678,6 +702,28 @@ void ADS1232_BenchOnce(void)
       return;
     }
     acc += codes[i];
+  }
+
+  /* Dump BEFORE sorting - acquisition order is what shows drift. A sorted dump
+   * is always monotonic and therefore tells you nothing about time. */
+#if (ADS1232_LOG_RAW != 0)
+  for (i = 0U; i < (uint16_t)ADS1232_BENCH_AVG; i += 4U)
+  {
+    LOG_I("ADS", "%ld %ld %ld %ld",
+          (long)codes[i], (long)codes[i + 1U],
+          (long)codes[i + 2U], (long)codes[i + 3U]);
+  }
+#endif
+
+  /* Drift within the batch: mean of the second half minus mean of the first.
+   * Large and consistent => something is warming or a contact is moving.
+   * Near zero => the scatter is random noise. */
+  {
+    int64_t e = 0, l = 0;
+    uint16_t h = (uint16_t)ADS1232_BENCH_AVG / 2U;
+    for (i = 0U; i < h; i++)          { e += codes[i]; }
+    for (i = h; i < (uint16_t)ADS1232_BENCH_AVG; i++) { l += codes[i]; }
+    drift = (int32_t)((l - e) / (int64_t)h);
   }
 
   (void)acc;
@@ -697,29 +743,32 @@ void ADS1232_BenchOnce(void)
 
   /* Median, not mean - robust against the outliers a bad joint produces. */
   ohms = (ADS1232_BENCH_RREF_OHMS * (float)(median - g_ads1232.offset_code))
-         / ((float)ADS1232_GainValue(g_ads1232.cfg.gain) * 8388608.0f);
+         / (2.0f * (float)ADS1232_GainValue(g_ads1232.cfg.gain) * 8388608.0f);
 
-  LOG_I("ADS", "med=%ld spread=%ld trimmed=%ld retries=%u R=%ld uOhm",
-        (long)median, (long)(mx - mn), (long)trimmed,
-        (unsigned)s_retries, (long)(ohms * 1000000.0f));
+  /* Input voltage. VREF is fixed by REFP-REFN, so this is absolute, unlike R
+   * which also depends on a valid tare. 1 count = 0.5*VREF/(gain*2^23). */
+  nv = (int32_t)(((float)median * ADS1232_BENCH_VREF_V * 0.5f * 1.0e9f)
+                 / ((float)ADS1232_GainValue(g_ads1232.cfg.gain) * 8388608.0f));
 
-  /* Interpretation. retries counts samples the link forced us to re-read, so it
-   * separates the two causes far more reliably than spread shape does - a
-   * roughly 50/50 corruption makes outliers look like a broad population and
-   * fools any purely statistical test. */
-  if (s_retries > (uint16_t)ADS1232_BENCH_AVG)
+  /* Resistance, printed as milliohms with 3 decimals. Split into integer and
+   * fractional parts because the build links newlib-nano without
+   * -u _printf_float, so "%f" emits nothing. uohm/1000 gives whole milliohms,
+   * the remainder gives microohms. */
+  uohm = (int32_t)(ohms * 1000000.0f);
+
+  LOG_I("ADS", "R=%ld.%03ld mOhm  code=%ld",
+        (long)(uohm / 1000L), (long)labs((long)uohm % 1000L), (long)median);
+  LOG_I("ADS", "spr=%ld drift=%ld rty=%u nV=%ld",
+        (long)(mx - mn), (long)drift, (unsigned)s_retries, (long)nv);
+
+  if (labs((long)median) > 8300000L)
   {
-    LOG_W("ADS", "  retries=%u high -> LINK still bad, solder the SCLK joint",
-          (unsigned)s_retries);
+    LOG_W("ADS", "RAILED - input beyond +/-%ld uV",
+          (long)(ADS1232_BENCH_VREF_V * 0.5f * 1.0e6f
+                 / (float)ADS1232_GainValue(g_ads1232.cfg.gain)));
   }
-  else if ((mx - mn) > 10000L)
-  {
-    LOG_W("ADS", "  link ok but noisy -> ANALOG: check REFP/REFN, AINP1/AINN1, AVDD");
-  }
-  else
-  {
-    LOG_I("ADS", "  stable");
-  }
+
+  (void)trimmed;
 }
 
 /**
@@ -751,21 +800,7 @@ uint8_t ADS1232_BenchLinkTest(uint16_t n)
   }
 
   pct = (uint8_t)(((uint32_t)ok * 100U) / (uint32_t)n);
-  LOG_I("ADS", "link: %u/%u reads ok (%u%%)",
-        (unsigned)ok, (unsigned)n, (unsigned)pct);
-
-  if (pct == 100U)
-  {
-    LOG_I("ADS", "  link solid");
-  }
-  else if (pct == 0U)
-  {
-    LOG_E("ADS", "  link dead - SCLK not connected");
-  }
-  else
-  {
-    LOG_W("ADS", "  INTERMITTENT - bad joint. Solder it, do not hold the wire");
-  }
+  LOG_I("ADS", "link %u%%", (unsigned)pct);
   return pct;
 }
 
@@ -800,25 +835,14 @@ void ADS1232_BenchPinTest(uint32_t seconds)
   ads1232_delay(200U);
   rb_lo = (HAL_GPIO_ReadPin(ADS1232_SCLK_PORT, ADS1232_SCLK_PIN) == GPIO_PIN_SET) ? 1U : 0U;
 
-  LOG_I("ADS", "SCLK readback: drove 1 -> read %u, drove 0 -> read %u",
-        (unsigned)rb_hi, (unsigned)rb_lo);
-
   if (rb_hi == 1U && rb_lo == 0U)
   {
-    LOG_I("ADS", "  SCLK pin IS driving correctly -> fault is the WIRE or the ADC end");
-  }
-  else if (rb_hi == 0U && rb_lo == 0U)
-  {
-    LOG_E("ADS", "  SCLK stuck LOW - shorted to GND, or pin not configured as output");
+    LOG_I("ADS", "SCLK pin ok -> fault is the wire");
   }
   else
   {
-    LOG_E("ADS", "  SCLK stuck HIGH - shorted to 3V3");
+    LOG_E("ADS", "SCLK stuck %s", (rb_hi == 0U) ? "LOW" : "HIGH");
   }
-
-  LOG_W("ADS", "pin test: SCLK + PDWN toggling 1 Hz for %lu s",
-        (unsigned long)seconds);
-  LOG_W("ADS", "meter PA1 at Arduino A1, PC1 at A4 - both must swing 0<->3V3");
 
   for (i = 0U; i < seconds; i++)
   {
@@ -833,7 +857,6 @@ void ADS1232_BenchPinTest(uint32_t seconds)
   /* Park SCLK low and PDWN high (awake) again. */
   HAL_GPIO_WritePin(ADS1232_SCLK_PORT, ADS1232_SCLK_PIN, GPIO_PIN_RESET);
   HAL_GPIO_WritePin(ADS1232_PDWN_PORT, ADS1232_PDWN_PIN, GPIO_PIN_SET);
-  LOG_I("ADS", "pin test done, SCLK parked low");
 }
 
 /**
@@ -861,10 +884,9 @@ void ADS1232_BenchDiag(void)
    * pulses a working device has shifted its result out and released DOUT
    * HIGH. If DOUT is still low afterwards, the device never saw the clock -
    * which reads back as code = 0 (all 24 bits sampled low). */
-  LOG_I("ADS", "diag 1: SCLK response");
   if (ADS1232_WaitReady(&g_ads1232, 500U) != HAL_OK)
   {
-    LOG_E("ADS", "  DOUT never went low - no AVDD/DVDD, PDWN low, or DOUT unwired");
+    LOG_E("ADS", "diag: DOUT never low - AVDD/PDWN/DOUT?");
   }
   else
   {
@@ -876,21 +898,13 @@ void ADS1232_BenchDiag(void)
 
     if (after == 0U)
     {
-      LOG_E("ADS", "  DOUT STILL LOW after 24 clocks - SCLK is not reaching the ADC");
-      LOG_E("ADS", "  check the PA1 wire; this is what makes code read exactly 0");
-    }
-    else
-    {
-      LOG_I("ADS", "  DOUT released after 24 clocks - SCLK path OK (code=%ld)",
-            (long)code);
+      LOG_E("ADS", "diag: SCLK not reaching ADC");
     }
   }
 
   /* ---- Test 2: is it converting at the expected rate? -------------------- */
   /* Having just clocked a result out, DOUT should now be HIGH and fall again
    * when the next conversion lands - about 100 ms at 10 SPS. */
-  LOG_I("ADS", "diag 2: watching DOUT 300 ms, not clocking");
-
   prev = (HAL_GPIO_ReadPin(ADS1232_DOUT_PORT, ADS1232_DOUT_PIN) == GPIO_PIN_SET) ? 1U : 0U;
   start = HAL_GetTick();
   while ((HAL_GetTick() - start) < 300U)
@@ -900,27 +914,13 @@ void ADS1232_BenchDiag(void)
     if (now != prev) { edges++; prev = now; }
   }
 
-  LOG_I("ADS", "  hi=%lu lo=%lu edges=%lu",
-        (unsigned long)hi, (unsigned long)lo, (unsigned long)edges);
-
   if (edges > 50U)
   {
-    LOG_E("ADS", "  DOUT FLOATING (%lu edges) - loose wire, not driven",
-          (unsigned long)edges);
+    LOG_E("ADS", "diag: DOUT floating, %lu edges", (unsigned long)edges);
   }
   else if (edges == 0U && lo == 0U)
   {
-    LOG_E("ADS", "  DOUT stuck HIGH - no conversion completing");
-  }
-  else if (edges >= 1U)
-  {
-    LOG_I("ADS", "  DOUT fell once - device is converting normally");
-  }
-  else
-  {
-    /* All low with no edge: data was already pending when we started. Normal
-     * if a conversion completed between the two tests. */
-    LOG_I("ADS", "  DOUT low throughout - data pending, acceptable");
+    LOG_E("ADS", "diag: DOUT stuck high, no conversions");
   }
 }
 

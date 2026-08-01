@@ -7,9 +7,7 @@ Stand-in for the ADS124S08 while the Matrix card does not exist. Enable the driv
 > doubles as `DRDY`. You need **two GPIOs**, not an SPI peripheral. Gain, data rate and
 > channel are set by *static pins*, not registers.
 
-> **Pin numbers are deliberately omitted.** Add `Datasheet/ads1232.pdf` and I will fill
-> them in. Wire by *signal name* from the part's own pinout — a wrong pin number on a
-> 24-bit ADC costs an afternoon at best.
+> Pin numbers below are from **SBAS350H**, 24-pin TSSOP (PW package).
 
 ---
 
@@ -35,9 +33,37 @@ hardware and only three MCU pins are needed.
 | `DGND` | — | Nucleo GND | — | |
 | `AGND` | — | Nucleo GND | — | tie to the same ground as DGND |
 
-> **Cross-check this list against the datasheet pinout.** It was written without a copy of
-> `ads1232.pdf` and has already been found short twice (`AVDD`, `CLKIN`). Every pin on the
-> part needs a defined state — none may be left floating.
+### Hard limits from SBAS350H — the ones that bit us
+
+| Spec | Value |
+|---|---|
+| **Full-scale input** | **±0.5 × VREF / Gain** — note the 0.5. At VREF=5 V, gain=128 that is **±19.53 mV**, and 1 count = **2.328 nV** |
+| **Common-mode range, gain 64/128** | **AGND + 1.5 V … AVDD − 1.5 V** → with AVDD=5 V that is **1.5 V to 3.5 V** |
+| Common-mode range, gain 1/2 | AGND − 0.1 V … AVDD + 0.1 V |
+| VREF | 1.5 V min, AVDD nom; V(REFP) ≥ V(REFN) + 1.5 V |
+| `CAP` pins 9–10 | **0.1 µF across them** — PGA bypass, not optional |
+| Digital VIH | 0.7 × DVDD (2.31 V at DVDD=3.3 V, so 3.3 V logic is fine) |
+| DRDY/DOUT | data shifts out MSB first **on the first rising SCLK edge** |
+
+**A ground-referenced input CANNOT be measured at gain 64 or 128.** The common mode must sit
+between 1.5 V and AVDD−1.5 V. This is the single most important constraint on the rig.
+
+### Full 24-pin TSSOP pinout
+
+| Pin | Name | Pin | Name |
+|---|---|---|---|
+| 1 | DVDD | 24 | DRDY/DOUT |
+| 2 | DGND | 23 | SCLK |
+| 3 | CLKIN/XTAL1 | 22 | PDWN |
+| 4 | XTAL2 | 21 | SPEED |
+| 5 | DGND | 20 | GAIN1 |
+| 6 | DGND | 19 | GAIN0 |
+| 7 | TEMP | 18 | AVDD |
+| 8 | A0 | 17 | AGND |
+| 9 | CAP | 16 | REFP |
+| 10 | CAP | 15 | REFN |
+| 11 | AINP1 | 14 | AINP2 |
+| 12 | AINN1 | 13 | AINN2 |
 
 > **The analog side is not optional.** `AVDD`, `AGND` and the `REFP`/`REFN` reference are
 > all required before any reading means anything. With `AVDD` unconnected, or no reference
