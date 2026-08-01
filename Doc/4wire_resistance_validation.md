@@ -196,3 +196,137 @@ unit produces **0 bytes and 0 symbols**.
 It is a validation tool, not product code, and it is not on the path to the ADS124S08
 driver (FW-01) — that is a different interface entirely. What transfers is this document,
 the bring-up order, and the diagnostics pattern.
+
+---
+
+## 7. Concern study — what could still go wrong on the Matrix Card
+
+Forward-looking risk list for when this is picked up again. Ordered by how much
+damage each does if missed. Numbers assume CD74HC4051 at ~100 Ω, R131 = 100 Ω,
+ADS124S08 at gain 32 with the internal 2.5 V reference.
+
+### 7.1 There is a usable current window, and it is narrower than it looks
+
+The excitation is squeezed from both ends. Too little and the sense common mode
+falls below the PGA floor; too much and the force loop runs out of compliance on
+the 3.3 V rail.
+
+```
+force loop  = 2 × R_mux + R131 + R_wire  ≈ 300 Ω + R_wire
+LO_SENSE    = I × (R_mux + R131)         ≈ I × 200 Ω
+CM floor    = 0.15 + 15.5 × |V_IN|       (ADS124S08, gain 32–128)
+```
+
+| I | HI_COM (1 Ω wire) | LO_SENSE | CM floor | verdict |
+|---|---|---|---|---|
+| 0.5 mA | 0.15 V | 0.100 V | 0.158 V | **common-mode FAIL** |
+| 1 mA | 0.30 V | 0.200 V | 0.165 V | OK, 35 mV margin |
+| 2 mA | 0.60 V | 0.400 V | 0.181 V | OK |
+| **5 mA** | **1.51 V** | **1.000 V** | **0.227 V** | **comfortable — target this** |
+| 8 mA | 2.41 V | 1.600 V | 0.274 V | OK, near compliance |
+| 10 mA | 3.01 V | 2.000 V | 0.305 V | **compliance FAIL** |
+
+**Target ~5 mA.** That is a good outcome of the CD74HC4051 swap — with the old
+CD4067B the ceiling was under 1 mA and this window did not exist.
+
+At 5 mA, gain 32: 1 count = **1.86 µΩ**, a 1 Ω wire gives 5 mV against a 78 mV
+full scale. Comfortable everywhere.
+
+### 7.2 Per-channel Rₒₙ spread narrows that window
+
+Every one of the 128 multiplexers has its own on-resistance, and HC Rₒₙ varies
+with signal level and part to part. If real Rₒₙ spans, say, 80–200 Ω, then:
+
+- worst-case loop = 2 × 200 + 100 = 500 Ω → at 5 mA, HI_COM = 2.5 V (tight)
+- best-case lift = 5 mA × 180 = 0.9 V (still fine)
+
+So compliance is the side that bites. **Characterise Rₒₙ across a sample of
+channels at bring-up, not just one.** A channel that works at pin 1 may be in
+compliance limiting at pin 200. This is the failure mode most likely to look
+like "some wires read wrong" rather than an obvious fault.
+
+### 7.3 Thermal EMF is the accuracy floor below ~1 mΩ
+
+The bench rig drifted ~25 µV over 80 s from contact resistance and junction
+EMFs. At 5 mA, 1 µV of thermal EMF = **200 µΩ of error**. A 256-line harness has
+hundreds of connector junctions, all dissimilar metals, all at slightly
+different temperatures.
+
+**Mitigation worth designing in now: current reversal.** The DAC8775 has a
+±24 mA range, so the excitation can be reversed. Thermal EMF does not reverse
+with the current, so averaging a forward and reverse measurement cancels it:
+
+```
+R = (V_forward − V_reverse) / (2 × I)
+```
+
+This costs one extra conversion per point and removes the single largest error
+term. The ADS124S08's `G_CHOP` bit cancels *its own* offset but does nothing
+about EMF out in the harness — the two are complementary, not alternatives.
+
+### 7.4 Sense-path leakage from 32 parallel multiplexers
+
+`HI_SENSE` is the common node of 32 CD74HC4051s, only one enabled. The other 31
+contribute off-channel leakage into a node that then sees the 4.99 kΩ series
+resistor. Even 1 µA of summed leakage is 5 mV of offset — far larger than the
+signal.
+
+It should largely cancel between the HI and LO legs (symmetric arrangement), and
+HC leakage at room temperature is nanoamps, but this is **unverified and worth
+measuring**: enable a sense bank with no excitation and see whether the
+differential reading is near zero. Leakage also rises sharply with temperature.
+
+### 7.5 Settling time
+
+The anti-alias network (R234/R235 4.99 k, C33 47 nF differential) gives:
+
+```
+τ = 2 × 4.99k × ~49 nF ≈ 0.5 ms
+24-bit settling ≈ 17τ ≈ 8.4 ms per point
+```
+
+Fine at 20 SPS (50 ms conversions) but it sets a floor. Resistance runs only on
+discovered connections (~256 points → ~2–3 s), so this is not a problem — but
+do not expect to speed it up by raising the data rate alone.
+
+### 7.6 Accuracy is DAC-limited until HW-04 is done
+
+| | as drawn | with HW-04 (LO_COM → spare AIN) |
+|---|---|---|
+| dominant error | DAC8775 current accuracy + tempco | R131 tolerance (0.01 %) + ADC gain error |
+| realistic accuracy | **~0.5 %** | **~0.05 %** |
+
+An order of magnitude, for one on-card net and two passives. The bench measured
+0.4 % with a **5 % divider** and no current calibration at all — that is what
+the ratiometric method buys.
+
+### 7.7 Two-segment I2C latency
+
+With U69 (ADC control) on BUFF1 and the sense enables on BUFF2, a single Kelvin
+measurement needs **three** segment switches — and each switch is itself an I2C
+write to U21 on the Control Card.
+
+**Moving U69 to BUFF2 @ 0x20 reduces that to one** (force on BUFF1, then sense
+enables *and* all CS toggling together on BUFF2). Worth doing when the address
+collision is fixed anyway.
+
+### 7.8 Open items this depends on
+
+| | |
+|---|---|
+| HW-04 | ratiometric current reference — §7.6 |
+| BU-07 | common-mode headroom — §7.1 |
+| BU-08 | do not copy the bench formula — full-scale conventions differ |
+| HW-09 | four card slots, five cards |
+| BU-01 | compliance sweep, now with a real target (~5 mA) |
+
+### 7.9 What would most reduce risk, in order
+
+1. **Measure CD74HC4051 Rₒₙ at 3.3 V** across several channels — it sets the
+   whole current window and nothing else can be finalised without it
+2. **Decide HW-04** — 10× accuracy for one net
+3. **Design in current reversal** — it is a firmware feature if the DAC is put in
+   a bipolar range, and it removes the dominant error term
+4. **Measure sense-path leakage** with no excitation — cheap test, potentially
+   large offset
+5. Fix the U69 address collision and move it to BUFF2 while you are there

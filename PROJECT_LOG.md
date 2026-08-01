@@ -32,8 +32,13 @@ ratiometric arrangement cancels the excitation. Write-up in
 
 **Next actions:** answer HW-04 — the bench result is now the concrete argument for it — and
 HW-09 (four card slots, five cards). Then the next schematic revision can pick up HW-02, HW-03,
-HW-06, HW-08 and HW-10 in one pass. New at bring-up: **BU-07**, common-mode headroom shrank when
-the muxes were improved, and it is violated below ~0.85 mA.
+HW-06, HW-08 and HW-10 in one pass.
+
+**Forward risk list** is in `Doc/4wire_resistance_validation.md` §7. Headline: the excitation
+has a **usable window of roughly 1–8 mA**, target **5 mA** — below that the sense common mode
+falls under the PGA floor (BU-07), above it the force loop runs out of compliance on 3.3 V.
+Highest-value next measurement is **CD74HC4051 Rₒₙ at 3.3 V**, because it sets that whole
+window and nothing downstream can be finalised without it.
 
 ---
 
@@ -76,6 +81,9 @@ the muxes were improved, and it is violated below ~0.85 mA.
 | BU-04 | JP1 (AINCOM → GND, Matrix sheet 9) must be fitted, or the ADC's analog common floats. Populate with a 0 Ω link by default and mark it on the assembly drawing. | 2026-07-27 |
 | BU-05 | ~~No differential RC filter~~ **DONE in Matrix rev 2** — R234/R235 4.99 k 0.1 % + C33 47 nF + C142/C143 4.7 nF fitted. | 2026-07-27 |
 | BU-07 | **Common-mode headroom is now marginal.** `LO_SENSE ≈ I × (R_LOmux + R131)`. With CD74HC4051 (~100 Ω) instead of CD4067B (~900 Ω) that is only ~0.20 V at 1 mA, against an ADS124S08 floor of 0.15 + 15.5·\|V_IN\| ≈ 0.166 V at gain 32 — and it is **violated below ~0.85 mA**. Improving the muxes made this worse, because R131 was sized when the mux drop did the lifting. Confirm HC4051 Rₒₙ at 3.3 V, then hold I ≥ 1 mA or raise R131. See Doc/4wire_resistance_validation.md §5.1. | 2026-08-01 |
+| BU-09 | **Characterise CD74HC4051 Rₒₙ at 3.3 V across several channels**, not one. Per-channel spread narrows the 1–8 mA window from the compliance side: at 200 Ω per mux the loop is 500 Ω and HI_COM hits 2.5 V at 5 mA. A channel fine at pin 1 may be in compliance limiting at pin 200 — and that presents as "some wires read wrong", not as an obvious fault. See Doc/4wire_resistance_validation.md §7.2. | 2026-08-01 |
+| BU-10 | **Thermal EMF is the accuracy floor below ~1 mΩ.** At 5 mA, 1 µV of junction EMF = 200 µΩ. A 256-line harness has hundreds of dissimilar-metal junctions. Mitigation to design in now: **current reversal** — the DAC8775 has a ±24 mA range, and R = (V_fwd − V_rev)/(2I) cancels EMF because it does not reverse with the current. The ADS124S08 `G_CHOP` bit cancels the ADC's own offset only; the two are complementary. See §7.3. | 2026-08-01 |
+| BU-11 | **Measure sense-path leakage.** `HI_SENSE` is the common node of 32 CD74HC4051s with 31 disabled; summed off-channel leakage into the 4.99 kΩ series resistor could be a large offset (1 µA → 5 mV). Should largely cancel between HI and LO legs, but unverified. Cheap test: enable a sense bank with no excitation and check the differential reads near zero. Rises sharply with temperature. See §7.4. | 2026-08-01 |
 | BU-08 | **Do not copy the bench resistance formula.** ADS1232 full scale is ±0.5·VREF/Gain, ADS124S08 is ±VREF/Gain. The bench divides by `2 × gain × 2²³`; the product must divide by `gain × 2²³`. Copy-pasting gives a silent 2× error. | 2026-08-01 |
 | BU-06 | Harness build must encode `ISO_HV_CARD_ENx` per card slot (card 1 → EN1 … card 4 → EN4). HV_Card-1 sheet 1 states this is done in the cable, not the schematic. | 2026-07-27 |
 
