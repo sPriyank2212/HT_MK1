@@ -19,11 +19,11 @@ ID prefixes: `HW-` schematic/hardware · `FW-` firmware · `BU-` bring-up/verify
 | Category | Count |
 |---|---|
 | Blocking — firmware cannot proceed | **0** |
-| Agreed, awaiting schematic edit | 5 |
+| Agreed, awaiting schematic edit | 3 |
 | Awaiting a decision | 2 |
-| Firmware work queued | 5 |
+| Firmware work queued | 4 |
 | Verify at bring-up | 7 |
-| Closed to date | 7 |
+| Closed to date | 10 |
 
 **The 4-wire method is now proven on real hardware**, not just on paper: the ADS1232 bench rig
 measured a 0.033 Ω resistor to **0.4 %** with no current calibration at all, because the
@@ -49,9 +49,7 @@ window and nothing downstream can be finalised without it.
 
 | ID | Item | Agreed |
 |---|---|---|
-| HW-02 | Rename the sense-mux enables. **U66** (0x23, currently `HI_EN1..16`) → `HI_SENSE_EN1..16`; **U67** (0x24, currently `LO_EN1..16`) → `LO_SENSE_EN1..16`. **Do not touch U69** (0x25) — that is the ADC control expander and its net names are already correct. The 100 kΩ pull-ups are already fitted and follow the renamed nets automatically. Re-run ERC afterwards. | 2026-07-29 |
 | HW-03 | Matrix card moves to the non-isolated domain: `+5V_ISO` → plain `+5V`, no isolators in the Matrix path. Follow-ons: the Matrix card's ADuM1205 (U103) becomes redundant once both sides share ground — DNF with links or keep as a buffer; and feed the slot raw `I2C3_SDA`/`I2C3_SCL` rather than `ISO_SDA3`/`ISO_SCL3`. | 2026-07-29 |
-| HW-06 | Merge `SPI1_SCLK` into `SPI1_SCK`. This is now the **only** genuinely unconnected net on the board — `SPI1_SCLK` has exactly one node, U68 pin 11 via R86. | 2026-07-27 |
 | HW-08 | HV card R3003 50 kΩ → 5 kΩ, giving 0.245 V at 500 V from the 10 M : 5 k divider. **The PDF in the repo still shows 50 kOhms** (HV_Card-1.pdf sheet 2), so either the change is not exported or HV_Card-1 is stale — re-issue and re-check. | 2026-07-20 |
 | HW-10 | Add pull resistors on the three ADC control lines that U69 drives, so they are defined while the MCP23017 is still in its power-on high-Z input state: `ADC_CS_1` and `ADC_RST_1` pulled **up** to +3V3 (CS deasserted, ADC out of reset), `Start_SYNC_1` pulled **down** to GND. Sheet 9 currently carries only 4.7 K (I2C and address strapping) and 47 Ω (series damping) — nothing on these nets. Same argument as the mux enables. | 2026-07-29 |
 
@@ -66,9 +64,9 @@ window and nothing downstream can be finalised without it.
 
 | ID | Item | Raised |
 |---|---|---|
-| FW-01 | New `drivers/ads124s08` — reset, device-ID read, PGA / data-rate config, internal 2.5 V reference, offset self-calibration. **CS, RESET and START/SYNC are driven over I2C via U69 (0x25), not by MCU GPIO**, so each conversion sequences I2C(CS low) → SPI → I2C(CS high). `DRDY_1` is likewise an expander *input*: no interrupt is possible and polling costs a bus round-trip, so use a timed wait derived from the configured data rate and read DRDY only as a sanity check. | 2026-07-27 |
+| ~~FW-01~~ | **DONE 2026-08-01** — `drivers/ads124s08` written, see CL-10. Original scope: new `drivers/ads124s08` — reset, device-ID read, PGA / data-rate config, internal 2.5 V reference, offset self-calibration. **CS, RESET and START/SYNC are driven over I2C via U69 (0x25), not by MCU GPIO**, so each conversion sequences I2C(CS low) → SPI → I2C(CS high). `DRDY_1` is likewise an expander *input*: no interrupt is possible and polling costs a bus round-trip, so use a timed wait derived from the configured data rate and read DRDY only as a sanity check. | 2026-07-27 |
 | FW-02 | Rewrite `test/kelvin.c` for 4-wire. It currently reads the AD7476 and hard-codes `KELVIN_FORCE_CURRENT_A = 0.010f`; both are wrong under the new scheme. Add PGA auto-ranging and system-offset subtraction. | 2026-07-27 |
-| FW-03 | `cards/matrix_card.c` — pin `MATRIX_EN_ALL_OFF` to `0xFFFF` (the `0x0000` branch is the unsafe polarity) and add sense-array bank control paired with the force array. | 2026-07-27 |
+| ~~FW-03~~ | **DONE 2026-08-01** — `matrix_card` reworked for the Matrix_Card 2 geometry: 8:1 muxes, 32 per bank, 3 select bits, 8 enable expanders across two buffered I2C segments, byte-swapped enable map, segment switching via `HI_S3`/`LO_S3`. AD7476 binding removed (rev 2 deleted U33). | 2026-07-27 |
 | FW-04 | Mux address lines come from MCP23017 U21 on I2C3, not MCU GPIO. Update `bsp/board.c`, add OLAT shadow registers, and consider 400 kHz — a 256 × 256 scan is roughly 70 s of pure bus time at 100 kHz versus 18 s at 400 kHz. | 2026-07-27 |
 | DOC-01 | `fw_status.txt` still describes the 2-wire path, 10 mA excitation, and Matrix U33 as the resistance ADC. Sync it with v1.4. | 2026-07-27 |
 
@@ -77,7 +75,7 @@ window and nothing downstream can be finalised without it.
 | ID | Item | Raised |
 |---|---|---|
 | BU-01 | Excitation current — run the 0 Ω loopback compliance sweep. 10 mA is unachievable through two CD4067B plus 100 Ω on a 3.3 V rail; expect roughly 1–3 mA. Capture the system offset at the same time. | 2026-07-27 |
-| BU-02 | SPI1 is shared by U33 and U68 — confirm one CPOL/CPHA suits both, and that `SPI1_CS` and `ADC_CS_1` are never asserted together (the AD7476 drives SDATA whenever its CS is low). | 2026-07-27 |
+| BU-02 | ~~SPI1 shared by U33 and U68~~ **Dissolved** — Matrix_Card 2 removed the AD7476, so SPI1 has exactly one device. Mode confirmed from SBAS660C: DIN latched on the SCLK falling edge, DOUT changes on the rising edge → **CPOL=0, CPHA=1 (mode 1)**. `SPI1_CS` on J101 now has no consumer. | 2026-07-27 |
 | BU-03 | U101 / U102 I2C addresses are set by strapping and not annotated, unlike the sheet-9 trio at 0x23 / 0x24 / 0x25. Scan and log. | 2026-07-27 |
 | BU-04 | JP1 (AINCOM → GND, Matrix sheet 9) must be fitted, or the ADC's analog common floats. Populate with a 0 Ω link by default and mark it on the assembly drawing. | 2026-07-27 |
 | BU-05 | ~~No differential RC filter~~ **DONE in Matrix rev 2** — R234/R235 4.99 k 0.1 % + C33 47 nF + C142/C143 4.7 nF fitted. | 2026-07-27 |
@@ -94,6 +92,9 @@ window and nothing downstream can be finalised without it.
 
 | ID | Closed | Item | Resolution |
 |---|---|---|---|
+| CL-10 | 2026-08-01 | FW-01 ADS124S08 driver | Written. io vtable for CS/RESET/START/DRDY (all on expander U69, not GPIO), SPI mode 1, internal 2.5 V reference explicitly switched ON (REFCON is 00 at reset — selecting the reference is not enough), device-ID check, SFOCAL, RDATA-based reads, timed conversion waits because polling DRDY costs an I2C round-trip. Compiles clean under -Wall -Wextra. |
+| CL-09 | 2026-08-01 | HW-06 one clock net | **Done in Matrix_Card 2** — `SPI1_SCLK` throughout including J101; `SPI1_SCK` no longer exists on the Matrix card. |
+| CL-08 | 2026-08-01 | HW-02 sense-enable net names | **Done in Matrix_Card 2** — `HI_SENSE_EN1..32` / `LO_SENSE_EN1..32` present and driven by U66/U67 (HI) and U107/U108 (LO) on BUFF2. |
 | CL-07 | 2026-07-29 | Mux enable pull direction — full verification requested | All 64 verified: sheet 2 R1–R32 and sheet 8 R33–R64, every one 100 kΩ to **+3V3**, none to GND. The +3V3 label sits at an identical (−31, +11) offset from the refdes on all 64 instances, and R1 and R33 were wire-traced explicitly to the +3V3 label. No resistor has a GND nearer than its +3V3. Sense muxes are U34–**U65** (32 of them). |
 | CL-06 | 2026-07-29 | `I2C_EN1` / `I2C_EN2` purpose | Leftover access GPIO from an earlier concept, deliberately kept on the connector as spare lines. No function. Firmware must not drive them; treat as reserved. |
 | CL-05 | 2026-07-29 | ADS124S08 control lines believed unrouted | **Not a gap — this finding was wrong.** U69 (MCP23017 at 0x25) drives all four from sheet 9: GPB0 → `ADC_RST_1`, GPB1 → `DRDY_1`, GPB2 → `ADC_CS_1`, GPB3 → `Start_SYNC_1`. They never needed to leave the card. No connector pins and no MCU pins are required; the pin-budget proposal is withdrawn. The error was checking whether the nets reached J101 and concluding they dead-ended, without checking whether they were driven locally on the same sheet. Firmware consequences are tracked in FW-01. |
@@ -105,6 +106,20 @@ window and nothing downstream can be finalised without it.
 ---
 
 ## Activity log
+
+### 2026-08-01 (later)
+- **FW-03 done** — `matrix_card` reworked for Matrix_Card 2. The previous version was
+  written against rev 6 and would have driven the wrong multiplexer on every call: 16 vs 32
+  muxes per bank, 4 vs 3 select bits, `>>4` vs `>>3` pin decode, one vs two I2C segments.
+- **FW-01 done** — `drivers/ads124s08`. Takes an io vtable for CS/RESET/START/DRDY because
+  all four are on expander U69 rather than GPIO; conversions are timed from the data rate
+  rather than polled on DRDY, since each poll would cost an I2C round-trip.
+- Confirmed from SBAS660C: **SPI mode 1**, and the internal 2.5 V reference is **off at
+  reset** — `REFSEL` selects it but `REFCON` must switch it on, an easy one to miss.
+- Closed **HW-02** and **HW-06** (both already fixed in Matrix_Card 2) and **BU-02**
+  (dissolved — rev 2 removed the AD7476, so SPI1 has one device).
+- `kelvin.c` now fails loudly instead of reading a chip that no longer exists on the card;
+  the FW-02 requirements are recorded in place.
 
 ### 2026-08-01
 - Built and validated a 4-wire Kelvin bench rig on a NUCLEO-G474RE with an **ADS1232** as a

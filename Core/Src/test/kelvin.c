@@ -59,16 +59,25 @@ HAL_StatusTypeDef Kelvin_MeasurePair(uint16_t hi_pin, uint16_t lo_pin,
 
   HAL_Delay(KELVIN_SETTLE_MS);
 
-  /* In impedance mode the Opto SPDT routes I_OUT and disconnects ADC_IN, so the
-   * front-end ADC cannot see the node - read HI_COM via the matrix ADC (U33). */
-  st = MatrixCard_ReadRaw(&g_matrix, &res->code);
-  if (st == HAL_OK)
-  {
-    res->volts = AD7476_CodeToVolts(res->code, g_matrix.vref);
-    /* R = Vsense / I, Vsense = Vadc / gain. */
-    res->resistance_ohm = (res->volts / KELVIN_INAMP_GAIN) / KELVIN_FORCE_CURRENT_A;
-    res->verdict = (res->resistance_ohm <= KELVIN_R_MAX_OHM) ? TEST_PASS : TEST_FAIL;
-  }
+  /* NOT IMPLEMENTED - awaiting FW-01 (drivers/ads124s08).
+   *
+   * This used to read HI_COM through the Matrix card's AD7476 (U33) and divide
+   * by a hard-coded 10 mA. Matrix_Card 2 deleted U33 entirely, and the
+   * measurement moved to a genuine 4-wire read of HI_SENSE - LO_SENSE on the
+   * ADS124S08. Failing loudly is better than returning a number produced by
+   * reading a chip that is no longer on the board.
+   *
+   * The rewrite (FW-02) needs, per Doc/4wire_resistance_validation.md:
+   *   - sense pairing on: MatrixCard_SetSensePaired(&g_matrix, 1)
+   *   - excitation ~5 mA (window is 1..8 mA; below 1 mA the sense common mode
+   *     falls under the ADS124S08 PGA floor, above 8 mA the force loop runs out
+   *     of compliance on 3.3 V)
+   *   - PGA auto-ranging, which also keeps the common mode legal on large R
+   *   - R = R_ref * code / (gain * 2^23)   <- NO factor of 2; that belongs to
+   *     the ADS1232 bench rig only (BU-08)
+   *   - current reversal to cancel thermal EMF (BU-10) */
+  st = HAL_ERROR;
+  res->verdict = TEST_ERROR;
 
 release:
   /* Stop forcing current and open the matrix. */

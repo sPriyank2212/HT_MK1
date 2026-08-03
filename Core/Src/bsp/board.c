@@ -70,11 +70,11 @@ static HAL_StatusTypeDef board_init_matrix(void)
   {
     return st;
   }
-  /* On-card AD7476 (U33 on SPI1) - CONTINUITY sense point. Resistance is read
-   * by the ADS124S08 across HI_SENSE/LO_SENSE (see FW-01). */
-  return MatrixCard_InitAdc(&g_matrix, BOARD_MATRIX_ADC_SPI,
-                            BOARD_MATRIX_ADC_CS_PORT, BOARD_MATRIX_ADC_CS_PIN,
-                            BOARD_VREF);
+  /* Matrix_Card 2 REMOVED the on-card AD7476 (U33). Continuity is now measured
+   * on the Control Card: HI_COM -> J101 -> IN -> Opto SPDT -> ADC_IN, which the
+   * front end already owns. Resistance will be read by the ADS124S08 across
+   * HI_SENSE/LO_SENSE once FW-01 lands. Nothing further to bind here. */
+  return st;
 }
 
 /**

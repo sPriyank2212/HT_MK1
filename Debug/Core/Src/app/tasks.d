@@ -34,8 +34,8 @@ Core/Src/app/tasks.o: ../Core/Src/app/tasks.c ../Core/Inc/app/tasks.h \
  ../Drivers/STM32G4xx_HAL_Driver/Inc/stm32g4xx_hal_uart_ex.h \
  ../Core/Inc/app/log.h ../Core/Inc/bsp/board.h ../Core/Inc/i2c.h \
  ../Core/Inc/main.h ../Core/Inc/spi.h ../Core/Inc/cards/matrix_card.h \
- ../Core/Inc/drivers/mcp23017.h ../Core/Inc/drivers/ad7476.h \
- ../Core/Inc/cards/control_frontend.h ../Core/Inc/drivers/dac8775.h \
+ ../Core/Inc/drivers/mcp23017.h ../Core/Inc/cards/control_frontend.h \
+ ../Core/Inc/drivers/dac8775.h ../Core/Inc/drivers/ad7476.h \
  ../Core/Inc/cards/hv_card.h ../Core/Inc/drivers/dac8830.h \
  ../Core/Inc/test/continuity.h ../Core/Inc/test/harness_test.h \
  ../Core/Inc/test/kelvin.h ../Core/Inc/test/insulation.h \
@@ -83,9 +83,9 @@ Core/Src/app/tasks.o: ../Core/Src/app/tasks.c ../Core/Inc/app/tasks.h \
 ../Core/Inc/spi.h:
 ../Core/Inc/cards/matrix_card.h:
 ../Core/Inc/drivers/mcp23017.h:
-../Core/Inc/drivers/ad7476.h:
 ../Core/Inc/cards/control_frontend.h:
 ../Core/Inc/drivers/dac8775.h:
+../Core/Inc/drivers/ad7476.h:
 ../Core/Inc/cards/hv_card.h:
 ../Core/Inc/drivers/dac8830.h:
 ../Core/Inc/test/continuity.h:

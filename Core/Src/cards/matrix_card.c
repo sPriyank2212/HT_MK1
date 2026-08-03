@@ -10,97 +10,69 @@
 #include "cards/matrix_card.h"
 
 /* -------------------------------------------------------------------------- */
-/* Pin -> (mux, channel) mapping                                              */
-/*                                                                            */
-/* Linear mapping: mux k (0..15) carries pins k*16+1 .. k*16+16, and within a  */
-/* mux, channel c selects the (c+1)-th of those pins. If the PCB routes the    */
-/* CD4067 I0..I15 inputs to harness pins in a different order, replace the     */
-/* body of matrix_map_pin() with a lookup table -- nothing else changes.       */
-/* The force and sense arrays share the select bus, so one mapping serves both.*/
+/* Helpers                                                                    */
 /* -------------------------------------------------------------------------- */
+
 /**
-  * @brief  Map a 1-based harness pin to its CD4067 mux and channel.
+  * @brief  Map a 1-based harness pin to its mux index and channel.
+  * @note   Linear layout for 8:1 parts: mux k carries pins k*8+1 .. k*8+8. If
+  *         the PCB routes I0..I7 to harness pins in a different order, replace
+  *         the body with a lookup table - nothing else changes. The force and
+  *         sense arrays share the select bus, so one mapping serves both.
   * @param  pin     : [in]  1-based harness pin (1..256).
-  * @param  mux     : [out] target mux index within the bank (0..15).
-  * @param  channel : [out] channel within that mux (0..15).
-  * @retval None
+  * @param  mux     : [out] mux index within the bank (0..31).
+  * @param  channel : [out] channel within that mux (0..7).
+  * @retval HAL_OK, or HAL_ERROR on a bad argument.
   */
-static void matrix_map_pin(uint16_t pin, uint8_t *mux, uint8_t *channel)
+HAL_StatusTypeDef MatrixCard_MapPin(uint16_t pin, uint8_t *mux, uint8_t *channel)
 {
-  uint16_t idx = (uint16_t)(pin - 1U);   /* 0..255 */
-  *mux     = (uint8_t)(idx >> 4);        /* 0..15  */
-  *channel = (uint8_t)(idx & 0x0FU);     /* 0..15  */
-}
+  uint16_t idx;
 
-/**
-  * @brief  Return the force-array enable expander for a bank.
-  * @param  m    : [in] matrix-card instance.
-  * @param  bank : [in] which bank to resolve.
-  * @retval Pointer to the bank's force MCP23017.
-  */
-static MCP23017_t *matrix_force_dev(MatrixCard_t *m, MatrixBank_t bank)
-{
-  return (bank == MATRIX_BANK_HI) ? &m->hi_en : &m->lo_en;
-}
-
-/**
-  * @brief  Return the sense-array enable expander for a bank.
-  * @param  m    : [in] matrix-card instance.
-  * @param  bank : [in] which bank to resolve.
-  * @retval Pointer to the bank's sense MCP23017.
-  */
-static MCP23017_t *matrix_sense_dev(MatrixCard_t *m, MatrixBank_t bank)
-{
-  return (bank == MATRIX_BANK_HI) ? &m->hi_sense_en : &m->lo_sense_en;
-}
-
-/**
-  * @brief  Drive one enable word onto a bank, on the force array and - when
-  *         pairing is enabled - the matching sense array.
-  * @note   The two arrays are always driven to the SAME word. They share the
-  *         select bus, so mirroring the enable is all that is needed to keep
-  *         the sense tap on the same harness pin the force path is driving.
-  * @param  m    : [in] matrix-card instance.
-  * @param  bank : [in] bank to drive.
-  * @param  word : [in] enable word (MATRIX_EN_ALL_OFF or MATRIX_EN_PATTERN).
-  * @retval HAL_OK on success, else the first failing status.
-  */
-static HAL_StatusTypeDef matrix_drive_enables(MatrixCard_t *m, MatrixBank_t bank, uint16_t word)
-{
-  HAL_StatusTypeDef st = MCP23017_WritePins(matrix_force_dev(m, bank), word);
-  if (st != HAL_OK)
+  if (mux == NULL || channel == NULL ||
+      pin < MATRIX_PIN_MIN || pin > MATRIX_PIN_MAX)
   {
-    return st;
+    return HAL_ERROR;
   }
-  if (m->sense_paired != 0U)
-  {
-    st = MCP23017_WritePins(matrix_sense_dev(m, bank), word);
-  }
-  return st;
+
+  idx      = (uint16_t)(pin - 1U);              /* 0..255 */
+  *mux     = (uint8_t)(idx >> MATRIX_MUX_SHIFT);/* 0..31  */
+  *channel = (uint8_t)(idx & MATRIX_CH_MASK);   /* 0..7   */
+  return HAL_OK;
 }
 
 /**
-  * @brief  Present a channel address on a bank's shared select nibble.
-  * @note   Updates the U21 shadow word and issues one 16-bit write. Because the
-  *         HI and LO nibbles share the same expander byte, the caller can stage
-  *         both nibbles and flush once - see MatrixCard_ConnectPair().
-  * @param  m       : [in] matrix-card instance.
-  * @param  bank    : [in] bank whose nibble to update.
-  * @param  channel : [in] 4-bit channel address (0..15).
-  * @retval None (the shadow is updated; the caller flushes).
+  * @brief  Enable word for one 16-enable expander, one-hot on @p n.
+  * @note   The schematic wires GPB0..7 to EN1..8 and GPA0..7 to EN9..16, so in
+  *         the driver's packing (bits 0..7 = GPA, 8..15 = GPB) enable n lands at
+  *         bit ((n-1)+8) % 16. E is active low, hence the inversion.
+  * @param  n : [in] 1-based enable within this expander (1..16).
+  * @retval Word with exactly that enable asserted, all others off.
   */
-static void matrix_stage_channel(MatrixCard_t *m, MatrixBank_t bank, uint8_t channel)
+static uint16_t matrix_en_word(uint8_t n)
 {
-  uint8_t  shift = (bank == MATRIX_BANK_HI) ? MATRIX_SEL_HI_SHIFT : MATRIX_SEL_LO_SHIFT;
-  uint16_t mask  = (uint16_t)(MATRIX_SEL_NIBBLE_MASK << shift);
+  uint8_t bit = (uint8_t)(((uint16_t)(n - 1U) + 8U) % 16U);
+  return (uint16_t)(MATRIX_EN_ALL_OFF & ~(1U << bit));
+}
 
-  m->sel_cache = (uint16_t)((m->sel_cache & ~mask) |
-                            (((uint16_t)channel & MATRIX_SEL_NIBBLE_MASK) << shift));
+/**
+  * @brief  Resolve a bank + array to its pair of enable expanders.
+  * @param  m     : [in] instance.
+  * @param  bank  : [in] HI or LO.
+  * @param  sense : [in] 0 = force array, non-zero = sense array.
+  * @retval Pointer to a 2-element MCP23017 array: [0] = EN1..16, [1] = EN17..32.
+  */
+static MCP23017_t *matrix_exp(MatrixCard_t *m, MatrixBank_t bank, uint8_t sense)
+{
+  if (sense != 0U)
+  {
+    return (bank == MATRIX_BANK_HI) ? m->hi_sns : m->lo_sns;
+  }
+  return (bank == MATRIX_BANK_HI) ? m->hi_en : m->lo_en;
 }
 
 /**
   * @brief  Push the staged select word out to U21.
-  * @param  m : [in] matrix-card instance.
+  * @param  m : [in] instance.
   * @retval HAL status from the expander write.
   */
 static HAL_StatusTypeDef matrix_flush_select(MatrixCard_t *m)
@@ -108,24 +80,121 @@ static HAL_StatusTypeDef matrix_flush_select(MatrixCard_t *m)
   return MCP23017_WritePins(&m->sel, m->sel_cache);
 }
 
+/**
+  * @brief  Stage a bank's 3-bit channel address into the U21 shadow word.
+  * @param  m       : [in] instance.
+  * @param  bank    : [in] bank whose address to set.
+  * @param  channel : [in] 0..7.
+  * @retval None (the caller flushes).
+  */
+static void matrix_stage_channel(MatrixCard_t *m, MatrixBank_t bank, uint8_t channel)
+{
+  uint8_t  shift = (bank == MATRIX_BANK_HI) ? MATRIX_SEL_HI_SHIFT : MATRIX_SEL_LO_SHIFT;
+  uint16_t mask  = (uint16_t)((uint16_t)MATRIX_CH_MASK << shift);
+
+  m->sel_cache = (uint16_t)((m->sel_cache & ~mask) |
+                            (((uint16_t)channel & MATRIX_CH_MASK) << shift));
+}
+
+/**
+  * @brief  Drive one enable word across a bank's two expanders.
+  * @note   Callers must have selected the right segment first.
+  * @param  m     : [in] instance.
+  * @param  bank  : [in] bank to drive.
+  * @param  sense : [in] 0 = force array, non-zero = sense array.
+  * @param  mux   : [in] 0..31, or 0xFF for "all off".
+  * @retval HAL_OK on success, else the first failing status.
+  */
+static HAL_StatusTypeDef matrix_drive_bank(MatrixCard_t *m, MatrixBank_t bank,
+                                           uint8_t sense, uint8_t mux)
+{
+  MCP23017_t *exp = matrix_exp(m, bank, sense);
+  uint16_t w0 = MATRIX_EN_ALL_OFF;
+  uint16_t w1 = MATRIX_EN_ALL_OFF;
+  HAL_StatusTypeDef st;
+
+  if (mux != 0xFFU)
+  {
+    uint8_t n = (uint8_t)((mux % MATRIX_EN_PER_EXPANDER) + 1U);
+    if (mux < MATRIX_EN_PER_EXPANDER) { w0 = matrix_en_word(n); }
+    else                              { w1 = matrix_en_word(n); }
+  }
+
+  st = MCP23017_WritePins(&exp[0], w0);
+  if (st != HAL_OK)
+  {
+    return st;
+  }
+  return MCP23017_WritePins(&exp[1], w1);
+}
+
 /* -------------------------------------------------------------------------- */
 
 /**
-  * @brief  Initialise the matrix card and force all muxes open.
-  * @note   Brings up U21 (select) plus the four enable expanders, then calls
-  *         MatrixCard_AllOff(). The explicit all-off is essential: MCP23017_Init
-  *         leaves outputs low, which for active-low enables would otherwise turn
-  *         every mux ON. Sense pairing starts OFF; callers that need 4-wire
-  *         behaviour turn it on with MatrixCard_SetSensePaired().
-  * @param  m    : [out] matrix-card instance to populate; must be non-NULL.
-  * @param  hi2c : [in]  I2C handle shared by U21 and the Matrix expanders.
-  * @retval HAL_OK    card initialised and all muxes open.
-  * @retval HAL_ERROR @p m or @p hi2c is NULL.
-  * @retval other     first failing HAL status from expander bring-up.
+  * @brief  Enable exactly one I2C segment.
+  * @note   The two NTS0102DP output enables are HI_S3 (BUFF1) and LO_S3 (BUFF2),
+  *         both bits in the U21 word. Only one may be on at a time - with both
+  *         enabled the two address spaces overlap on the same wires. Returns
+  *         immediately if the segment is already selected, so callers can invoke
+  *         it freely without paying for redundant I2C traffic.
+  * @param  m   : [in] instance; must be non-NULL.
+  * @param  seg : [in] segment to enable.
+  * @retval HAL_OK on success, HAL_ERROR if @p m is NULL, else propagated status.
+  */
+HAL_StatusTypeDef MatrixCard_SelectSegment(MatrixCard_t *m, MatrixSeg_t seg)
+{
+  uint16_t b1, b2;
+
+  if (m == NULL)
+  {
+    return HAL_ERROR;
+  }
+  if (m->seg == seg)
+  {
+    return HAL_OK;
+  }
+
+  b1 = (uint16_t)(1U << MATRIX_SEL_BUFF1_OE_BIT);
+  b2 = (uint16_t)(1U << MATRIX_SEL_BUFF2_OE_BIT);
+
+  m->sel_cache &= (uint16_t)~(b1 | b2);
+#if (MATRIX_SEG_OE_ACTIVE_HIGH != 0)
+  m->sel_cache |= (seg == MATRIX_SEG_FORCE) ? b1 : b2;
+#else
+  m->sel_cache |= (seg == MATRIX_SEG_FORCE) ? b2 : b1;
+#endif
+
+  if (matrix_flush_select(m) != HAL_OK)
+  {
+    return HAL_ERROR;
+  }
+  m->seg = seg;
+  return HAL_OK;
+}
+
+/**
+  * @brief  Bring up U21 and all eight enable expanders, and open every mux.
+  * @note   Order matters twice over. U21 comes first because nothing else is
+  *         reachable until a segment is enabled. Within each expander the output
+  *         latch is written 0xFF BEFORE the direction is set to output, so no
+  *         mux is ever briefly enabled - MCP23017_Init leaves outputs low, which
+  *         for active-low enables would close every path on the card.
+  * @param  m    : [out] instance; must be non-NULL.
+  * @param  hi2c : [in]  shared I2C bus; must be non-NULL.
+  * @retval HAL_OK on success, HAL_ERROR on a NULL argument, else propagated.
   */
 HAL_StatusTypeDef MatrixCard_Init(MatrixCard_t *m, I2C_HandleTypeDef *hi2c)
 {
+  static const uint8_t force_straps[2][MATRIX_EXP_PER_BANK] = {
+    { MATRIX_HI_EN_LO_STRAP, MATRIX_HI_EN_HI_STRAP },
+    { MATRIX_LO_EN_LO_STRAP, MATRIX_LO_EN_HI_STRAP }
+  };
+  static const uint8_t sense_straps[2][MATRIX_EXP_PER_BANK] = {
+    { MATRIX_HI_SNS_LO_STRAP, MATRIX_HI_SNS_HI_STRAP },
+    { MATRIX_LO_SNS_LO_STRAP, MATRIX_LO_SNS_HI_STRAP }
+  };
   HAL_StatusTypeDef st;
+  uint8_t b, i;
 
   if (m == NULL || hi2c == NULL)
   {
@@ -133,64 +202,81 @@ HAL_StatusTypeDef MatrixCard_Init(MatrixCard_t *m, I2C_HandleTypeDef *hi2c)
   }
 
   m->sense_paired = 0U;
-  m->sel_cache    = MATRIX_SEL_SPARE_DEFAULT;   /* channel 0 on both banks */
+  m->sel_cache    = 0U;          /* channel 0 both banks, both segments off */
+  m->seg          = MATRIX_SEG_FORCE;
 
+  /* U21 sits in front of the translators, so it is reachable regardless. */
   st = MCP23017_Init(&m->sel, hi2c, MATRIX_SEL_MCP_STRAP);
   if (st != HAL_OK)
   {
     return st;
   }
-  st = MCP23017_Init(&m->hi_en, hi2c, MATRIX_HI_MCP_STRAP);
-  if (st != HAL_OK)
-  {
-    return st;
-  }
-  st = MCP23017_Init(&m->lo_en, hi2c, MATRIX_LO_MCP_STRAP);
-  if (st != HAL_OK)
-  {
-    return st;
-  }
-  st = MCP23017_Init(&m->hi_sense_en, hi2c, MATRIX_HI_SENSE_MCP_STRAP);
-  if (st != HAL_OK)
-  {
-    return st;
-  }
-  st = MCP23017_Init(&m->lo_sense_en, hi2c, MATRIX_LO_SENSE_MCP_STRAP);
+  st = matrix_flush_select(m);   /* both segments disabled, channel 0 */
   if (st != HAL_OK)
   {
     return st;
   }
 
-  /* Defined default channel (0) on both banks. */
-  st = matrix_flush_select(m);
+  /* Force segment. */
+  m->seg = (MatrixSeg_t)0xFF;    /* force SelectSegment to act */
+  st = MatrixCard_SelectSegment(m, MATRIX_SEG_FORCE);
   if (st != HAL_OK)
   {
     return st;
+  }
+  for (b = 0U; b < 2U; b++)
+  {
+    MCP23017_t *exp = (b == 0U) ? m->hi_en : m->lo_en;
+    for (i = 0U; i < MATRIX_EXP_PER_BANK; i++)
+    {
+      st = MCP23017_Init(&exp[i], hi2c, force_straps[b][i]);
+      if (st != HAL_OK)
+      {
+        return st;
+      }
+      st = MCP23017_WritePins(&exp[i], MATRIX_EN_ALL_OFF);
+      if (st != HAL_OK)
+      {
+        return st;
+      }
+    }
   }
 
-  /* MCP23017_Init leaves outputs low; for active-low enables that would turn
-   * every mux ON. Force the proper all-open state on BOTH arrays immediately,
-   * regardless of the pairing setting. */
-  st = MCP23017_WritePins(&m->hi_sense_en, MATRIX_EN_ALL_OFF);
+  /* Sense segment. */
+  st = MatrixCard_SelectSegment(m, MATRIX_SEG_SENSE);
   if (st != HAL_OK)
   {
     return st;
   }
-  st = MCP23017_WritePins(&m->lo_sense_en, MATRIX_EN_ALL_OFF);
-  if (st != HAL_OK)
+  for (b = 0U; b < 2U; b++)
   {
-    return st;
+    MCP23017_t *exp = (b == 0U) ? m->hi_sns : m->lo_sns;
+    for (i = 0U; i < MATRIX_EXP_PER_BANK; i++)
+    {
+      st = MCP23017_Init(&exp[i], hi2c, sense_straps[b][i]);
+      if (st != HAL_OK)
+      {
+        return st;
+      }
+      st = MCP23017_WritePins(&exp[i], MATRIX_EN_ALL_OFF);
+      if (st != HAL_OK)
+      {
+        return st;
+      }
+    }
   }
-  return MatrixCard_AllOff(m);
+
+  /* Leave the force segment selected - the common case. */
+  return MatrixCard_SelectSegment(m, MATRIX_SEG_FORCE);
 }
 
 /**
   * @brief  Enable or disable mirroring of bank enables onto the sense array.
-  * @note   Turning pairing OFF also opens both sense banks, so the sense taps
+  * @note   Turning pairing off also opens both sense banks, so the sense taps
   *         are never left closed behind the caller's back.
-  * @param  m  : [in] matrix-card instance; must be non-NULL.
-  * @param  on : [in] 0 = force array only, non-zero = force + sense.
-  * @retval HAL_OK on success, HAL_ERROR if @p m is NULL, else propagated status.
+  * @param  m  : [in] instance; must be non-NULL.
+  * @param  on : [in] 0 = force only, non-zero = force + sense.
+  * @retval HAL_OK on success, HAL_ERROR if @p m is NULL, else propagated.
   */
 HAL_StatusTypeDef MatrixCard_SetSensePaired(MatrixCard_t *m, uint8_t on)
 {
@@ -203,12 +289,22 @@ HAL_StatusTypeDef MatrixCard_SetSensePaired(MatrixCard_t *m, uint8_t on)
 
   if (on == 0U)
   {
-    st = MCP23017_WritePins(&m->hi_sense_en, MATRIX_EN_ALL_OFF);
+    st = MatrixCard_SelectSegment(m, MATRIX_SEG_SENSE);
     if (st != HAL_OK)
     {
       return st;
     }
-    st = MCP23017_WritePins(&m->lo_sense_en, MATRIX_EN_ALL_OFF);
+    st = matrix_drive_bank(m, MATRIX_BANK_HI, 1U, 0xFFU);
+    if (st != HAL_OK)
+    {
+      return st;
+    }
+    st = matrix_drive_bank(m, MATRIX_BANK_LO, 1U, 0xFFU);
+    if (st != HAL_OK)
+    {
+      return st;
+    }
+    st = MatrixCard_SelectSegment(m, MATRIX_SEG_FORCE);
     if (st != HAL_OK)
     {
       return st;
@@ -220,26 +316,48 @@ HAL_StatusTypeDef MatrixCard_SetSensePaired(MatrixCard_t *m, uint8_t on)
 }
 
 /**
-  * @brief  Disable every mux on one bank (drive the all-open enable word).
-  * @param  m    : [in] matrix-card instance; must be non-NULL.
-  * @param  bank : [in] bank to turn off (HI or LO).
-  * @retval HAL_OK on success, HAL_ERROR if @p m is NULL, else propagated status.
+  * @brief  Open every mux on one bank (force, plus sense when paired).
+  * @param  m    : [in] instance; must be non-NULL.
+  * @param  bank : [in] bank to open.
+  * @retval HAL_OK on success, HAL_ERROR if @p m is NULL, else propagated.
   */
 HAL_StatusTypeDef MatrixCard_BankOff(MatrixCard_t *m, MatrixBank_t bank)
 {
+  HAL_StatusTypeDef st;
+
   if (m == NULL)
   {
     return HAL_ERROR;
   }
-  return matrix_drive_enables(m, bank, MATRIX_EN_ALL_OFF);
+
+  st = MatrixCard_SelectSegment(m, MATRIX_SEG_FORCE);
+  if (st != HAL_OK)
+  {
+    return st;
+  }
+  st = matrix_drive_bank(m, bank, 0U, 0xFFU);
+  if (st != HAL_OK || m->sense_paired == 0U)
+  {
+    return st;
+  }
+
+  st = MatrixCard_SelectSegment(m, MATRIX_SEG_SENSE);
+  if (st != HAL_OK)
+  {
+    return st;
+  }
+  st = matrix_drive_bank(m, bank, 1U, 0xFFU);
+  if (st != HAL_OK)
+  {
+    return st;
+  }
+  return MatrixCard_SelectSegment(m, MATRIX_SEG_FORCE);
 }
 
 /**
-  * @brief  Disable every mux on both banks (fully open the matrix).
-  * @param  m : [in] matrix-card instance; must be non-NULL.
-  * @retval HAL_OK    both banks turned off.
-  * @retval HAL_ERROR @p m is NULL.
-  * @retval other     first failing HAL status from MatrixCard_BankOff().
+  * @brief  Open every mux on both banks, both arrays.
+  * @param  m : [in] instance; must be non-NULL.
+  * @retval HAL_OK on success, HAL_ERROR if @p m is NULL, else propagated.
   */
 HAL_StatusTypeDef MatrixCard_AllOff(MatrixCard_t *m)
 {
@@ -258,31 +376,32 @@ HAL_StatusTypeDef MatrixCard_AllOff(MatrixCard_t *m)
 }
 
 /**
-  * @brief  Route one harness pin through to a bank's common node.
-  * @note   Break-before-make: the bank is opened, the shared select nibble is
-  *         driven via U21, and only then is the one target mux enabled. This
-  *         stops the previously-enabled mux from briefly seeing the new channel
-  *         address. When sense pairing is on, the matching sense mux follows.
-  * @param  m    : [in] matrix-card instance; must be non-NULL.
-  * @param  bank : [in] bank to route through (HI or LO).
-  * @param  pin  : [in] 1-based harness pin (MATRIX_PIN_MIN..MATRIX_PIN_MAX).
-  * @retval HAL_OK    pin routed through the bank.
-  * @retval HAL_ERROR @p m is NULL or @p pin is out of range.
-  * @retval other     first failing HAL status from the expander writes.
+  * @brief  Connect one harness pin to the given bank's common bus.
+  * @note   Break-before-make. The sense array, when paired, is driven to the
+  *         same mux index - both arrays share the channel-address bus, so
+  *         mirroring the enable is all that is needed to keep the sense tap on
+  *         the pin the force path is driving.
+  * @param  m    : [in] instance; must be non-NULL.
+  * @param  bank : [in] bank to route through.
+  * @param  pin  : [in] 1-based harness pin (1..256).
+  * @retval HAL_OK on success, HAL_ERROR on a bad argument, else propagated.
   */
 HAL_StatusTypeDef MatrixCard_SelectPin(MatrixCard_t *m, MatrixBank_t bank, uint16_t pin)
 {
   uint8_t mux, channel;
   HAL_StatusTypeDef st;
 
-  if (m == NULL || pin < MATRIX_PIN_MIN || pin > MATRIX_PIN_MAX)
+  if (m == NULL || MatrixCard_MapPin(pin, &mux, &channel) != HAL_OK)
   {
     return HAL_ERROR;
   }
 
-  matrix_map_pin(pin, &mux, &channel);
-
-  st = matrix_drive_enables(m, bank, MATRIX_EN_ALL_OFF);
+  st = MatrixCard_SelectSegment(m, MATRIX_SEG_FORCE);
+  if (st != HAL_OK)
+  {
+    return st;
+  }
+  st = matrix_drive_bank(m, bank, 0U, 0xFFU);      /* break */
   if (st != HAL_OK)
   {
     return st;
@@ -295,20 +414,34 @@ HAL_StatusTypeDef MatrixCard_SelectPin(MatrixCard_t *m, MatrixBank_t bank, uint1
     return st;
   }
 
-  return matrix_drive_enables(m, bank, MATRIX_EN_PATTERN(mux));
+  st = matrix_drive_bank(m, bank, 0U, mux);        /* make */
+  if (st != HAL_OK || m->sense_paired == 0U)
+  {
+    return st;
+  }
+
+  st = MatrixCard_SelectSegment(m, MATRIX_SEG_SENSE);
+  if (st != HAL_OK)
+  {
+    return st;
+  }
+  st = matrix_drive_bank(m, bank, 1U, mux);
+  if (st != HAL_OK)
+  {
+    return st;
+  }
+  return MatrixCard_SelectSegment(m, MATRIX_SEG_FORCE);
 }
 
 /**
-  * @brief  Route a HI pin and a LO pin so a wire pair is bridged.
-  * @note   Both channel addresses live in one U21 byte, so this stages both
-  *         nibbles and flushes once - one I2C write instead of two. Both banks
-  *         are opened first, so the sequence is still break-before-make.
-  * @param  m      : [in] matrix-card instance; must be non-NULL.
-  * @param  hi_pin : [in] 1-based harness pin to route on the HI bank.
-  * @param  lo_pin : [in] 1-based harness pin to route on the LO bank.
-  * @retval HAL_OK    both pins routed.
-  * @retval HAL_ERROR @p m is NULL or either pin is out of range.
-  * @retval other     first failing HAL status from the expander writes.
+  * @brief  Connect a HI pin and a LO pin.
+  * @note   Both channel addresses live in the same U21 byte, so they are staged
+  *         and flushed once. With sense pairing on this costs two segment
+  *         switches for the pair rather than four for two SelectPin calls.
+  * @param  m      : [in] instance; must be non-NULL.
+  * @param  hi_pin : [in] 1-based harness pin on the HI bank.
+  * @param  lo_pin : [in] 1-based harness pin on the LO bank.
+  * @retval HAL_OK on success, HAL_ERROR on a bad argument, else propagated.
   */
 HAL_StatusTypeDef MatrixCard_ConnectPair(MatrixCard_t *m, uint16_t hi_pin, uint16_t lo_pin)
 {
@@ -316,16 +449,23 @@ HAL_StatusTypeDef MatrixCard_ConnectPair(MatrixCard_t *m, uint16_t hi_pin, uint1
   HAL_StatusTypeDef st;
 
   if (m == NULL ||
-      hi_pin < MATRIX_PIN_MIN || hi_pin > MATRIX_PIN_MAX ||
-      lo_pin < MATRIX_PIN_MIN || lo_pin > MATRIX_PIN_MAX)
+      MatrixCard_MapPin(hi_pin, &hi_mux, &hi_ch) != HAL_OK ||
+      MatrixCard_MapPin(lo_pin, &lo_mux, &lo_ch) != HAL_OK)
   {
     return HAL_ERROR;
   }
 
-  matrix_map_pin(hi_pin, &hi_mux, &hi_ch);
-  matrix_map_pin(lo_pin, &lo_mux, &lo_ch);
-
-  st = MatrixCard_AllOff(m);
+  st = MatrixCard_SelectSegment(m, MATRIX_SEG_FORCE);
+  if (st != HAL_OK)
+  {
+    return st;
+  }
+  st = matrix_drive_bank(m, MATRIX_BANK_HI, 0U, 0xFFU);
+  if (st != HAL_OK)
+  {
+    return st;
+  }
+  st = matrix_drive_bank(m, MATRIX_BANK_LO, 0U, 0xFFU);
   if (st != HAL_OK)
   {
     return st;
@@ -339,57 +479,31 @@ HAL_StatusTypeDef MatrixCard_ConnectPair(MatrixCard_t *m, uint16_t hi_pin, uint1
     return st;
   }
 
-  st = matrix_drive_enables(m, MATRIX_BANK_HI, MATRIX_EN_PATTERN(hi_mux));
+  st = matrix_drive_bank(m, MATRIX_BANK_HI, 0U, hi_mux);
   if (st != HAL_OK)
   {
     return st;
   }
-  return matrix_drive_enables(m, MATRIX_BANK_LO, MATRIX_EN_PATTERN(lo_mux));
-}
-
-/* -------------------------------------------------------------------------- */
-/* On-card AD7476 (U33 on SPI1, reads HI_COM) - CONTINUITY measurement.        */
-/* Resistance now goes through the ADS124S08 across HI_SENSE/LO_SENSE.         */
-/* -------------------------------------------------------------------------- */
-
-/**
-  * @brief  Bind the on-card continuity ADC (U33) and record its reference.
-  * @param  m       : [in] matrix-card instance; must be non-NULL.
-  * @param  spi     : [in] SPI handle for the on-card AD7476 (SPI1).
-  * @param  cs_port : [in] GPIO port of the ADC chip-select.
-  * @param  cs_pin  : [in] GPIO pin mask of the ADC chip-select.
-  * @param  vref    : [in] ADC reference voltage, in volts.
-  * @retval HAL_OK on success, HAL_ERROR if @p m is NULL, else AD7476_Init() status.
-  */
-HAL_StatusTypeDef MatrixCard_InitAdc(MatrixCard_t *m, SPI_HandleTypeDef *spi,
-                                     GPIO_TypeDef *cs_port, uint16_t cs_pin, float vref)
-{
-  if (m == NULL)
+  st = matrix_drive_bank(m, MATRIX_BANK_LO, 0U, lo_mux);
+  if (st != HAL_OK || m->sense_paired == 0U)
   {
-    return HAL_ERROR;
+    return st;
   }
-  m->vref = vref;
-  return AD7476_Init(&m->adc, spi, cs_port, cs_pin);
-}
 
-/**
-  * @brief  Read the on-card sense node (HI_COM) as a raw ADC code.
-  * @param  m    : [in]  matrix-card instance; must be non-NULL.
-  * @param  code : [out] destination for the raw sense code.
-  * @retval HAL_OK on success, HAL_ERROR if @p m is NULL, else propagated status.
-  */
-HAL_StatusTypeDef MatrixCard_ReadRaw(MatrixCard_t *m, uint16_t *code)
-{
-  return (m == NULL) ? HAL_ERROR : AD7476_ReadRaw(&m->adc, code);
-}
-
-/**
-  * @brief  Read the on-card sense node (HI_COM) scaled to volts.
-  * @param  m     : [in]  matrix-card instance; must be non-NULL.
-  * @param  volts : [out] destination for the sense voltage, in volts.
-  * @retval HAL_OK on success, HAL_ERROR if @p m is NULL, else propagated status.
-  */
-HAL_StatusTypeDef MatrixCard_ReadVolts(MatrixCard_t *m, float *volts)
-{
-  return (m == NULL) ? HAL_ERROR : AD7476_ReadVolts(&m->adc, m->vref, volts);
+  st = MatrixCard_SelectSegment(m, MATRIX_SEG_SENSE);
+  if (st != HAL_OK)
+  {
+    return st;
+  }
+  st = matrix_drive_bank(m, MATRIX_BANK_HI, 1U, hi_mux);
+  if (st != HAL_OK)
+  {
+    return st;
+  }
+  st = matrix_drive_bank(m, MATRIX_BANK_LO, 1U, lo_mux);
+  if (st != HAL_OK)
+  {
+    return st;
+  }
+  return MatrixCard_SelectSegment(m, MATRIX_SEG_FORCE);
 }

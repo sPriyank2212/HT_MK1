@@ -34,8 +34,8 @@ Core/Src/bsp/board.o: ../Core/Src/bsp/board.c ../Core/Inc/bsp/board.h \
  ../Drivers/STM32G4xx_HAL_Driver/Inc/stm32g4xx_hal_uart_ex.h \
  ../Core/Inc/i2c.h ../Core/Inc/main.h ../Core/Inc/spi.h \
  ../Core/Inc/cards/matrix_card.h ../Core/Inc/drivers/mcp23017.h \
- ../Core/Inc/drivers/ad7476.h ../Core/Inc/cards/control_frontend.h \
- ../Core/Inc/drivers/dac8775.h ../Core/Inc/cards/hv_card.h \
+ ../Core/Inc/cards/control_frontend.h ../Core/Inc/drivers/dac8775.h \
+ ../Core/Inc/drivers/ad7476.h ../Core/Inc/cards/hv_card.h \
  ../Core/Inc/drivers/dac8830.h
 ../Core/Inc/bsp/board.h:
 ../Core/Inc/main.h:
@@ -77,8 +77,8 @@ Core/Src/bsp/board.o: ../Core/Src/bsp/board.c ../Core/Inc/bsp/board.h \
 ../Core/Inc/spi.h:
 ../Core/Inc/cards/matrix_card.h:
 ../Core/Inc/drivers/mcp23017.h:
-../Core/Inc/drivers/ad7476.h:
 ../Core/Inc/cards/control_frontend.h:
 ../Core/Inc/drivers/dac8775.h:
+../Core/Inc/drivers/ad7476.h:
 ../Core/Inc/cards/hv_card.h:
 ../Core/Inc/drivers/dac8830.h:
