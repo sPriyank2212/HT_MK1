@@ -5,10 +5,8 @@ each working day.
 
 - **Status snapshot** and **Open items** are live — edit them in place as things move.
 - **Closed items** and **Activity log** are append-only. Newest day first.
-- This file tracks *tasks and decisions*. Design detail lives elsewhere:
-  - `fw_status.txt` — firmware state, bus map, driver stack
-  - `Doc/Harness_Tester_Operation_Document_v1.4.docx` — system operation, test procedures
-  - `Doc/*.pdf` — the schematics, which win over any prose
+- This file tracks *tasks and decisions*. See [README.md](README.md) for the document map —
+  there are four living docs and this is the entry point to them.
 
 ID prefixes: `HW-` schematic/hardware · `FW-` firmware · `BU-` bring-up/verify · `DOC-` documentation.
 
@@ -21,7 +19,7 @@ ID prefixes: `HW-` schematic/hardware · `FW-` firmware · `BU-` bring-up/verify
 | Blocking — firmware cannot proceed | **0** |
 | Agreed, awaiting schematic edit | 3 |
 | Awaiting a decision | 2 |
-| Firmware work queued | 4 |
+| Firmware work queued | 5 |
 | Verify at bring-up | 7 |
 | Closed to date | 10 |
 
@@ -68,6 +66,7 @@ window and nothing downstream can be finalised without it.
 | FW-02 | Rewrite `test/kelvin.c` for 4-wire. It currently reads the AD7476 and hard-codes `KELVIN_FORCE_CURRENT_A = 0.010f`; both are wrong under the new scheme. Add PGA auto-ranging and system-offset subtraction. | 2026-07-27 |
 | ~~FW-03~~ | **DONE 2026-08-01** — `matrix_card` reworked for the Matrix_Card 2 geometry: 8:1 muxes, 32 per bank, 3 select bits, 8 enable expanders across two buffered I2C segments, byte-swapped enable map, segment switching via `HI_S3`/`LO_S3`. AD7476 binding removed (rev 2 deleted U33). | 2026-07-27 |
 | FW-04 | Mux address lines come from MCP23017 U21 on I2C3, not MCU GPIO. Update `bsp/board.c`, add OLAT shadow registers, and consider 400 kHz — a 256 × 256 scan is roughly 70 s of pure bus time at 100 kHz versus 18 s at 400 kHz. | 2026-07-27 |
+| FW-05 | **Implement the instrument side of the GUI protocol** defined in `Doc/GUI_development_brief.md` §3 — line-based ASCII over the VCP at 115200. Replaces the current single-keystroke bring-up console (`c`/`k`/`i`/`s`/`f`/`r`). Needs: command parser, `<` replies with 2 s worst-case latency, `!` result streaming during a run, and `!STATE`/`!FIXTURE`/`!HV`/`!SAFE` events. The GUI is being built against this contract, so changes to it must be agreed, not made. | 2026-08-01 |
 | DOC-01 | `fw_status.txt` still describes the 2-wire path, 10 mA excitation, and Matrix U33 as the resistance ADC. Sync it with v1.4. | 2026-07-27 |
 
 ### Verify at bring-up
@@ -80,7 +79,7 @@ window and nothing downstream can be finalised without it.
 | BU-04 | JP1 (AINCOM → GND, Matrix sheet 9) must be fitted, or the ADC's analog common floats. Populate with a 0 Ω link by default and mark it on the assembly drawing. | 2026-07-27 |
 | BU-05 | ~~No differential RC filter~~ **DONE in Matrix rev 2** — R234/R235 4.99 k 0.1 % + C33 47 nF + C142/C143 4.7 nF fitted. | 2026-07-27 |
 | BU-07 | **Common-mode: hold the excitation at ≥1 mA.** `LO_SENSE = I × (R_LOmux + R131) = I × 200 Ω` against an ADS124S08 floor of `0.15 + 15.5·\|V_IN\|`. At 1 mA that is 0.200 V vs 0.165 V (+35 mV); at the 5 mA target it is 1.000 V vs 0.227 V (+772 mV) — comfortable, **nothing to fix in hardware**. Revised 2026-08-01: the earlier "marginal" framing overstated it. The real caveat is that the floor grows with the measured resistance, capping R at ~11 Ω at 5 mA on gain 32 — handled by PGA auto-ranging, since gain ≤16 uses a much lower floor. See Doc/4wire_resistance_validation.md §5.1. | 2026-08-01 |
-| BU-09 | **Characterise CD74HC4051 Rₒₙ at 3.3 V across several channels**, not one. Per-channel spread narrows the 1–8 mA window from the compliance side: at 200 Ω per mux the loop is 500 Ω and HI_COM hits 2.5 V at 5 mA. A channel fine at pin 1 may be in compliance limiting at pin 200 — and that presents as "some wires read wrong", not as an obvious fault. See Doc/4wire_resistance_validation.md §7.2. | 2026-08-01 |
+| BU-09 | **Measure CD74HC4051 Rₒₙ at 3.3 V** — reduced 2026-08-01 after reading SCHS122O. Channel-to-channel spread (ΔrON) is **10 Ω max**, so the "some wires read wrong" concern is largely closed; a sanity check across a few channels is enough. What remains is that rON is characterised only from **VCC = 4.5 V** (typ 70 Ω, max 160 Ω at 25 °C, 200 Ω at 85 °C) and the card runs at 3.3 V — extrapolate typ ~110–140 Ω, max ~250–320 Ω. **Excitation target revised 5 mA → 3 mA**, which stays inside both compliance and common-mode limits even at worst-case rON. | 2026-08-01 |
 | BU-10 | **Thermal EMF is the accuracy floor below ~1 mΩ.** At 5 mA, 1 µV of junction EMF = 200 µΩ. A 256-line harness has hundreds of dissimilar-metal junctions. Mitigation to design in now: **current reversal** — the DAC8775 has a ±24 mA range, and R = (V_fwd − V_rev)/(2I) cancels EMF because it does not reverse with the current. The ADS124S08 `G_CHOP` bit cancels the ADC's own offset only; the two are complementary. See §7.3. | 2026-08-01 |
 | BU-11 | **Measure sense-path leakage.** `HI_SENSE` is the common node of 32 CD74HC4051s with 31 disabled; summed off-channel leakage into the 4.99 kΩ series resistor could be a large offset (1 µA → 5 mV). Should largely cancel between HI and LO legs, but unverified. Cheap test: enable a sense bank with no excitation and check the differential reads near zero. Rises sharply with temperature. See §7.4. | 2026-08-01 |
 | BU-08 | **Do not copy the bench resistance formula.** ADS1232 full scale is ±0.5·VREF/Gain, ADS124S08 is ±VREF/Gain. The bench divides by `2 × gain × 2²³`; the product must divide by `gain × 2²³`. Copy-pasting gives a silent 2× error. | 2026-08-01 |
@@ -106,6 +105,22 @@ window and nothing downstream can be finalised without it.
 ---
 
 ## Activity log
+
+### 2026-08-01 (docs + GUI)
+- **Document clear-out.** Thirteen documents down to four living ones, with `README.md` as
+  the map and the rule "no new parallel documents without removing one". Deleted as
+  superseded: operation doc v1.1 and v1.3, `HT_MK1_Functionality.md` (described
+  `Matrix_Card-2`, two revisions stale), `Operation.txt`, `working_principle.md` (described
+  the CD4067 scheme that no longer exists), and the original SAD. All recoverable from git.
+  `ADS1232_bench_wiring.md` merged into the validation doc as Appendix A.
+- **CD74HC4051 datasheet read (SCHS122O).** ΔrON between channels is **10 Ω max**, which
+  largely closes BU-09. rON is only characterised from 4.5 V though (typ 70 / max 160 at
+  25 °C), and the card runs at 3.3 V — so the **excitation target drops from 5 mA to 3 mA**,
+  which holds at worst-case rON on both the compliance and common-mode sides.
+- **`Doc/GUI_development_brief.md`** written for the external GUI effort: protocol contract,
+  task breakdown, acceptance criteria, and the safety rules the GUI must implement. The
+  firmware↔GUI protocol **does not exist yet on either side** — the brief defines it as a
+  contract, and implementing the instrument half is now a firmware task (FW-05).
 
 ### 2026-08-01 (later)
 - **FW-03 done** — `matrix_card` reworked for Matrix_Card 2. The previous version was
