@@ -126,26 +126,44 @@ ADS124S08    R_dut = R_ref × code / (gain × 2²³)
 
 ## 5. What this tells us to change on the Matrix Card
 
-### 5.1 Common-mode headroom is now marginal — verify it
+### 5.1 Common-mode headroom — adequate at ≥1 mA, not a design flaw
 
-The ADS124S08 is far more forgiving than the ADS1232 (0.15 V floor vs 1.5 V), but the mux
-swap to CD74HC4051 cut the available lift:
+*(Revised 2026-08-01 after hardware-owner review. The earlier wording overstated this.)*
+
+The lift comes from two 100 Ω elements in series — the CD74HC4051 on-resistance and R131:
 
 ```
-LO_SENSE ≈ I × (R_LOmux + R131)
+LO_SENSE ≈ I × (R_LOmux + R131) ≈ I × 200 Ω
+floor    = 0.15 + 15.5 × |V_IN|     (ADS124S08, gain 32–128)
 ```
 
-| Excitation | with CD4067B (~900 Ω) | with CD74HC4051 (~100 Ω) |
-|---|---|---|
-| 1.0 mA | 1.0 V — comfortable | **0.20 V** |
-| 0.5 mA | 0.50 V | **0.10 V — below the 0.15 V floor** |
+| I | LO_SENSE | floor (1 Ω wire) | margin |
+|---|---|---|---|
+| 0.5 mA | 0.100 V | 0.158 V | **FAIL** |
+| 0.75 mA | 0.150 V | 0.162 V | **FAIL (just)** |
+| 1 mA | 0.200 V | 0.165 V | +35 mV |
+| 2 mA | 0.400 V | 0.181 V | +219 mV |
+| **5 mA** | **1.000 V** | **0.227 V** | **+772 mV** |
 
-The required floor at gain 32 with a 1 mV signal is `0.15 + 15.5 × 0.001 = 0.166 V`, leaving
-only ~34 mV of margin at 1 mA and **violating it below ~0.85 mA**.
+**At the 5 mA target this is comfortable and there is nothing to fix.** The constraint is
+simply that firmware must not run the excitation below ~1 mA — which the compliance analysis
+(§7.1) says it should not do anyway.
 
-**Action:** confirm CD74HC4051 Rₒₙ at 3.3 V, then either hold the excitation at ≥1 mA or
-raise R131. Note the irony — improving the multiplexers made the common-mode margin worse,
-because R131 was sized when the mux drop was doing most of the lifting.
+**The subtlety worth keeping:** the floor is not flat. It grows as `15.5 × |V_IN|`, so it
+rises with the resistance being measured. At gain 32 the common-mode limit caps the
+measurable resistance:
+
+| I | max R before the common mode fails at gain 32 |
+|---|---|
+| 1 mA | 3.2 Ω |
+| 2 mA | 8.1 Ω |
+| 5 mA | 11.0 Ω |
+
+Irrelevant for harness wire (well under 1 Ω), but it bites exactly where you want it least —
+detecting a *high-resistance fault*, a partial break or corrosion. **The fix is already in
+the plan: PGA auto-ranging.** At gain ≤16 the floor is `0.15 + |V_IN|·(Gain−1)/2`, which is
+far lower, and at gain 1 it is just 0.15 V. So dropping gain for a large reading keeps both
+the full scale *and* the common mode legal — auto-ranging is not only about range.
 
 ### 5.2 The ratiometric case is now demonstrated, not theoretical
 
@@ -205,11 +223,12 @@ Forward-looking risk list for when this is picked up again. Ordered by how much
 damage each does if missed. Numbers assume CD74HC4051 at ~100 Ω, R131 = 100 Ω,
 ADS124S08 at gain 32 with the internal 2.5 V reference.
 
-### 7.1 There is a usable current window, and it is narrower than it looks
+### 7.1 There is a usable current window
 
-The excitation is squeezed from both ends. Too little and the sense common mode
+The excitation is bounded at both ends. Too little and the sense common mode
 falls below the PGA floor; too much and the force loop runs out of compliance on
-the 3.3 V rail.
+the 3.3 V rail. The window is wide enough — the point is to sit in it
+deliberately rather than by accident.
 
 ```
 force loop  = 2 × R_mux + R131 + R_wire  ≈ 300 Ω + R_wire
@@ -228,6 +247,11 @@ CM floor    = 0.15 + 15.5 × |V_IN|       (ADS124S08, gain 32–128)
 
 **Target ~5 mA.** That is a good outcome of the CD74HC4051 swap — with the old
 CD4067B the ceiling was under 1 mA and this window did not exist.
+
+The lower bound comes from `LO_SENSE = I × (R_LOmux + R131) = I × 200 Ω` against
+a floor of `0.15 + 15.5·|V_IN|`. Anywhere from 1 mA up is fine; at 5 mA there is
+772 mV of margin. See §5.1 for the one caveat — the floor rises with the
+resistance being measured, which auto-ranging handles.
 
 At 5 mA, gain 32: 1 count = **1.86 µΩ**, a 1 Ω wire gives 5 mV against a 78 mV
 full scale. Comfortable everywhere.
