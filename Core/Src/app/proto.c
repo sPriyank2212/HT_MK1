@@ -1,0 +1,552 @@
+/* USER CODE BEGIN Header */
+/**
+  ******************************************************************************
+  * @file    proto.c
+  * @brief   Instrument side of the GUI protocol. See proto.h.
+  ******************************************************************************
+  */
+/* USER CODE END Header */
+
+#include "app/proto.h"
+#include "app/tasks.h"
+#include "app/log.h"
+#include <string.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <stdarg.h>
+
+#define PROTO_TX_MAX      96U
+#define PROTO_TX_TIMEOUT  50U
+#define PROTO_MAX_TOKENS  6U
+
+static UART_HandleTypeDef *s_uart;
+
+static char     s_rx[PROTO_RX_MAX + 1U];
+static uint16_t s_rx_len;
+static uint8_t  s_overflow;      /* line too long - discard to the newline */
+
+static uint16_t s_net_hi[PROTO_NETLIST_MAX];
+static uint16_t s_net_lo[PROTO_NETLIST_MAX];
+static uint16_t s_net_count;
+static uint16_t s_net_pending;   /* entries promised by NETLIST BEGIN */
+static uint8_t  s_net_loading;
+
+static ProtoFixture_t s_fixture = PROTO_FIXTURE_NONE;
+static uint8_t  s_armed;
+static int32_t  s_hv_mv;
+static int32_t  s_lim_r_mohm   = 5000;    /* 5 ohm  */
+static int32_t  s_lim_ins_mohm = 10000000;/* 10 Mohm */
+
+/* -------------------------------------------------------------------------- */
+/* Output                                                                     */
+/* -------------------------------------------------------------------------- */
+
+/**
+  * @brief  Send one already-formatted line, appending CRLF.
+  * @note   Blocking with a short timeout. Lines are emitted whole so the GUI
+  *         never has to reassemble a split frame; the logger writes through the
+  *         same UART, and because both write complete lines the two streams
+  *         interleave cleanly rather than corrupting each other.
+  * @param  s : [in] line body, without terminator.
+  * @retval None
+  */
+static void proto_line(const char *s)
+{
+  static const char crlf[2] = {'\r', '\n'};
+
+  if (s_uart == NULL || s == NULL)
+  {
+    return;
+  }
+  (void)HAL_UART_Transmit(s_uart, (uint8_t *)s, (uint16_t)strlen(s), PROTO_TX_TIMEOUT);
+  (void)HAL_UART_Transmit(s_uart, (uint8_t *)crlf, 2U, PROTO_TX_TIMEOUT);
+}
+
+/**
+  * @brief  Format and send a line with a leading marker character.
+  * @param  mark : [in] '<' reply, '!' event.
+  * @param  fmt  : [in] printf-style format for the body.
+  * @retval None
+  */
+static void proto_emit(char mark, const char *fmt, ...)
+{
+  char buf[PROTO_TX_MAX];
+  va_list ap;
+  int n;
+
+  buf[0] = mark;
+  va_start(ap, fmt);
+  n = vsnprintf(&buf[1], sizeof(buf) - 2U, fmt, ap);
+  va_end(ap);
+  if (n < 0)
+  {
+    return;
+  }
+  buf[sizeof(buf) - 1U] = '\0';
+  proto_line(buf);
+}
+
+/**
+  * @brief  Send an error reply.
+  * @param  code : [in] one of EBUSY / EFIXTURE / ENOTARMED / ERANGE / EHW / ESYNTAX.
+  * @param  text : [in] short human-readable explanation.
+  * @retval None
+  */
+static void proto_err(const char *code, const char *text)
+{
+  proto_emit('<', "ERR %s %s", code, text);
+}
+
+void Proto_EvtProgress(uint16_t done, uint16_t total)
+{
+  proto_emit('!', "PROGRESS %u %u", (unsigned)done, (unsigned)total);
+}
+
+void Proto_EvtCont(uint16_t hi, uint16_t lo, const char *verdict)
+{
+  proto_emit('!', "CONT %u %u %s", (unsigned)hi, (unsigned)lo, verdict);
+}
+
+void Proto_EvtRes(uint16_t hi, uint16_t lo, int32_t milliohms, const char *verdict)
+{
+  proto_emit('!', "RES %u %u %ld %s", (unsigned)hi, (unsigned)lo,
+             (long)milliohms, verdict);
+}
+
+void Proto_EvtInsul(uint16_t net, int32_t leak_mohm, const char *verdict)
+{
+  proto_emit('!', "INSUL %u %ld %s", (unsigned)net, (long)leak_mohm, verdict);
+}
+
+void Proto_EvtFault(const char *code, const char *text)
+{
+  proto_emit('!', "FAULT %s %s", code, text);
+}
+
+void Proto_EvtDone(const char *what, uint16_t passed, uint16_t failed)
+{
+  proto_emit('!', "DONE %s %u %u", what, (unsigned)passed, (unsigned)failed);
+}
+
+void Proto_EvtState(const char *state)
+{
+  proto_emit('!', "STATE %s", state);
+}
+
+/**
+  * @brief  Report the rail voltage to the GUI.
+  * @note   Emitted on every change; the GUI treats >= PROTO_HV_LIVE_MV as live
+  *         and must show the HV indicator from that point.
+  */
+void Proto_EvtHv(int32_t millivolts)
+{
+  s_hv_mv = millivolts;
+  proto_emit('!', "HV %ld", (long)millivolts);
+}
+
+void Proto_EvtSafe(void)
+{
+  s_armed = 0U;
+  s_hv_mv = 0;
+  proto_emit('!', "SAFE");
+}
+
+/* -------------------------------------------------------------------------- */
+/* State accessors                                                            */
+/* -------------------------------------------------------------------------- */
+
+uint16_t Proto_NetlistCount(void) { return s_net_count; }
+uint8_t  Proto_HvArmed(void)      { return s_armed; }
+void     Proto_ClearArm(void)     { s_armed = 0U; }
+int32_t  Proto_LimitRMaxMohm(void)   { return s_lim_r_mohm; }
+int32_t  Proto_LimitInsMinMohm(void) { return s_lim_ins_mohm; }
+
+int Proto_NetlistGet(uint16_t i, uint16_t *hi, uint16_t *lo)
+{
+  if (i >= s_net_count || hi == NULL || lo == NULL)
+  {
+    return -1;
+  }
+  *hi = s_net_hi[i];
+  *lo = s_net_lo[i];
+  return 0;
+}
+
+const char *proto_fixture_name(ProtoFixture_t fx)
+{
+  switch (fx)
+  {
+    case PROTO_FIXTURE_MTX: return "mtx";
+    case PROTO_FIXTURE_HV:  return "hv";
+    default:                return "none";
+  }
+}
+
+void Proto_SetFixture(ProtoFixture_t fx)
+{
+  s_fixture = fx;
+  Proto_EvtFixture(fx);
+}
+
+void Proto_EvtFixture(ProtoFixture_t fx)
+{
+  proto_emit('!', "FIXTURE %s", proto_fixture_name(fx));
+}
+
+/* -------------------------------------------------------------------------- */
+/* Command handling                                                           */
+/* -------------------------------------------------------------------------- */
+
+/**
+  * @brief  Split a line into whitespace-separated tokens, in place.
+  * @param  line : [in,out] NUL-terminated line; separators are overwritten.
+  * @param  tok  : [out]    token pointers.
+  * @param  max  : [in]     capacity of @p tok.
+  * @retval Token count.
+  */
+static uint8_t proto_split(char *line, char **tok, uint8_t max)
+{
+  uint8_t n = 0U;
+  char *p = line;
+
+  while (*p != '\0' && n < max)
+  {
+    while (*p == ' ' || *p == '\t') { *p++ = '\0'; }
+    if (*p == '\0') { break; }
+    tok[n++] = p;
+    while (*p != '\0' && *p != ' ' && *p != '\t') { p++; }
+  }
+  return n;
+}
+
+/**
+  * @brief  Parse a decimal integer token.
+  * @param  s  : [in]  token.
+  * @param  v  : [out] parsed value.
+  * @retval 0 on success, non-zero if the token is not a clean integer.
+  */
+static int proto_int(const char *s, long *v)
+{
+  char *end;
+
+  if (s == NULL || *s == '\0')
+  {
+    return -1;
+  }
+  *v = strtol(s, &end, 10);
+  return (*end == '\0') ? 0 : -1;
+}
+
+/**
+  * @brief  Post a command to the sequencer and reply.
+  * @param  t  : [in] command type.
+  * @param  a  : [in] first argument.
+  * @param  b  : [in] second argument.
+  * @retval None. Replies OK on success, ERR EBUSY if the queue is full.
+  */
+static void proto_post(TestCmdType_t t, uint16_t a, uint16_t b)
+{
+  TestCmd_t c = { t, a, b, 0U, 0.0f };
+
+  if (Tasks_PostCommand(&c) == 0)
+  {
+    proto_emit('<', "OK started");
+  }
+  else
+  {
+    proto_err("EBUSY", "queue full");
+  }
+}
+
+/**
+  * @brief  Execute one complete command line.
+  * @note   Exactly one '<' reply is emitted on every path, including errors -
+  *         the GUI blocks on that reply with a 2 s timeout, so a silent path
+  *         would stall it.
+  * @param  line : [in,out] NUL-terminated line, without the leading '>'.
+  * @retval None
+  */
+static void proto_exec(char *line)
+{
+  char *t[PROTO_MAX_TOKENS];
+  uint8_t n = proto_split(line, t, PROTO_MAX_TOKENS);
+  long a, b;
+
+  if (n == 0U)
+  {
+    proto_err("ESYNTAX", "empty");
+    return;
+  }
+
+  if (strcmp(t[0], "PING") == 0)
+  {
+    proto_emit('<', "PONG");
+  }
+  else if (strcmp(t[0], "ID") == 0)
+  {
+    proto_emit('<', "ID HT_MK1 fw=0.1.0 proto=1");
+  }
+  else if (strcmp(t[0], "STATUS") == 0)
+  {
+    proto_emit('<', "STATUS state=%s fixture=%s hv_mv=%ld",
+               s_armed ? "hv_armed" : "idle",
+               proto_fixture_name(s_fixture), (long)s_hv_mv);
+  }
+  else if (strcmp(t[0], "SAFE") == 0)
+  {
+    proto_post(CMD_FORCE_SAFE, 0U, 0U);
+  }
+  else if (strcmp(t[0], "ABORT") == 0)
+  {
+    Proto_ClearArm();
+    proto_post(CMD_FORCE_SAFE, 0U, 0U);
+  }
+  else if (strcmp(t[0], "NETLIST") == 0 && n >= 2U)
+  {
+    if (strcmp(t[1], "BEGIN") == 0 && n >= 3U && proto_int(t[2], &a) == 0)
+    {
+      if (a < 0 || a > (long)PROTO_NETLIST_MAX)
+      {
+        proto_err("ERANGE", "too many entries");
+      }
+      else
+      {
+        s_net_pending = (uint16_t)a;
+        s_net_count   = 0U;
+        s_net_loading = 1U;
+        proto_emit('<', "OK");
+      }
+    }
+    else if (strcmp(t[1], "ADD") == 0 && n >= 4U &&
+             proto_int(t[2], &a) == 0 && proto_int(t[3], &b) == 0)
+    {
+      if (s_net_loading == 0U)
+      {
+        proto_err("ESYNTAX", "no BEGIN");
+      }
+      else if (s_net_count >= s_net_pending || s_net_count >= PROTO_NETLIST_MAX)
+      {
+        proto_err("ERANGE", "more entries than promised");
+      }
+      else if (a < 1 || a > 256 || b < 1 || b > 256)
+      {
+        proto_err("ERANGE", "pin out of range");
+      }
+      else
+      {
+        s_net_hi[s_net_count] = (uint16_t)a;
+        s_net_lo[s_net_count] = (uint16_t)b;
+        s_net_count++;
+        proto_emit('<', "OK");
+      }
+    }
+    else if (strcmp(t[1], "END") == 0)
+    {
+      s_net_loading = 0U;
+      proto_emit('<', "OK loaded=%u", (unsigned)s_net_count);
+    }
+    else if (strcmp(t[1], "GET") == 0)
+    {
+      uint16_t i;
+      proto_emit('<', "NETLIST %u", (unsigned)s_net_count);
+      for (i = 0U; i < s_net_count; i++)
+      {
+        proto_emit('<', "NET %u %u", (unsigned)s_net_hi[i], (unsigned)s_net_lo[i]);
+      }
+    }
+    else
+    {
+      proto_err("ESYNTAX", "NETLIST");
+    }
+  }
+  else if (strcmp(t[0], "CONT") == 0 && n >= 3U && strcmp(t[1], "RUN") == 0)
+  {
+    if (strcmp(t[2], "verify") == 0)
+    {
+      if (s_net_count == 0U) { proto_err("ERANGE", "no netlist"); }
+      else { Proto_SetFixture(PROTO_FIXTURE_MTX); proto_post(CMD_CONT_RUN, 0U, 0U); }
+    }
+    else if (strcmp(t[2], "discover") == 0)
+    {
+      Proto_SetFixture(PROTO_FIXTURE_MTX);
+      proto_post(CMD_CONT_RUN, 1U, 0U);
+    }
+    else
+    {
+      proto_err("ESYNTAX", "verify|discover");
+    }
+  }
+  else if (strcmp(t[0], "RES") == 0 && n >= 2U && strcmp(t[1], "RUN") == 0)
+  {
+    if (s_net_count == 0U) { proto_err("ERANGE", "no netlist"); }
+    else { Proto_SetFixture(PROTO_FIXTURE_MTX); proto_post(CMD_RES_RUN, 0U, 0U); }
+  }
+  else if (strcmp(t[0], "INSUL") == 0 && n >= 2U)
+  {
+    if (strcmp(t[1], "ARM") == 0)
+    {
+      /* Arming is refused unless the harness has been moved to the HV fixture.
+       * The GUI enforces this too, but it must not be the only thing that does. */
+      if (s_fixture != PROTO_FIXTURE_HV)
+      {
+        proto_err("EFIXTURE", "move harness to the HV fixture");
+      }
+      else
+      {
+        s_armed = 1U;
+        proto_emit('<', "OK armed");
+        Proto_EvtState("hv_armed");
+      }
+    }
+    else if (strcmp(t[1], "RUN") == 0)
+    {
+      if (s_armed == 0U) { proto_err("ENOTARMED", "INSUL ARM first"); }
+      else               { proto_post(CMD_INSUL_RUN, 0U, 0U); }
+    }
+    else
+    {
+      proto_err("ESYNTAX", "ARM|RUN");
+    }
+  }
+  else if (strcmp(t[0], "HV") == 0 && n >= 3U && strcmp(t[1], "SET") == 0 &&
+           proto_int(t[2], &a) == 0)
+  {
+    if (a != 0 && s_armed == 0U)
+    {
+      proto_err("ENOTARMED", "INSUL ARM first");
+    }
+    else if (a < 0 || a > 500000)
+    {
+      proto_err("ERANGE", "0..500000 mV");
+    }
+    else
+    {
+      Proto_EvtHv((int32_t)a);
+      proto_emit('<', "OK");
+    }
+  }
+  else if (strcmp(t[0], "MANUAL") == 0 && n >= 2U)
+  {
+    if (strcmp(t[1], "PATH") == 0 && n >= 4U &&
+        proto_int(t[2], &a) == 0 && proto_int(t[3], &b) == 0)
+    {
+      if (a < 1 || a > 256 || b < 1 || b > 256) { proto_err("ERANGE", "pin"); }
+      else { proto_post(CMD_CONTINUITY, (uint16_t)a, (uint16_t)b); }
+    }
+    else if (strcmp(t[1], "OFF") == 0)
+    {
+      proto_post(CMD_FORCE_SAFE, 0U, 0U);
+    }
+    else if (strcmp(t[1], "RELAY") == 0)
+    {
+      /* Deliberately refused: driving a single HV relay by hand while the rail
+       * may be live is not something the instrument should allow over a serial
+       * link. Raised as an open question in the GUI brief section 8. */
+      proto_err("EHW", "manual relay not permitted");
+    }
+    else
+    {
+      proto_err("ESYNTAX", "MANUAL");
+    }
+  }
+  else if (strcmp(t[0], "CAL") == 0 && n >= 2U && strcmp(t[1], "GET") == 0)
+  {
+    proto_emit('<', "CAL current_ua=3000 gain=32 rref_mohm=100000");
+  }
+  else if (strcmp(t[0], "LIMITS") == 0 && n >= 2U)
+  {
+    if (strcmp(t[1], "GET") == 0)
+    {
+      proto_emit('<', "LIMITS r_max_mohm=%ld ins_min_mohm=%ld",
+                 (long)s_lim_r_mohm, (long)s_lim_ins_mohm);
+    }
+    else if (strcmp(t[1], "SET") == 0)
+    {
+      uint8_t i;
+      for (i = 2U; i < n; i++)
+      {
+        if (strncmp(t[i], "r_max_mohm=", 11U) == 0 &&
+            proto_int(&t[i][11], &a) == 0) { s_lim_r_mohm = (int32_t)a; }
+        else if (strncmp(t[i], "ins_min_mohm=", 13U) == 0 &&
+                 proto_int(&t[i][13], &a) == 0) { s_lim_ins_mohm = (int32_t)a; }
+      }
+      proto_emit('<', "OK");
+    }
+    else
+    {
+      proto_err("ESYNTAX", "LIMITS");
+    }
+  }
+  else if (strcmp(t[0], "FIXTURE") == 0 && n >= 2U)
+  {
+    /* Operator confirmation that the harness has been physically moved. */
+    if      (strcmp(t[1], "mtx") == 0)  { Proto_SetFixture(PROTO_FIXTURE_MTX);  proto_emit('<', "OK"); }
+    else if (strcmp(t[1], "hv") == 0)   { Proto_SetFixture(PROTO_FIXTURE_HV);   proto_emit('<', "OK"); }
+    else if (strcmp(t[1], "none") == 0) { Proto_SetFixture(PROTO_FIXTURE_NONE); proto_emit('<', "OK"); }
+    else { proto_err("ESYNTAX", "none|mtx|hv"); }
+  }
+  else
+  {
+    proto_err("ESYNTAX", "unknown command");
+  }
+}
+
+/* -------------------------------------------------------------------------- */
+
+void Proto_Init(UART_HandleTypeDef *huart)
+{
+  s_uart        = huart;
+  s_rx_len      = 0U;
+  s_overflow    = 0U;
+  s_net_count   = 0U;
+  s_net_pending = 0U;
+  s_net_loading = 0U;
+  s_fixture     = PROTO_FIXTURE_NONE;
+  s_armed       = 0U;
+  s_hv_mv       = 0;
+}
+
+/**
+  * @brief  Feed one received byte to the line assembler.
+  * @note   A line longer than PROTO_RX_MAX is discarded up to the next
+  *         terminator and answered once with ERR ESYNTAX, so a garbled or
+  *         desynchronised sender cannot leave the parser wedged.
+  * @param  ch : [in] received byte.
+  * @retval None
+  */
+void Proto_RxByte(uint8_t ch)
+{
+  if (ch == '\r')
+  {
+    return;                       /* tolerate CRLF from terminals */
+  }
+
+  if (ch != '\n')
+  {
+    if (s_rx_len < PROTO_RX_MAX)
+    {
+      s_rx[s_rx_len++] = (char)ch;
+    }
+    else
+    {
+      s_overflow = 1U;
+    }
+    return;
+  }
+
+  s_rx[s_rx_len] = '\0';
+
+  if (s_overflow != 0U)
+  {
+    proto_err("ESYNTAX", "line too long");
+  }
+  else if (s_rx_len > 0U)
+  {
+    /* The leading '>' is optional so the link can be driven by hand from a
+     * plain terminal during bring-up. */
+    proto_exec((s_rx[0] == '>') ? &s_rx[1] : &s_rx[0]);
+  }
+
+  s_rx_len   = 0U;
+  s_overflow = 0U;
+}

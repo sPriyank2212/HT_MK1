@@ -78,7 +78,10 @@ void Log_Write(LogLevel_t lvl, const char *tag, const char *fmt, ...)
   }
 
   /* Prefix: "<L>[tick] tag: " */
-  n = snprintf(m.buf, sizeof(m.buf), "%c[%lu] %s: ",
+  /* Leading '#' marks a human-readable log line for the GUI protocol - see
+   * Doc/GUI_development_brief.md 3.1. Anything not starting '<' or '!' is
+   * display-only, and the '#' makes that explicit rather than implied. */
+  n = snprintf(m.buf, sizeof(m.buf), "#%c[%lu] %s: ",
                log_level_char(lvl), (unsigned long)osKernelGetTickCount(),
                (tag != NULL) ? tag : "");
   if (n < 0)

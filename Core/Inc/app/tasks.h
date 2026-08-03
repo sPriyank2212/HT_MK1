@@ -34,7 +34,13 @@ typedef enum
   CMD_CONTINUITY  = 1,   /* a=hi pin, b=lo pin                       */
   CMD_KELVIN      = 2,   /* a=hi pin, b=lo pin                       */
   CMD_INSULATION  = 3,   /* board, a=inject, b=return, vfrac         */
-  CMD_FORCE_SAFE  = 4    /* drop everything to safe                  */
+  CMD_FORCE_SAFE  = 4,   /* drop everything to safe                  */
+  /* Whole-run commands driven by the GUI protocol. These iterate the netlist
+   * (or the full 256x256 grid for discovery) and stream '!' events as they go,
+   * rather than returning a single result. */
+  CMD_CONT_RUN    = 5,   /* a=0 verify against netlist, a=1 discover  */
+  CMD_RES_RUN     = 6,
+  CMD_INSUL_RUN   = 7
 } TestCmdType_t;
 
 typedef struct

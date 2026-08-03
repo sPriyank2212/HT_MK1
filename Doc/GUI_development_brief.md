@@ -2,7 +2,7 @@
 
 **For:** the AI/developer building the GUI · **From:** the firmware side
 **Visual reference:** `Doc/HT_MK1_GUI_Proposal.html` (mock-up — screens and layout)
-**Status:** protocol defined below, firmware side not yet implemented
+**Status:** protocol defined below · **instrument side implemented** (`Core/Src/app/proto.c`)
 
 ---
 
@@ -11,10 +11,18 @@
 You are building the **operator GUI** for an automated wire-harness tester. You are **not**
 writing firmware, and you will **not** have the instrument on your desk.
 
-The single most important thing to understand: **the communication protocol in §3 does not
-exist yet on either side.** It is a contract. The firmware team implements its half; you
-implement yours and develop against the simulator described in §4. Build to the contract,
-not to guesses about the hardware.
+The communication protocol in §3 is a **contract**. The instrument half is implemented and on
+hardware; you implement the GUI half and develop against the simulator described in §4.
+Build to the contract, not to guesses about the hardware.
+
+Two deviations from an earlier draft, both now live in the firmware:
+
+- **`>FIXTURE <none|mtx|hv>`** exists — the operator confirms through the GUI that the harness
+  has been physically moved, and the instrument records it. `>INSUL ARM` is refused with
+  `ERR EFIXTURE` until it has been told `hv`.
+- **`>MANUAL RELAY`** is refused with `ERR EHW`. Driving a single HV relay by hand over a
+  serial link while the rail may be live is not something the instrument will allow. Open
+  question 3 in §8 is answered: the firmware refuses, a GUI confirm is not sufficient.
 
 If something in this brief is ambiguous, **do not invent behaviour** — list the question and
 hand it back. A wrong assumption here becomes a wrong assumption in a machine that puts
@@ -109,8 +117,9 @@ Every `>` command gets exactly one `<` reply, in order. Events `!` are independe
 >INSUL RUN                     -> <OK started
 >HV SET <millivolts>           -> <OK           0 = off; ramping is the firmware's job
 
+>FIXTURE <none|mtx|hv>         -> <OK           operator confirms the harness location
 >MANUAL PATH <hi> <lo>         -> <OK           close one matrix path, diagnostics only
->MANUAL RELAY <board> <n> <0|1>-> <OK
+>MANUAL RELAY <board> <n> <0|1>-> <ERR EHW      refused by design, see section 0
 >MANUAL OFF                    -> <OK
 
 >CAL GET                       -> <CAL current_ua=<int> gain=<int> rref_mohm=<int>
@@ -230,8 +239,8 @@ Recorded here so they are visible; **do not build around them**, ask.
 1. Discovery scan takes tens of seconds. Is `!PROGRESS` fine-grained enough, or does the GUI
    need per-pin position?
 2. Should the netlist persist in instrument flash, or be uploaded every run?
-3. `>MANUAL RELAY` on a live HV card — should the firmware refuse it outright, or is a
-   GUI-side confirm sufficient?
+3. ~~`>MANUAL RELAY` on a live HV card~~ **Answered:** the firmware refuses it outright with
+   `ERR EHW`. Do not offer the control.
 4. Run history — stored on the instrument or the GUI host?
 
 ---
@@ -248,3 +257,23 @@ Read-only, for understanding. Do not edit.
 
 The firmware, schematics and datasheets are not needed to build the GUI. If you think you
 need them, that probably means something is missing from this brief — say so.
+
+
+---
+
+## Appendix B — what the instrument does today
+
+Implemented in `Core/Src/app/proto.c`, on hardware now.
+
+| | |
+|---|---|
+| **Works** | `PING` `ID` `STATUS` `SAFE` `ABORT` `FIXTURE` `NETLIST *` `CONT RUN verify\|discover` `INSUL ARM\|RUN` `HV SET` `MANUAL PATH\|OFF` `CAL GET` `LIMITS GET\|SET` |
+| **Refused by design** | `MANUAL RELAY` → `ERR EHW` |
+| **Runs but always fails** | `RES RUN` — every net reports `fail_high` with `!FAULT F08`. The resistance measurement path is mid-rewrite for a new ADC (firmware task FW-02); reporting a plausible number from a measurement path that no longer exists would be worse than reporting a failure. **Build the resistance screen anyway** — the event format is final, and your simulator should exercise it properly |
+
+Two conveniences for hand-testing over a terminal:
+
+- the leading `>` on commands is **optional**, so you can type `PING` and press enter
+- log lines are prefixed `#`, so anything not starting `<` or `!` is display-only
+
+Firmware build note: `proto.c` currently produces a **58.5 kB** image and links clean.

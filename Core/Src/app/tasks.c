@@ -9,6 +9,7 @@
 
 #include "app/tasks.h"
 #include "app/log.h"
+#include "app/proto.h"
 #include "bsp/board.h"
 #include "test/continuity.h"
 #include "test/kelvin.h"
@@ -172,6 +173,10 @@ static void SafetyTask(void *arg)
 
 /* ---- sequencer ----------------------------------------------------------- */
 
+static void run_continuity_all(uint8_t discover);
+static void run_resistance_all(void);
+static void run_insulation_all(void);
+
 /**
   * @brief  Execute one test command under the hardware mutex.
   * @note   Skips execution (logs a warning) if a fault is latched. Serialises
@@ -224,12 +229,185 @@ static void run_command(const TestCmd_t *c)
     }
     case CMD_FORCE_SAFE:
       force_safe_all();
+      Proto_ClearArm();
+      Proto_EvtSafe();
       LOG_I("SEQ", "forced safe");
+      break;
+    case CMD_CONT_RUN:
+      run_continuity_all((uint8_t)c->a);
+      break;
+    case CMD_RES_RUN:
+      run_resistance_all();
+      break;
+    case CMD_INSUL_RUN:
+      run_insulation_all();
       break;
     default:
       break;
   }
   osMutexRelease(s_hwmtx);
+}
+
+/**
+  * @brief  Continuity over the whole netlist, or a full discovery scan.
+  * @note   Streams one !CONT per pair as it goes rather than accumulating -
+  *         a discovery scan is 65,536 points and the operator should see
+  *         progress, not a frozen screen.
+  * @param  discover : [in] 0 = verify the loaded netlist, 1 = scan everything.
+  * @retval None
+  */
+static void run_continuity_all(uint8_t discover)
+{
+  ContinuityResult_t r;
+  uint16_t i, n, hi, lo;
+  uint16_t pass = 0U, fail = 0U;
+
+  Proto_EvtState("running");
+
+  if (discover != 0U)
+  {
+    /* Discovery: every HI against every LO. Report only what is found - a
+     * complete 65,536-line dump would swamp the link and the operator. */
+    for (hi = 1U; hi <= 256U; hi++)
+    {
+      for (lo = 1U; lo <= 256U; lo++)
+      {
+        if (Continuity_TestPair(hi, lo, &r) == HAL_OK && r.verdict == TEST_PASS)
+        {
+          Proto_EvtCont(hi, lo, "pass");
+          pass++;
+        }
+      }
+      Proto_EvtProgress(hi, 256U);
+      if (s_fault != 0U) { break; }
+    }
+  }
+  else
+  {
+    n = Proto_NetlistCount();
+    for (i = 0U; i < n; i++)
+    {
+      if (Proto_NetlistGet(i, &hi, &lo) != 0) { continue; }
+      if (Continuity_TestPair(hi, lo, &r) != HAL_OK)
+      {
+        Proto_EvtCont(hi, lo, "open");
+        fail++;
+      }
+      else if (r.verdict == TEST_PASS)
+      {
+        Proto_EvtCont(hi, lo, "pass");
+        pass++;
+      }
+      else
+      {
+        Proto_EvtCont(hi, lo, "open");
+        Proto_EvtFault("F06", "continuity open");
+        fail++;
+      }
+      Proto_EvtProgress((uint16_t)(i + 1U), n);
+      if (s_fault != 0U) { break; }
+    }
+  }
+
+  Proto_EvtDone("cont", pass, fail);
+  Proto_EvtState("idle");
+}
+
+/**
+  * @brief  Resistance over the loaded netlist.
+  * @note   Kelvin_MeasurePair currently returns an error by design until FW-02
+  *         rewrites it for the ADS124S08, so every net reports fail_high. That
+  *         is deliberate - reporting a plausible number from a measurement path
+  *         that no longer exists would be worse.
+  * @retval None
+  */
+static void run_resistance_all(void)
+{
+  KelvinResult_t r;
+  uint16_t i, n, hi, lo;
+  uint16_t pass = 0U, fail = 0U;
+  int32_t  limit = Proto_LimitRMaxMohm();
+
+  Proto_EvtState("running");
+  n = Proto_NetlistCount();
+
+  for (i = 0U; i < n; i++)
+  {
+    if (Proto_NetlistGet(i, &hi, &lo) != 0) { continue; }
+
+    if (Kelvin_MeasurePair(hi, lo, &r) != HAL_OK)
+    {
+      Proto_EvtRes(hi, lo, 0, "fail_high");
+      Proto_EvtFault("F08", "resistance path unavailable");
+      fail++;
+    }
+    else
+    {
+      int32_t mohm = (int32_t)(r.resistance_ohm * 1000.0f);
+      const char *v = (mohm <= limit) ? "pass" : "fail_high";
+      Proto_EvtRes(hi, lo, mohm, v);
+      if (mohm <= limit) { pass++; } else { fail++; }
+    }
+    Proto_EvtProgress((uint16_t)(i + 1U), n);
+    if (s_fault != 0U) { break; }
+  }
+
+  Proto_EvtDone("res", pass, fail);
+  Proto_EvtState("idle");
+}
+
+/**
+  * @brief  Insulation over the loaded netlist.
+  * @note   Refuses to run unless HV was armed, and always drops the rail and
+  *         clears the arm on the way out - arming must never survive a run.
+  * @retval None
+  */
+static void run_insulation_all(void)
+{
+  InsulationResult_t r;
+  uint16_t i, n, hi, lo;
+  uint16_t pass = 0U, fail = 0U;
+
+  if (Proto_HvArmed() == 0U)
+  {
+    Proto_EvtFault("F03", "HV not armed");
+    Proto_EvtDone("insul", 0U, 0U);
+    return;
+  }
+
+  Proto_EvtState("running");
+  n = Proto_NetlistCount();
+
+  for (i = 0U; i < n; i++)
+  {
+    if (Proto_NetlistGet(i, &hi, &lo) != 0) { continue; }
+
+    if (Insulation_TestPair(0U, (uint8_t)hi, (uint8_t)lo, 0.5f, &r) != HAL_OK)
+    {
+      Proto_EvtInsul(hi, 0, "fail");
+      Proto_EvtFault("F04", "insulation measurement failed");
+      fail++;
+    }
+    else
+    {
+      const char *v = (r.verdict == TEST_PASS) ? "pass" : "fail";
+      /* insulation_mohm is the header's megohm estimate; the protocol
+       * carries milliohms, so scale by 1e9. */
+      Proto_EvtInsul(hi, (int32_t)(r.insulation_mohm * 1.0e9f), v);
+      if (r.verdict == TEST_PASS) { pass++; }
+      else { Proto_EvtFault("F04", "insulation low"); fail++; }
+    }
+    Proto_EvtProgress((uint16_t)(i + 1U), n);
+    if (s_fault != 0U) { break; }
+  }
+
+  /* Always leave HV down and disarmed. */
+  force_safe_all();
+  Proto_ClearArm();
+  Proto_EvtHv(0);
+  Proto_EvtSafe();
+  Proto_EvtDone("insul", pass, fail);
+  Proto_EvtState("idle");
 }
 
 /**
@@ -265,11 +443,8 @@ static void SequencerTask(void *arg)
   * @param  vf    : [in] HV fraction (insulation only).
   * @retval None
   */
-static void post_simple(TestCmdType_t t, uint16_t a, uint16_t b, uint8_t board, float vf)
-{
-  TestCmd_t c = { t, a, b, board, vf };
-  (void)Tasks_PostCommand(&c);
-}
+/* post_simple() removed with the single-keystroke console - the protocol layer
+ * builds and posts commands itself (see Core/Src/app/proto.c). */
 
 /**
   * @brief  Bring-up console thread: turn single VCP keystrokes into commands.
@@ -284,27 +459,24 @@ static void CommsTask(void *arg)
 {
   uint8_t ch;
   (void)arg;
-  LOG_I("COM", "console: c/k/i continuity/kelvin/insul, s safe, f fault");
+
+  Proto_Init(s_console);
+  LOG_I("COM", "proto ready (see GUI_development_brief.md)");
+  Proto_EvtState("idle");
+  Proto_EvtFixture(PROTO_FIXTURE_NONE);
+
   for (;;)
   {
-    /* Best-effort RX; shares the UART with the logger (HAL_BUSY just retries). */
+    /* Best-effort single-byte RX. Shares the UART with the logger, so HAL_BUSY
+     * simply retries on the next pass. */
     if (s_console != NULL &&
         HAL_UART_Receive(s_console, &ch, 1U, 100U) == HAL_OK)
     {
-      switch (ch)
-      {
-        case 'c': post_simple(CMD_CONTINUITY, 1U, 2U, 0U, 0.0f); break;
-        case 'k': post_simple(CMD_KELVIN,     1U, 2U, 0U, 0.0f); break;
-        case 'i': post_simple(CMD_INSULATION, 1U, 1U, 0U, 0.5f); break;
-        case 's': post_simple(CMD_FORCE_SAFE, 0U, 0U, 0U, 0.0f); break;
-        case 'f': Safety_SignalFault("console"); break;
-        case 'r': Safety_ClearFault(); LOG_I("COM", "fault cleared"); break;
-        default:  break;
-      }
+      Proto_RxByte(ch);
     }
     else
     {
-      osDelay(5U);
+      osDelay(2U);
     }
   }
 }
