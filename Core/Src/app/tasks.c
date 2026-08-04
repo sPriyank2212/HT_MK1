@@ -262,6 +262,7 @@ static void run_continuity_all(uint8_t discover)
   uint16_t i, n, hi, lo;
   uint16_t pass = 0U, fail = 0U;
 
+  Proto_ClearAbort();
   Proto_EvtState("running");
 
   if (discover != 0U)
@@ -279,7 +280,7 @@ static void run_continuity_all(uint8_t discover)
         }
       }
       Proto_EvtProgress(hi, 256U);
-      if (s_fault != 0U) { break; }
+      if (s_fault != 0U || Proto_AbortRequested() != 0U) { break; }
     }
   }
   else
@@ -305,12 +306,12 @@ static void run_continuity_all(uint8_t discover)
         fail++;
       }
       Proto_EvtProgress((uint16_t)(i + 1U), n);
-      if (s_fault != 0U) { break; }
+      if (s_fault != 0U || Proto_AbortRequested() != 0U) { break; }
     }
   }
 
-  Proto_EvtDone("cont", pass, fail);
   Proto_EvtState("idle");
+  Proto_EvtDone("cont", pass, fail);
 }
 
 /**
@@ -328,6 +329,7 @@ static void run_resistance_all(void)
   uint16_t pass = 0U, fail = 0U;
   int32_t  limit = Proto_LimitRMaxMohm();
 
+  Proto_ClearAbort();
   Proto_EvtState("running");
   n = Proto_NetlistCount();
 
@@ -349,11 +351,11 @@ static void run_resistance_all(void)
       if (mohm <= limit) { pass++; } else { fail++; }
     }
     Proto_EvtProgress((uint16_t)(i + 1U), n);
-    if (s_fault != 0U) { break; }
+    if (s_fault != 0U || Proto_AbortRequested() != 0U) { break; }
   }
 
-  Proto_EvtDone("res", pass, fail);
   Proto_EvtState("idle");
+  Proto_EvtDone("res", pass, fail);
 }
 
 /**
@@ -375,6 +377,7 @@ static void run_insulation_all(void)
     return;
   }
 
+  Proto_ClearAbort();
   Proto_EvtState("running");
   n = Proto_NetlistCount();
 
@@ -398,7 +401,7 @@ static void run_insulation_all(void)
       else { Proto_EvtFault("F04", "insulation low"); fail++; }
     }
     Proto_EvtProgress((uint16_t)(i + 1U), n);
-    if (s_fault != 0U) { break; }
+    if (s_fault != 0U || Proto_AbortRequested() != 0U) { break; }
   }
 
   /* Always leave HV down and disarmed. */
@@ -406,8 +409,8 @@ static void run_insulation_all(void)
   Proto_ClearArm();
   Proto_EvtHv(0);
   Proto_EvtSafe();
-  Proto_EvtDone("insul", pass, fail);
   Proto_EvtState("idle");
+  Proto_EvtDone("insul", pass, fail);
 }
 
 /**

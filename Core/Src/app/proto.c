@@ -36,6 +36,8 @@ static uint8_t  s_armed;
 static int32_t  s_hv_mv;
 static int32_t  s_lim_r_mohm   = 5000;    /* 5 ohm  */
 static int32_t  s_lim_ins_mohm = 10000000;/* 10 Mohm */
+static volatile uint8_t s_busy;    /* a whole-run command is executing */
+static volatile uint8_t s_abort;   /* operator asked the run to stop    */
 
 /* -------------------------------------------------------------------------- */
 /* Output                                                                     */
@@ -123,8 +125,17 @@ void Proto_EvtFault(const char *code, const char *text)
   proto_emit('!', "FAULT %s %s", code, text);
 }
 
+/**
+  * @brief  Announce that a run has finished.
+  * @note   Always the LAST event of a run - the rail is already down, the state
+  *         is already idle and every result has been sent. The GUI can treat
+  *         !DONE as "everything about this run has been reported" without
+  *         depending on the ordering of anything else.
+  */
 void Proto_EvtDone(const char *what, uint16_t passed, uint16_t failed)
 {
+  s_busy  = 0U;
+  s_abort = 0U;
   proto_emit('!', "DONE %s %u %u", what, (unsigned)passed, (unsigned)failed);
 }
 
@@ -156,6 +167,9 @@ void Proto_EvtSafe(void)
 /* -------------------------------------------------------------------------- */
 
 uint16_t Proto_NetlistCount(void) { return s_net_count; }
+uint8_t  Proto_Busy(void)           { return s_busy; }
+uint8_t  Proto_AbortRequested(void) { return s_abort; }
+void     Proto_ClearAbort(void)     { s_abort = 0U; }
 uint8_t  Proto_HvArmed(void)      { return s_armed; }
 void     Proto_ClearArm(void)     { s_armed = 0U; }
 int32_t  Proto_LimitRMaxMohm(void)   { return s_lim_r_mohm; }
@@ -182,8 +196,25 @@ const char *proto_fixture_name(ProtoFixture_t fx)
   }
 }
 
+/**
+  * @brief  Record which fixture the harness is on, and tell the GUI.
+  * @note   A fixture change INVALIDATES arming. The harness has physically
+  *         moved, so whatever was armed no longer describes what is connected.
+  *         Trusting the sequence instead would permit: arm on the HV fixture,
+  *         declare the harness moved back to the matrix, then energise. The arm
+  *         is dropped and the hardware forced safe on any change.
+  */
 void Proto_SetFixture(ProtoFixture_t fx)
 {
+  if (fx != s_fixture && (s_armed != 0U || s_hv_mv != 0))
+  {
+    TestCmd_t c = { CMD_FORCE_SAFE, 0U, 0U, 0U, 0.0f };
+    (void)Tasks_PostCommand(&c);
+    s_armed = 0U;
+    s_hv_mv = 0;
+    proto_emit('!', "HV 0");
+    proto_emit('!', "SAFE");
+  }
   s_fixture = fx;
   Proto_EvtFixture(fx);
 }
@@ -259,6 +290,27 @@ static void proto_post(TestCmdType_t t, uint16_t a, uint16_t b)
 }
 
 /**
+  * @brief  Post a whole-run command, refusing if one is already executing.
+  * @note   The sequencer queue would happily accept a second run and execute it
+  *         afterwards, which looks like success to the GUI and then behaves
+  *         nothing like it. Refuse instead.
+  * @param  t : [in] run command type.
+  * @param  a : [in] first argument.
+  * @retval None
+  */
+static void proto_post_run(TestCmdType_t t, uint16_t a)
+{
+  if (s_busy != 0U)
+  {
+    proto_err("EBUSY", "a run is already in progress");
+    return;
+  }
+  s_abort = 0U;
+  s_busy  = 1U;
+  proto_post(t, a, 0U);
+}
+
+/**
   * @brief  Execute one complete command line.
   * @note   Exactly one '<' reply is emitted on every path, including errors -
   *         the GUI blocks on that reply with a 2 s timeout, so a silent path
@@ -298,8 +350,20 @@ static void proto_exec(char *line)
   }
   else if (strcmp(t[0], "ABORT") == 0)
   {
-    Proto_ClearArm();
-    proto_post(CMD_FORCE_SAFE, 0U, 0U);
+    /* Cannot be queued: the sequencer holds the hardware mutex for the whole
+     * run, so a queued force-safe would not execute until the run it is meant
+     * to stop had already finished. Set the flag the run loops poll, and answer
+     * immediately. */
+    s_abort = 1U;
+    s_armed = 0U;
+    if (s_busy == 0U)
+    {
+      proto_post(CMD_FORCE_SAFE, 0U, 0U);
+    }
+    else
+    {
+      proto_emit('<', "OK");
+    }
   }
   else if (strcmp(t[0], "NETLIST") == 0 && n >= 2U)
   {
@@ -364,12 +428,12 @@ static void proto_exec(char *line)
     if (strcmp(t[2], "verify") == 0)
     {
       if (s_net_count == 0U) { proto_err("ERANGE", "no netlist"); }
-      else { Proto_SetFixture(PROTO_FIXTURE_MTX); proto_post(CMD_CONT_RUN, 0U, 0U); }
+      else { Proto_SetFixture(PROTO_FIXTURE_MTX); proto_post_run(CMD_CONT_RUN, 0U); }
     }
     else if (strcmp(t[2], "discover") == 0)
     {
       Proto_SetFixture(PROTO_FIXTURE_MTX);
-      proto_post(CMD_CONT_RUN, 1U, 0U);
+      proto_post_run(CMD_CONT_RUN, 1U);
     }
     else
     {
@@ -379,7 +443,7 @@ static void proto_exec(char *line)
   else if (strcmp(t[0], "RES") == 0 && n >= 2U && strcmp(t[1], "RUN") == 0)
   {
     if (s_net_count == 0U) { proto_err("ERANGE", "no netlist"); }
-    else { Proto_SetFixture(PROTO_FIXTURE_MTX); proto_post(CMD_RES_RUN, 0U, 0U); }
+    else { Proto_SetFixture(PROTO_FIXTURE_MTX); proto_post_run(CMD_RES_RUN, 0U); }
   }
   else if (strcmp(t[0], "INSUL") == 0 && n >= 2U)
   {
@@ -401,7 +465,7 @@ static void proto_exec(char *line)
     else if (strcmp(t[1], "RUN") == 0)
     {
       if (s_armed == 0U) { proto_err("ENOTARMED", "INSUL ARM first"); }
-      else               { proto_post(CMD_INSUL_RUN, 0U, 0U); }
+      else               { proto_post_run(CMD_INSUL_RUN, 0U); }
     }
     else
     {
@@ -504,6 +568,8 @@ void Proto_Init(UART_HandleTypeDef *huart)
   s_fixture     = PROTO_FIXTURE_NONE;
   s_armed       = 0U;
   s_hv_mv       = 0;
+  s_busy        = 0U;
+  s_abort       = 0U;
 }
 
 /**

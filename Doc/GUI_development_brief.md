@@ -243,6 +243,58 @@ Recorded here so they are visible; **do not build around them**, ask.
    `ERR EHW`. Do not offer the control.
 4. Run history — stored on the instrument or the GUI host?
 
+### 8.1 Answers to the GUI-side questions raised during task 1
+
+All checked against the firmware, not from memory. **Two of these found real bugs**, now
+fixed — thank you, they were worth raising.
+
+**1. Pin numbering — 1-based, valid range 1..256.** Out of range gives `ERR ERANGE pin out of
+range`, on both `NETLIST ADD` and `MANUAL PATH`. Tighten the codec to match; do not accept 0.
+
+**2. `HV SET` — 0..500000 mV, `ERR ERANGE` above.** Your simulator is correct. One extra rule
+it is missing: a **non-zero** `HV SET` while not armed is refused with `ERR ENOTARMED`. Only
+`HV SET 0` is accepted unarmed.
+
+**3. Command rejection while running — you were right, the firmware was wrong.**
+It previously accepted a second run command and queued it, which looks like success to the
+GUI and then behaves nothing like it. **Fixed:** run-starting commands (`CONT RUN`, `RES RUN`,
+`INSUL RUN`) now return `ERR EBUSY a run is already in progress`. `PING`/`ID`/`STATUS`/`SAFE`/
+`ABORT` always work, as in your simulator. Everything else is accepted and queued.
+
+**`ABORT` also had a real bug.** It was queued behind the running test — and because the
+sequencer holds the hardware mutex for the whole run, the abort would not have executed until
+the run it was meant to stop had already finished. **Fixed:** `ABORT` now sets a flag that the
+run loops poll between points, and replies immediately. Expect the run to stop within roughly
+one measurement point, then `!SAFE`, `!STATE idle`, `!DONE`.
+
+**4. `CONT RUN verify` with no netlist — the firmware errors.** `ERR ERANGE no netlist`.
+Remove the simulator's fallback to a built-in golden harness: it would let the GUI look like
+it works in a case that fails on hardware, which is the worst kind of simulator bug.
+
+**5. Discover progress — your granularity is right.** The firmware emits `!PROGRESS <hi> 256`
+once per high-side pin, exactly as you have it. Per-combination progress over 65,536 points
+would swamp the link for no benefit.
+
+**6. Fixture change while armed — you found the second bug.**
+The firmware just recorded it. That allowed: arm on the HV fixture, declare the harness moved
+back to the matrix, then energise. **Fixed:** any fixture change now drops the arm, forces the
+hardware safe, and emits `!HV 0` and `!SAFE` before `!FIXTURE`. Mirror that in the simulator.
+
+**7. Discharge ordering — do not key off ordering. Key off `!SAFE`.**
+Ordering is now fixed and guaranteed, but the robust signal is the explicit event:
+
+```
+!HV 0
+!SAFE                  <- "safe to handle" keys off THIS
+!STATE idle
+!DONE insul <p> <f>    <- always the last event of any run
+```
+
+**`!DONE` is now guaranteed to be the final event of every run**, for all three test types.
+When it arrives, everything about that run has already been reported. Change the simulator to
+match — it currently emits `idle` before `DONE` for insulation but the reverse elsewhere.
+
+
 ---
 
 ## 9. Context files

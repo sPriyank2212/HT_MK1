@@ -122,6 +122,26 @@ uint8_t Proto_HvArmed(void);
 void Proto_ClearArm(void);
 
 /**
+  * @brief  Whether a whole-run command is in progress.
+  * @retval Non-zero while a run is executing. Run-starting commands are refused
+  *         with ERR EBUSY in that state; PING/ID/STATUS/SAFE/ABORT always work.
+  */
+uint8_t Proto_Busy(void);
+
+/**
+  * @brief  Whether the operator has asked for the current run to stop.
+  * @note   ABORT cannot be queued behind a running test - the sequencer holds
+  *         the hardware mutex for the whole run - so it sets a flag that the
+  *         run loops poll between points instead.
+  */
+uint8_t Proto_AbortRequested(void);
+
+/**
+  * @brief  Clear the abort flag. Called at the start of every run.
+  */
+void Proto_ClearAbort(void);
+
+/**
   * @brief  Configured resistance limit, milliohms.
   */
 int32_t Proto_LimitRMaxMohm(void);
