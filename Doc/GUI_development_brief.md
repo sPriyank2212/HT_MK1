@@ -158,8 +158,23 @@ range` on `NETLIST ADD`, and `<ERR ERANGE pin` on `MANUAL PATH`.
 not yet `!DONE` — `CONT RUN`, `RES RUN` and `INSUL RUN` are refused with
 `<ERR EBUSY a run is already in progress`. The refusal is final: nothing is remembered, and if
 the operator still wants that run the GUI must issue it again after `!DONE`. `PING`, `ID`,
-`STATUS`, `SAFE` and `ABORT` always work. Everything else is accepted and queued behind the
-run.
+`STATUS`, `SAFE` and `ABORT` always work. Everything else is accepted.
+
+**Replies are never queued behind a run.** Corrected 2026-08-05 — an earlier wording here said
+"accepted and queued behind the run", which was wrong and is what prompted §8.2 question 1.
+Commands are parsed and answered by the instrument's comms path; only the *execution* of the
+few commands that touch hardware (`SAFE`, `ABORT` when idle, `MANUAL PATH`, `MANUAL OFF`) goes
+onto the sequencer queue, and those are answered `<OK started` the moment they are enqueued,
+not when they run. **Every command is answered well inside the 2 s timeout.** Do not lengthen
+or suspend the timeout during a run.
+
+> ⚠ **Known firmware defect — `FW-07`, being fixed. Do not build around it, and do not model it
+> in the simulator.** On the instrument as it stands the comms thread is starved for the whole
+> duration of a run, so a command sent mid-run is not answered until the run ends — and
+> `ABORT` therefore does not currently stop a run. The contract above is what the firmware is
+> being fixed to meet; it is the simulator's job to model the contract, not the bug. What the
+> GUI *should* do meanwhile is unchanged: send `ABORT`, wait for `<OK`, and keep showing the
+> run as in progress until `!DONE` arrives. Never show a run as stopped because you asked.
 
 > Side effect to expect: `CONT RUN` and `RES RUN` assert the matrix fixture *before* the busy
 > check, so a refused run is still preceded by `!FIXTURE mtx` — and, if HV was armed, by
@@ -198,6 +213,11 @@ The arm is dropped. This holds whether the change came from `>FIXTURE` or implic
 `CONT RUN` / `RES RUN`. Re-declaring the fixture the instrument is already on changes nothing
 and emits `!FIXTURE` alone. Mirror all of this in the simulator: the case it guards against is
 arm on the HV fixture, declare a move back to the matrix, then energise.
+
+Three details, all confirmed in the firmware (§8.3 Q2): **`!HV 0` is emitted even when the rail
+was already at 0** — an armed-but-idle change still produces it; **no `!STATE idle` accompanies
+the arm drop**, so do not wait for one; and **`!SAFE` may arrive twice** for a single change,
+once inline and once when the force-safe executes.
 
 **Malformed input.** Anything unknown or unparseable gives `<ERR ESYNTAX <what>`. A line longer
 than **72 characters** is discarded up to the next newline and answered once with
@@ -242,9 +262,11 @@ the handling prompt off `!SAFE` and nothing else, and never off event ordering.
 !SAFE                                  everything forced safe (abort, fault, or command)
 ```
 
-- **`!SAFE` is emitted when the hardware is actually forced safe**: at the end of an insulation
-  run, on `>SAFE`, on `>ABORT` while idle, and on a fixture change that invalidates arming
-  (§3.2.1). It is *not* emitted at the end of a continuity or resistance run.
+- **`!SAFE` is emitted when the hardware is forced safe**: at the end of an insulation run, on
+  `>SAFE`, on `>ABORT` while idle, and on a fixture change that invalidates arming (§3.2.1). It
+  is *not* emitted at the end of a continuity or resistance run.
+- **`!SAFE` is idempotent and may repeat** — a fixture change emits it twice (§8.3 Q2). Treat a
+  repeat as confirmation, not as a new event to reconcile.
 - **`!FIXTURE` can arrive unsolicited.** `CONT RUN` and `RES RUN` assert `mtx` themselves, so
   the GUI will see `!FIXTURE mtx` it did not ask for. Treat any `!FIXTURE` as authoritative and
   drop any armed state you are showing.
@@ -345,8 +367,8 @@ controls before `!FIXTURE hv`, or that hides a link failure.
 
 Recorded here so they are visible; **do not build around them**, ask.
 
-1. Discovery scan takes tens of seconds. Is `!PROGRESS` fine-grained enough, or does the GUI
-   need per-pin position?
+1. ~~Discovery scan takes tens of seconds. Is `!PROGRESS` fine-grained enough?~~ **Answered**
+   in §8.1.5: per-high-pin granularity is what the firmware emits; it is fine.
 2. Should the netlist persist in instrument flash, or be uploaded every run?
 3. ~~`>MANUAL RELAY` on a live HV card~~ **Answered:** the firmware refuses it outright with
    `ERR EHW`. Do not offer the control.
@@ -419,6 +441,97 @@ The block above is the **insulation** sequence. Continuity and resistance never 
 so they emit `!STATE idle` and `!DONE` with **no `!SAFE` at all** — which is exactly why "safe
 to handle" has to key off the explicit `!SAFE` event rather than off the end of a run.
 
+### 8.2 Raised during task-2 protocol verification (GUI side)
+
+The protocol layer was verified against this brief: codec byte-for-byte, connection-manager
+safety behaviour, and live wire captures against the simulator. Codec and connection manager
+are **conformant**. What remains open:
+
+**Questions for the firmware side**
+
+1. **Queued-command latency vs the 2 s timeout.** §3.2.1 says non-run commands during a run
+   are "accepted and queued behind the run". A discover run takes tens of seconds, so a queued
+   `LIMITS GET` reply would arrive long after the GUI's 2 s command timeout (§3.5.1) has fired
+   and dropped the link. Should the GUI suspend/lengthen the timeout while a run is in
+   progress, or does the firmware answer queued commands within 2 s despite the wording?
+2. **Fixture-change force-safe: exact event set.** §3.2.1 lists `!HV 0`, `!SAFE`, `!FIXTURE`
+   for a change while armed. Two gaps: is `!HV 0` still emitted when the rail is already at 0
+   (the change is armed-only)? And does dropping the arm also emit `!STATE idle` (state goes
+   `hv_armed` → `idle`), or is the arm-drop implicit in `!SAFE`?
+
+**Simulator deviations found (GUI-side action — fix the simulator, not the GUI)**
+
+Captured on a live socket during verification; all are places where the simulator teaches
+behaviour the firmware does not have:
+
+1. `ABORT` mid-run: simulator emits `!SAFE !STATE idle !DONE` **before** the `<OK`; the
+   firmware replies immediately (§3.2.1). Idle `ABORT` should reply `<OK started`, not `<OK`.
+2. `HV SET -100` while armed is accepted with `<OK`; must be `ERR ERANGE` (range 0..500000).
+3. HV ramp livelocks when a ramp step lands within the 10 mV `!HV` deadband (e.g. `HV SET 10`,
+   `50`, `250001`): `<OK` is sent, the rail never arrives, the ramp thread spins forever.
+4. `INSUL ARM` success ordering is reversed: simulator sends `!STATE hv_armed` then
+   `<OK armed`; contract is `<OK armed`, then `!STATE hv_armed` (§3.2.1).
+5. `HV SET` success: contract emits `!HV <mv>` **before** the `<OK` (§3.2.1); simulator
+   replies first and ramps afterwards.
+6. `RES RUN` without a netlist runs instead of `ERR ERANGE no netlist` (§3.2.1).
+7. `NETLIST BEGIN <n>` with `n > 256`, and `ADD` beyond the promised `n`, are not refused
+   (§3.2.1: `ERR ERANGE too many entries` / `ERR ERANGE more entries than promised`).
+8. A refused (`EBUSY`) `CONT RUN`/`RES RUN` must still be preceded by `!FIXTURE mtx` — and by
+   `!HV 0`/`!SAFE` if armed (§3.2.1 side effect). The simulator's refusal is event-free.
+9. Commands sent mid-run are answered immediately by the simulator; the firmware queues them
+   behind the run (§3.2.1). See question 1 for the fallout.
+10. Re-declaring the current fixture drops the arm in the simulator; the firmware treats it as
+    a no-op emitting `!FIXTURE` alone (§3.2.1).
+11. Aborted continuity/resistance runs emit `!SAFE` in the simulator; per §8.1.3 they must not
+    (rail was never up — `!STATE idle`, `!DONE` only).
+12. §3.2.1 malformed-input rules are not modelled: >72-char lines discarded with one
+    `ERR ESYNTAX line too long`, bare `>` → `ERR ESYNTAX empty`, and empty lines get **no
+    reply** (the simulator answers empty lines with `ERR ESYNTAX`).
+
+### 8.3 Answers to §8.2
+
+Checked against `proto.c` and `tasks.c`, not against this brief. **Your question 1 found a real
+firmware defect** — a more serious one than the wording suggested. Thank you; that is twice now.
+
+**Q1 — queued-command latency. Neither option: the premise was my error.** Replies are never
+queued. Commands are parsed and answered by the comms path; only the *execution* of the four
+hardware-touching commands is queued, and those are answered `<OK started` at enqueue time. The
+"accepted and queued behind the run" wording in §3.2.1 was wrong and is now corrected. **Keep
+the 2 s timeout as it is** — do not lengthen or suspend it during a run.
+
+*But you were right that something is broken.* On the instrument today the comms thread runs
+below the sequencer in priority, and the sequencer never yields during a run — its settle
+delays busy-spin rather than blocking. So the comms thread is starved for the entire run:
+mid-run commands are not answered until it ends, and **`ABORT` does not currently stop a run**.
+Raised as **FW-07**, with a second defect it hides (below). The contract is what the firmware
+is being fixed to meet — **build to the contract, and do not model the defect in the
+simulator**. Deviation 9 in your list is therefore backwards: your simulator's
+answer-immediately behaviour is correct and should stay.
+
+**Q2 — fixture-change force-safe. Both gaps confirmed, and there is a third.**
+
+- **`!HV 0` is always emitted** on an invalidating change, including the armed-with-rail-at-0
+  case. It is unconditional inside that branch, not conditioned on the rail being up.
+- **No `!STATE idle` is emitted.** The arm is dropped silently as far as `!STATE` is concerned,
+  so a GUI tracking state purely from `!STATE` would still be showing `hv_armed`. Treat
+  `!SAFE`, and any `!FIXTURE`, as disarming (§3.5 rule 8). This is a firmware gap rather than a
+  deliberate design — logged, but do not wait for it.
+- **`!SAFE` can arrive twice** for one fixture change: once inline, once when the queued
+  force-safe actually executes. `!SAFE` is idempotent — treat a repeat as confirmation, never
+  as a second event to reconcile. Applies to any `!SAFE`, not just this path.
+
+**On your deviations list.** Eleven of the twelve are right, and 2, 4, 5, 6, 7, 8, 10, 11 and 12
+match the firmware exactly as you have written them. Three notes:
+
+- **2 — the error code depends on arm state.** `HV SET -100` gives `ERR ERANGE` only *while
+  armed*. **Unarmed, any non-zero value gives `ERR ENOTARMED`**, negative included — the arm
+  check runs before the range check. Your simulator needs both orders.
+- **3 — there is no 10 mV deadband.** That came from a stale line in §3.4, now corrected:
+  `!HV` is emitted on every change, full stop. The livelock is your own ramp logic, but the
+  doc caused it. Also note `HV SET` does not yet move the rail at all (Appendix B) — a
+  simulated ramp is fine, but nothing on the instrument produces one today.
+- **9 — reversed, see Q1.** Your simulator is correct; the brief was wrong.
+
 
 ---
 
@@ -449,6 +562,7 @@ Implemented in `Core/Src/app/proto.c`, on hardware now.
 | **Runs but always fails** | `RES RUN` — every net reports `fail_high` with `!FAULT F08`. The resistance measurement path is mid-rewrite for a new ADC (firmware task FW-02); reporting a plausible number from a measurement path that no longer exists would be worse than reporting a failure. **Build the resistance screen anyway** — the event format is final, and your simulator should exercise it properly |
 | **Accepted, not yet driven** | `HV SET` — the arm check and the range check are real, and the value is echoed as `!HV <mv>`, but it does not yet move the rail. The rail is raised by the insulation run itself, at a fixed fraction. Build to the contract; the command's behaviour will not change, only what it drives |
 | **Not emitted yet** | `!STATE fault` (faults arrive as `!FAULT`), and `!RES` verdict `fail_low`. `>STATUS` never reports `running` or `fault` either — see §3.2. Handle all three, they are part of the contract |
+| **Broken, being fixed (FW-07)** | **`ABORT` does not stop a run**, and no command sent mid-run is answered until the run ends — the comms thread is starved for the whole run. Found by the GUI-side task-2 review; see §8.3 Q1. **Build to §3.2.1 regardless** and do not model this in the simulator |
 
 Two conveniences for hand-testing over a terminal:
 

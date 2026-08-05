@@ -19,9 +19,13 @@ ID prefixes: `HW-` schematic/hardware · `FW-` firmware · `BU-` bring-up/verify
 | Blocking — firmware cannot proceed | **0** |
 | Agreed, awaiting schematic edit | 3 |
 | Awaiting a decision | 2 |
-| Firmware work queued | 4 |
+| Firmware work queued | 6 |
 | Verify at bring-up | 9 |
 | Closed to date | 11 |
+
+**FW-07 is the one to look at first.** `>ABORT` does not stop a run — the comms thread is
+starved for the entire run, so the abort never reaches the flag the run loops poll. Found by
+the GUI-side review, confirmed in the source. FW-08 sits behind it and is unmasked by the fix.
 
 **The 4-wire method is now proven on real hardware**, not just on paper: the ADS1232 bench rig
 measured a 0.033 Ω resistor to **0.4 %** with no current calibration at all, because the
@@ -68,6 +72,8 @@ window and nothing downstream can be finalised without it.
 | FW-04 | Mux address lines come from MCP23017 U21 on I2C3, not MCU GPIO. Update `bsp/board.c`, add OLAT shadow registers, and consider 400 kHz — a 256 × 256 scan is roughly 70 s of pure bus time at 100 kHz versus 18 s at 400 kHz. | 2026-07-27 |
 | ~~FW-05~~ | **DONE 2026-08-01** — `app/proto.c`, see CL-11. Original scope: implement the instrument side of the GUI protocol defined in `Doc/GUI_development_brief.md` §3 — line-based ASCII over the VCP at 115200. Replaces the current single-keystroke bring-up console (`c`/`k`/`i`/`s`/`f`/`r`). Needs: command parser, `<` replies with 2 s worst-case latency, `!` result streaming during a run, and `!STATE`/`!FIXTURE`/`!HV`/`!SAFE` events. The GUI is being built against this contract, so changes to it must be agreed, not made. | 2026-08-01 |
 | FW-06 | **`>STATUS` never reports `running` or `fault`.** `proto_exec` builds the reply from `s_armed` alone, so a GUI that reconnects mid-run and re-issues `>STATUS` — which the brief §3.5 rule 4 requires it to do — is told `idle` while a run is executing. `!STATE` does carry `running`, so the information exists; only the polled path is missing it. Documented as-is in the brief for now (§3.2, Appendix B) rather than changed silently: the reply is protocol-visible and the GUI is being built against it, so agree it first. Fix is to report from `s_busy` and `Safety_InFault()` as well. | 2026-08-05 |
+| FW-07 | **`>ABORT` cannot stop a run — the comms thread is starved for the whole run.** `tSequencer` is `osPriorityNormal`, `tComms` is `osPriorityBelowNormal`, and the sequencer never yields during a run: the settle delays are `HAL_Delay` (the stock `__weak` one — a busy-spin on `HAL_GetTick`, TIM1 timebase, nothing overrides it) and the I2C/SPI calls are polled. With `configUSE_PREEMPTION=1` a lower-priority task never runs while a higher-priority one is runnable, so `Proto_RxByte` is never called during a run: **the abort flag the run loops poll can never be set, and the polling in `tasks.c` is unreachable in practice.** Worse, RX is single-byte polled with no interrupt or DMA, so mid-run bytes are lost to overrun rather than buffered. Scale: insulation is 256 × ~250 ms ≈ 64 s, discover 65,536 × ~2 ms ≈ 131 s — an operator pressing Abort during a 500 V run has no effect for that long. Physical E-stop and the safety task (`osPriorityHigh`, blocks on `osDelay`) are unaffected. Found by the GUI-side task-2 review. Two candidate fixes, neither started: interrupt/DMA RX into a ring buffer with `tComms` blocking on it, or `osDelay` instead of `HAL_Delay` in the test settle paths so the sequencer yields. | 2026-08-05 |
+| FW-08 | **`Proto_SetFixture` announces `!SAFE` before the hardware is safe.** It posts `CMD_FORCE_SAFE` to the queue and then immediately emits `!HV 0` and `!SAFE`, without waiting for execution — so the instrument tells the GUI it is safe while the rail may still be up. Directly contradicts the brief's central rule that the GUI must never show a safe state it has not been told is real. Masked today by FW-07 (a fixture change cannot be received mid-run), so **fixing FW-07 unmasks this** — do them together. Also in the same path: the arm is dropped with no `!STATE idle`, and `!SAFE` is emitted twice (once inline, once when the queued force-safe runs). | 2026-08-05 |
 | DOC-01 | `fw_status.txt` still describes the 2-wire path, 10 mA excitation, and Matrix U33 as the resistance ADC. Sync it with v1.4. | 2026-07-27 |
 
 ### Verify at bring-up
@@ -107,6 +113,29 @@ window and nothing downstream can be finalised without it.
 ---
 
 ## Activity log
+
+### 2026-08-05 (later — GUI task-2 review returned)
+- The GUI side verified its protocol layer against the brief and added **§8.2**: two questions
+  and twelve simulator deviations. Checked all fourteen against `proto.c`/`tasks.c`; answers in
+  the new **§8.3**.
+- **Their question 1 found FW-07**, which is the serious one. They asked whether the GUI should
+  lengthen its 2 s timeout during a run, because §3.2.1 said non-run commands were "queued
+  behind the run". That wording was mine and was wrong — replies are never queued. But chasing
+  it down showed the comms thread is *starved* for the whole run: `tComms` sits below
+  `tSequencer` in priority and the sequencer never yields, because the settle delays are the
+  stock busy-spin `HAL_Delay`. **`>ABORT` therefore cannot stop a run at all.** Raised FW-07.
+- **FW-08 found alongside it** — `Proto_SetFixture` emits `!SAFE` on *posting* the force-safe,
+  not on its execution, so the instrument can claim safety while the rail is still up. Masked
+  by FW-07 today; fixing FW-07 unmasks it. Do them together.
+- Fixed the §3.2.1 wording that caused the question, and answered their question 2 from source:
+  `!HV 0` is emitted even when the rail was already at 0; **no** `!STATE idle` accompanies the
+  arm drop; and `!SAFE` arrives twice for one fixture change and is idempotent.
+- Of their twelve simulator deviations, **eleven are correct**. Number 9 is backwards — their
+  simulator answers mid-run commands immediately, which is right; the brief was wrong. Also
+  told them the `HV SET` arm check runs *before* the range check, so an unarmed negative value
+  gives `ENOTARMED` and not `ERANGE`, and that the 10 mV `!HV` deadband their ramp livelocked
+  on never existed — it was a stale line in §3.4, already corrected earlier today.
+- No firmware changed. FW-07 and FW-08 are logged, not started.
 
 ### 2026-08-05 (GUI brief reconciled with the firmware)
 - **§3 of `Doc/GUI_development_brief.md` now matches `proto.c` / `tasks.c`.** Commit `5d837d8`
