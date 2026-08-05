@@ -114,6 +114,16 @@ window and nothing downstream can be finalised without it.
 
 ## Activity log
 
+### 2026-08-05 (later still — GUI side folded in the answers)
+- The GUI side struck both §8.2 questions as answered, folded the §8.3 refinements into
+  deviations 2, 3 and 9, and **added two more from reading the corrected §3.2**: `SAFE`,
+  `MANUAL PATH`, `MANUAL OFF` and idle `ABORT` reply `<OK started` not `<OK` (13), and `STATUS`
+  never reports `running` (14). Both verified against `proto.c` — correct, and 14 is FW-06.
+- Running total from the GUI side: **fourteen items raised, thirteen real**, one caused by this
+  brief. Three firmware defects found this way — the two fixed in `5d837d8`, plus FW-07.
+- Still open and **not started**: FW-07 / FW-08, and the review of the `gui/` code itself
+  (task 1 and task 2 are both sitting uncommitted in the working tree).
+
 ### 2026-08-05 (later — GUI task-2 review returned)
 - The GUI side verified its protocol layer against the brief and added **§8.2**: two questions
   and twelve simulator deviations. Checked all fourteen against `proto.c`/`tasks.c`; answers in

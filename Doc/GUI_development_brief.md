@@ -449,15 +449,13 @@ are **conformant**. What remains open:
 
 **Questions for the firmware side**
 
-1. **Queued-command latency vs the 2 s timeout.** §3.2.1 says non-run commands during a run
-   are "accepted and queued behind the run". A discover run takes tens of seconds, so a queued
-   `LIMITS GET` reply would arrive long after the GUI's 2 s command timeout (§3.5.1) has fired
-   and dropped the link. Should the GUI suspend/lengthen the timeout while a run is in
-   progress, or does the firmware answer queued commands within 2 s despite the wording?
-2. **Fixture-change force-safe: exact event set.** §3.2.1 lists `!HV 0`, `!SAFE`, `!FIXTURE`
-   for a change while armed. Two gaps: is `!HV 0` still emitted when the rail is already at 0
-   (the change is armed-only)? And does dropping the arm also emit `!STATE idle` (state goes
-   `hv_armed` → `idle`), or is the arm-drop implicit in `!SAFE`?
+1. ~~**Queued-command latency vs the 2 s timeout.**~~ **Answered in §8.3 Q1:** the "queued"
+   wording was a brief error — replies are never queued, the 2 s timeout stands. The question
+   exposed a real firmware defect (**FW-07**: comms thread starved during runs; `ABORT`
+   currently does not stop a run). Build to the contract; do not model the defect.
+2. ~~**Fixture-change force-safe: exact event set.**~~ **Answered in §8.3 Q2:** `!HV 0` is
+   unconditional on an invalidating change; **no** `!STATE idle` accompanies the arm-drop;
+   `!SAFE` may arrive twice and is idempotent.
 
 **Simulator deviations found (GUI-side action — fix the simulator, not the GUI)**
 
@@ -467,8 +465,13 @@ behaviour the firmware does not have:
 1. `ABORT` mid-run: simulator emits `!SAFE !STATE idle !DONE` **before** the `<OK`; the
    firmware replies immediately (§3.2.1). Idle `ABORT` should reply `<OK started`, not `<OK`.
 2. `HV SET -100` while armed is accepted with `<OK`; must be `ERR ERANGE` (range 0..500000).
+   Per §8.3: the arm check runs **before** the range check — unarmed, *any* non-zero value
+   (negative or >500000 included) gives `ERR ENOTARMED`. Both orders needed.
 3. HV ramp livelocks when a ramp step lands within the 10 mV `!HV` deadband (e.g. `HV SET 10`,
    `50`, `250001`): `<OK` is sent, the rail never arrives, the ramp thread spins forever.
+   Per §8.3: there is **no deadband** (the §3.4 line that caused this was stale, now fixed) —
+   `!HV` is emitted on every change. Simplest fix: echo `!HV <mv>` once, no ramp; Appendix B
+   confirms `HV SET` does not move the rail yet.
 4. `INSUL ARM` success ordering is reversed: simulator sends `!STATE hv_armed` then
    `<OK armed`; contract is `<OK armed`, then `!STATE hv_armed` (§3.2.1).
 5. `HV SET` success: contract emits `!HV <mv>` **before** the `<OK` (§3.2.1); simulator
@@ -478,8 +481,9 @@ behaviour the firmware does not have:
    (§3.2.1: `ERR ERANGE too many entries` / `ERR ERANGE more entries than promised`).
 8. A refused (`EBUSY`) `CONT RUN`/`RES RUN` must still be preceded by `!FIXTURE mtx` — and by
    `!HV 0`/`!SAFE` if armed (§3.2.1 side effect). The simulator's refusal is event-free.
-9. Commands sent mid-run are answered immediately by the simulator; the firmware queues them
-   behind the run (§3.2.1). See question 1 for the fallout.
+9. ~~Commands sent mid-run are answered immediately by the simulator; the firmware queues
+   them~~ **Reversed by §8.3 Q1:** the simulator's answer-immediately behaviour is correct —
+   it was the brief that was wrong. Not a deviation; keep it.
 10. Re-declaring the current fixture drops the arm in the simulator; the firmware treats it as
     a no-op emitting `!FIXTURE` alone (§3.2.1).
 11. Aborted continuity/resistance runs emit `!SAFE` in the simulator; per §8.1.3 they must not
@@ -487,6 +491,10 @@ behaviour the firmware does not have:
 12. §3.2.1 malformed-input rules are not modelled: >72-char lines discarded with one
     `ERR ESYNTAX line too long`, bare `>` → `ERR ESYNTAX empty`, and empty lines get **no
     reply** (the simulator answers empty lines with `ERR ESYNTAX`).
+13. `SAFE`, `MANUAL PATH` and `MANUAL OFF` reply `<OK` in the simulator; per §3.2 they are
+    sequencer-queued and reply `<OK started` (as does idle `ABORT`, deviation 1).
+14. `STATUS` can report `state=running` in the simulator; per §3.2 the firmware only ever
+    reports `idle` or `hv_armed` — `running`/`fault` reach the GUI via `!STATE`/`!FAULT` only.
 
 ### 8.3 Answers to §8.2
 
@@ -520,8 +528,8 @@ answer-immediately behaviour is correct and should stay.
   force-safe actually executes. `!SAFE` is idempotent — treat a repeat as confirmation, never
   as a second event to reconcile. Applies to any `!SAFE`, not just this path.
 
-**On your deviations list.** Eleven of the twelve are right, and 2, 4, 5, 6, 7, 8, 10, 11 and 12
-match the firmware exactly as you have written them. Three notes:
+**On your deviations list.** Of the original twelve, eleven are right — 2, 4, 5, 6, 7, 8, 10, 11
+and 12 match the firmware exactly as written. Three notes:
 
 - **2 — the error code depends on arm state.** `HV SET -100` gives `ERR ERANGE` only *while
   armed*. **Unarmed, any non-zero value gives `ERR ENOTARMED`**, negative included — the arm
@@ -531,6 +539,17 @@ match the firmware exactly as you have written them. Three notes:
   doc caused it. Also note `HV SET` does not yet move the rail at all (Appendix B) — a
   simulated ramp is fine, but nothing on the instrument produces one today.
 - **9 — reversed, see Q1.** Your simulator is correct; the brief was wrong.
+
+**13 and 14, which you added after reading §8.3, are both confirmed.** `SAFE`, `MANUAL PATH`
+and `MANUAL OFF` go through the same enqueue path and reply `<OK started`, as does `ABORT` when
+idle; `STATUS` is built from the armed flag alone and can never say `running` or `fault`. That
+`STATUS` gap is logged as **FW-06** — the information exists, it just isn't in the polled reply,
+so on reconnect keep treating `idle` as "not armed" rather than "not running" (§3.2).
+
+**Net: fourteen raised, thirteen real, one (9) caused by this brief.** The scoreboard across
+both rounds is three firmware defects found from the GUI side — the two in `5d837d8`, and now
+FW-07. Verifying the contract against a simulator you wrote from it is doing exactly what it
+should.
 
 
 ---
