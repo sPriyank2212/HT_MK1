@@ -91,8 +91,8 @@ one place, not only from inside the brief.
 
 | ID | Item | Raised |
 |---|---|---|
-| GUI-01 | **Blocker — a send failure deadlocks the connection manager.** `_execute` calls `_link_lost()` while holding `_io_lock`; `_link_lost` → `_fail_all_pending` re-takes the same non-reentrant lock. Reproduced: `execute()` never returns and the lock is never released, so every later command hangs too — a frozen GUI with HV possibly live. This is the ordinary link-dropped-mid-run path that brief §6 says gets tested by pulling the plug; their failure tests only cover receive-side failures. Must be fixed before task 3. | 2026-08-05 |
-| GUI-02 | **Signed wire fields are parsed as unsigned.** `!RES <milliohms>`, `!INSUL <leak_mohm>`, `<STATUS hv_mv=` and the `<LIMITS` values are printed `%ld` from `int32_t`; the codec's `_uint` rejects a leading `-`, so a valid reading is reported as a protocol violation. Masked today because `RES RUN` always reports `0`/`fail_high` — **it bites the moment FW-02 lands**, since a near-zero 4-wire resistance reads negative once system offset is subtracted (BU-10), and `fail_low` exists as a verdict for exactly that case. | 2026-08-05 |
+| GUI-01 | **Acknowledged by the GUI side 2026-08-05, reproduced on their side, fix not yet in the code — re-verified still deadlocking.** Blocker — a send failure deadlocks the connection manager. `_execute` calls `_link_lost()` while holding `_io_lock`; `_link_lost` → `_fail_all_pending` re-takes the same non-reentrant lock. Reproduced: `execute()` never returns and the lock is never released, so every later command hangs too — a frozen GUI with HV possibly live. This is the ordinary link-dropped-mid-run path that brief §6 says gets tested by pulling the plug; their failure tests only cover receive-side failures. Must be fixed before task 3. | 2026-08-05 |
+| GUI-02 | **Acknowledged by the GUI side 2026-08-05, fix not yet in the code — `!RES 12 34 -5 pass` still rejected.** Signed wire fields are parsed as unsigned. `!RES <milliohms>`, `!INSUL <leak_mohm>`, `<STATUS hv_mv=` and the `<LIMITS` values are printed `%ld` from `int32_t`; the codec's `_uint` rejects a leading `-`, so a valid reading is reported as a protocol violation. Masked today because `RES RUN` always reports `0`/`fail_high` — **it bites the moment FW-02 lands**, since a near-zero 4-wire resistance reads negative once system offset is subtracted (BU-10), and `fail_low` exists as a verdict for exactly that case. | 2026-08-05 |
 | GUI-03 | **Three minors.** A single non-ASCII byte kills the reader thread and turns into a misleading 5 s "link lost" (`UnicodeDecodeError` is caught outside the read loop); `_link_lost` nulls `_transport` under a live reader/sender, so `AttributeError` escapes instead of `LinkLostError`; and `parse_line('')` raises, where ignoring empty lines would be safer. | 2026-08-05 |
 
 ### Verify at bring-up
@@ -136,6 +136,15 @@ one place, not only from inside the brief.
 ---
 
 ## Activity log
+
+### 2026-08-05 (GUI side acknowledged §8.4)
+- The GUI side amended §8.2 of the brief: the codec and connection manager are conformant *to
+  the brief as written*, with a pointer to §8.4 for the deadlock and the signed-value rejection,
+  **both reproduced independently on their side**. Accurate — no correction needed.
+- **Re-verified against their code: neither is fixed yet.** The send-failure repro still hangs
+  `execute()` forever, and `!RES 12 34 -5 pass` is still rejected. Their suite still passes at
+  57 tests, which is expected — neither defect has a test covering it, which is half of why
+  they survived. GUI-01 and GUI-02 stay open, now marked acknowledged.
 
 ### 2026-08-05 (tracker audit)
 - Checked the tracker against everything this session produced. Three things were being carried

@@ -465,7 +465,9 @@ to handle" has to key off the explicit `!SAFE` event rather than off the end of 
 
 The protocol layer was verified against this brief: codec byte-for-byte, connection-manager
 safety behaviour, and live wire captures against the simulator. Codec and connection manager
-are **conformant**. What remains open:
+are **conformant to the brief as written** — but see §8.4: the firmware-side review found a
+send-path deadlock in `connection.py` (BLOCKER) and signed wire values the codec rejects,
+both confirmed by re-running the probes on the GUI side. What remains open:
 
 **Questions for the firmware side**
 
