@@ -12,7 +12,7 @@ ID prefixes: `HW-` schematic/hardware · `FW-` firmware · `BU-` bring-up/verify
 
 ---
 
-## Status snapshot — 2026-08-01
+## Status snapshot — 2026-08-05
 
 | Category | Count |
 |---|---|
@@ -20,7 +20,7 @@ ID prefixes: `HW-` schematic/hardware · `FW-` firmware · `BU-` bring-up/verify
 | Agreed, awaiting schematic edit | 3 |
 | Awaiting a decision | 2 |
 | Firmware work queued | 4 |
-| Verify at bring-up | 7 |
+| Verify at bring-up | 9 |
 | Closed to date | 11 |
 
 **The 4-wire method is now proven on real hardware**, not just on paper: the ADS1232 bench rig
@@ -67,6 +67,7 @@ window and nothing downstream can be finalised without it.
 | ~~FW-03~~ | **DONE 2026-08-01** — `matrix_card` reworked for the Matrix_Card 2 geometry: 8:1 muxes, 32 per bank, 3 select bits, 8 enable expanders across two buffered I2C segments, byte-swapped enable map, segment switching via `HI_S3`/`LO_S3`. AD7476 binding removed (rev 2 deleted U33). | 2026-07-27 |
 | FW-04 | Mux address lines come from MCP23017 U21 on I2C3, not MCU GPIO. Update `bsp/board.c`, add OLAT shadow registers, and consider 400 kHz — a 256 × 256 scan is roughly 70 s of pure bus time at 100 kHz versus 18 s at 400 kHz. | 2026-07-27 |
 | ~~FW-05~~ | **DONE 2026-08-01** — `app/proto.c`, see CL-11. Original scope: implement the instrument side of the GUI protocol defined in `Doc/GUI_development_brief.md` §3 — line-based ASCII over the VCP at 115200. Replaces the current single-keystroke bring-up console (`c`/`k`/`i`/`s`/`f`/`r`). Needs: command parser, `<` replies with 2 s worst-case latency, `!` result streaming during a run, and `!STATE`/`!FIXTURE`/`!HV`/`!SAFE` events. The GUI is being built against this contract, so changes to it must be agreed, not made. | 2026-08-01 |
+| FW-06 | **`>STATUS` never reports `running` or `fault`.** `proto_exec` builds the reply from `s_armed` alone, so a GUI that reconnects mid-run and re-issues `>STATUS` — which the brief §3.5 rule 4 requires it to do — is told `idle` while a run is executing. `!STATE` does carry `running`, so the information exists; only the polled path is missing it. Documented as-is in the brief for now (§3.2, Appendix B) rather than changed silently: the reply is protocol-visible and the GUI is being built against it, so agree it first. Fix is to report from `s_busy` and `Safety_InFault()` as well. | 2026-08-05 |
 | DOC-01 | `fw_status.txt` still describes the 2-wire path, 10 mA excitation, and Matrix U33 as the resistance ADC. Sync it with v1.4. | 2026-07-27 |
 
 ### Verify at bring-up
@@ -106,6 +107,35 @@ window and nothing downstream can be finalised without it.
 ---
 
 ## Activity log
+
+### 2026-08-05 (GUI brief reconciled with the firmware)
+- **§3 of `Doc/GUI_development_brief.md` now matches `proto.c` / `tasks.c`.** Commit `5d837d8`
+  changed protocol *behaviour* and only §8.1 was updated — §3 is the normative section the GUI
+  is built from, so an AI reading §3 alone would have built to the old behaviour. Everything
+  below was checked against the source, not the doc.
+- New **§3.2.1 "When a command is accepted"** carries what were previously only answers in
+  §8.1: run commands refused with `ERR EBUSY` and **not queued**; `ABORT` answered immediately
+  and never queued; netlist required by `CONT RUN verify` *and* `RES RUN`; `HV SET` non-zero
+  refused with `ERR ENOTARMED`; pins 1-based `1..256`; fixture change invalidates arming with
+  `!HV 0` → `!SAFE` → `!FIXTURE`.
+- Corrected the wrong notation in safety rule 5 — `EVT FIXTURE HV` is not a thing, the event is
+  `!FIXTURE hv`.
+- **Four reply strings in §3.2 did not match the firmware.** `SAFE`, `MANUAL PATH` and
+  `MANUAL OFF` answer `<OK started`, not `<OK`, and `ABORT` answers `<OK` mid-run but
+  `<OK started` when idle. The brief demands byte-for-byte conformance, so these mattered.
+- **`!SAFE` is not emitted by continuity or resistance runs** — they never raise the rail. §8.1
+  implied it was emitted after every abort. Now stated in §3.3, §3.4 and §8.1, together with
+  the rule that "safe to handle" keys off `!SAFE` and never off `!DONE` or event ordering.
+- Also documented, all verified in source: `NETLIST GET` is the one command with more than one
+  `<` reply; `!FIXTURE mtx` can arrive unsolicited (and even alongside an `EBUSY`, because
+  `CONT RUN`/`RES RUN` assert the fixture before the busy check); a bare `>` gives
+  `ERR ESYNTAX empty` but a truly empty line gets no reply; the 72-character line limit;
+  `!STATE fault` and `!RES fail_low` are defined but never emitted; `HV SET` does not yet drive
+  the rail, the insulation run does.
+- Raised **FW-06** — `>STATUS` never reports `running` or `fault`, so a GUI reconnecting mid-run
+  is told `idle`. Documented rather than changed: the reply is protocol-visible and the GUI is
+  being built against it.
+- Docs only, no firmware change, so no rebuild.
 
 ### 2026-08-01 (docs + GUI)
 - **Document clear-out.** Thirteen documents down to four living ones, with `README.md` as
