@@ -23,9 +23,24 @@ tests/                 unittest suite (codec, simulator, connection, model, GUI,
 
 ## Run the GUI
 
-Start the simulator in one terminal and the GUI in another:
+**Easiest — double-click, or run from any directory:**
 
 ```
+ht-demo.cmd      simulator + GUI together
+ht-sim.cmd       simulator only
+ht-gui.cmd       GUI only
+```
+
+Arguments pass straight through, e.g. `ht-gui.cmd --port 46000 --http-port 8770`.
+
+**By hand** — these only work with `gui\` as the working directory, because
+that is where the `htproto` and `htweb` packages live and `python -m` searches
+the current directory. Running them from `gui\tests` gives
+`ModuleNotFoundError: No module named 'htproto'`; the `.cmd` launchers exist so
+that cannot happen.
+
+```
+cd gui
 python -m htproto.simulator --scenario pass --port 46000
 python -m htweb --port 46000
 ```
@@ -106,7 +121,7 @@ directions, flushed per line). Callbacks fire from background threads.
 
 ## Run the tests
 
-From this directory:
+From `gui\` — not from `gui\tests\`, same reason as above:
 
 ```
 python -m unittest discover -s tests -v
@@ -114,7 +129,7 @@ python -m unittest discover -s tests -v
 
 ## Run the simulator
 
-From this directory:
+`ht-sim.cmd` from anywhere, or from `gui\`:
 
 ```
 python -m htproto.simulator --scenario pass --port 46000
@@ -124,7 +139,8 @@ Scenarios: `pass`, `opens_shorts`, `res_fail`, `insul_fail`, `disconnect`.
 Options: `--nets N` (harness size, default 12), `--interval S` (delay between
 streamed result events, default 0.02 s).
 
-Hand-test it from a **second** terminal (leave the simulator window running):
+Hand-test it from a **second** terminal, from `gui\` (leave the simulator
+window running):
 
 ```
 python -m htproto.handtest --port 46000
