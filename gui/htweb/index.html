@@ -1,0 +1,2431 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HT_MK1 Console — Harness Test System</title>
+
+<style>
+/* ============================================================
+   TOKENS — neutrals biased toward cyan to sit with the probe accent.
+   Semantic colour (pass / fail / hv) is never used decoratively.
+   ============================================================ */
+:root{
+  --bg:#EFF4F5; --panel:#FFFFFF; --panel-2:#E4EDEF; --sunk:#DCE7EA;
+  --line:#C8D8DC; --line-soft:#DFE9EB;
+  --ink:#0C1A1E; --ink-2:#3F565D; --ink-3:#6C858C;
+  --accent:#0B8296; --accent-ink:#FFFFFF; --accent-soft:rgba(11,130,150,.11);
+  --pass:#2A8452; --fail:#C0362D; --warn:#9A6B00; --hv:#C04A06; --idle:#93A8AE;
+  --pass-soft:rgba(42,132,82,.12); --fail-soft:rgba(192,54,45,.11);
+  --hv-soft:rgba(192,74,6,.12); --warn-soft:rgba(154,107,0,.12);
+  --grid-empty:#D3E0E3; --shadow:0 1px 2px rgba(12,26,30,.07),0 8px 24px -14px rgba(12,26,30,.28);
+  --scrim:rgba(12,26,30,.45);
+}
+@media (prefers-color-scheme:dark){
+  :root{
+    --bg:#0B1114; --panel:#121B1F; --panel-2:#18242A; --sunk:#0E171A;
+    --line:#23343A; --line-soft:#1B282D;
+    --ink:#DEEAED; --ink-2:#9AB0B7; --ink-3:#6E878F;
+    --accent:#2FB6C4; --accent-ink:#04191C; --accent-soft:rgba(47,182,196,.14);
+    --pass:#4FAF6D; --fail:#E8574C; --warn:#E0A32E; --hv:#FF8A3D; --idle:#57707A;
+    --pass-soft:rgba(79,175,109,.15); --fail-soft:rgba(232,87,76,.14);
+    --hv-soft:rgba(255,138,61,.15); --warn-soft:rgba(224,163,46,.14);
+    --grid-empty:#1B282D; --shadow:0 1px 2px rgba(0,0,0,.4),0 10px 28px -16px rgba(0,0,0,.8);
+    --scrim:rgba(0,0,0,.62);
+  }
+}
+:root[data-theme="light"]{
+  --bg:#EFF4F5; --panel:#FFFFFF; --panel-2:#E4EDEF; --sunk:#DCE7EA;
+  --line:#C8D8DC; --line-soft:#DFE9EB;
+  --ink:#0C1A1E; --ink-2:#3F565D; --ink-3:#6C858C;
+  --accent:#0B8296; --accent-ink:#FFFFFF; --accent-soft:rgba(11,130,150,.11);
+  --pass:#2A8452; --fail:#C0362D; --warn:#9A6B00; --hv:#C04A06; --idle:#93A8AE;
+  --pass-soft:rgba(42,132,82,.12); --fail-soft:rgba(192,54,45,.11);
+  --hv-soft:rgba(192,74,6,.12); --warn-soft:rgba(154,107,0,.12);
+  --grid-empty:#D3E0E3; --shadow:0 1px 2px rgba(12,26,30,.07),0 8px 24px -14px rgba(12,26,30,.28);
+  --scrim:rgba(12,26,30,.45);
+}
+:root[data-theme="dark"]{
+  --bg:#0B1114; --panel:#121B1F; --panel-2:#18242A; --sunk:#0E171A;
+  --line:#23343A; --line-soft:#1B282D;
+  --ink:#DEEAED; --ink-2:#9AB0B7; --ink-3:#6E878F;
+  --accent:#2FB6C4; --accent-ink:#04191C; --accent-soft:rgba(47,182,196,.14);
+  --pass:#4FAF6D; --fail:#E8574C; --warn:#E0A32E; --hv:#FF8A3D; --idle:#57707A;
+  --pass-soft:rgba(79,175,109,.15); --fail-soft:rgba(232,87,76,.14);
+  --hv-soft:rgba(255,138,61,.15); --warn-soft:rgba(224,163,46,.14);
+  --grid-empty:#1B282D; --shadow:0 1px 2px rgba(0,0,0,.4),0 10px 28px -16px rgba(0,0,0,.8);
+  --scrim:rgba(0,0,0,.62);
+}
+:root{
+  --ui:'Segoe UI Variable Text','Segoe UI',system-ui,-apple-system,'Helvetica Neue',sans-serif;
+  --mono:'Cascadia Mono',Consolas,'SF Mono',ui-monospace,'Roboto Mono',monospace;
+  --r:6px;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--ui);
+  font-size:14px;line-height:1.45;-webkit-font-smoothing:antialiased}
+button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:3px}
+.lbl{font-family:var(--mono);font-size:10px;font-weight:600;letter-spacing:.13em;
+  text-transform:uppercase;color:var(--ink-3);line-height:1}
+.num,.mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.spacer{flex:1}
+
+/* ============================================================ CHROME */
+.app{height:100dvh;display:grid;grid-template-columns:80px minmax(0,1fr);
+  grid-template-rows:auto minmax(0,1fr) auto;
+  grid-template-areas:"status status" "rail stage" "log log"}
+.status{grid-area:status;display:flex;align-items:center;gap:18px;padding:0 16px;height:52px;
+  background:var(--panel);border-bottom:1px solid var(--line)}
+.mark{display:flex;align-items:center;gap:9px;padding-right:16px;border-right:1px solid var(--line-soft)}
+.mark b{display:grid;place-items:center;width:26px;height:26px;border-radius:5px;
+  background:var(--accent);color:var(--accent-ink);font-family:var(--mono);font-size:11px;font-weight:700}
+.mark span{font-weight:650;font-size:13px;letter-spacing:.02em}
+.mark em{display:block;font-style:normal;font-size:10px;color:var(--ink-3);letter-spacing:.06em;font-family:var(--mono)}
+.slot{display:flex;flex-direction:column;gap:3px;min-width:0}
+.slot .v{font-family:var(--mono);font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.slot .v.hvtint{color:var(--hv)}
+.pill{display:inline-flex;align-items:center;gap:6px;height:24px;padding:0 9px;border-radius:999px;
+  border:1px solid var(--line);font-family:var(--mono);font-size:11px;font-weight:600;
+  letter-spacing:.05em;text-transform:uppercase;white-space:nowrap}
+.pill i{width:6px;height:6px;border-radius:50%;background:currentColor;flex:none}
+.pill.ok{color:var(--pass);border-color:var(--pass);background:var(--pass-soft)}
+.pill.bad{color:var(--fail);border-color:var(--fail);background:var(--fail-soft)}
+.pill.warn{color:var(--warn);border-color:var(--warn);background:var(--warn-soft)}
+.pill.hot{color:var(--hv);border-color:var(--hv);background:var(--hv-soft)}
+.pill.acc{color:var(--accent);border-color:var(--accent);background:var(--accent-soft)}
+.pill.idle{color:var(--ink-3)}
+
+.hazard{grid-area:status;display:none;align-items:center;gap:14px;height:52px;padding:0 16px;
+  background:repeating-linear-gradient(135deg,var(--hv-soft) 0 12px,transparent 12px 24px),var(--panel);
+  border-bottom:2px solid var(--hv)}
+body.hv-live .hazard{display:flex}
+body.hv-live .status{display:none}
+.hazard .bolt{display:grid;place-items:center;width:30px;height:30px;border-radius:5px;flex:none;
+  background:var(--hv);color:var(--panel);font-size:17px;animation:beat 1.05s ease-in-out infinite}
+@keyframes beat{0%,100%{opacity:1}50%{opacity:.42}}
+.hazard h2{margin:0;font-size:14px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--hv)}
+.hazard p{margin:0;font-size:11.5px;color:var(--ink-2)}
+
+.rail{grid-area:rail;display:flex;flex-direction:column;gap:2px;padding:10px 8px;
+  background:var(--panel);border-right:1px solid var(--line)}
+.rail button{display:flex;flex-direction:column;align-items:center;gap:5px;padding:9px 2px 8px;
+  border-radius:var(--r);color:var(--ink-3);transition:background .12s,color .12s;position:relative}
+.rail button svg{width:19px;height:19px;stroke:currentColor;fill:none;stroke-width:1.6;
+  stroke-linecap:round;stroke-linejoin:round;flex:none}
+.rail button span{font-family:var(--mono);font-size:9px;font-weight:600;letter-spacing:.06em;text-transform:uppercase}
+.rail button:hover{background:var(--panel-2);color:var(--ink-2)}
+.rail button[aria-selected="true"]{background:var(--accent-soft);color:var(--accent)}
+.rail button .badge{position:absolute;top:6px;right:9px;width:6px;height:6px;border-radius:50%;background:transparent}
+.rail button.st-pass .badge{background:var(--pass)}
+.rail button.st-fail .badge{background:var(--fail)}
+.rail button.st-lock .badge{background:var(--warn)}
+.rail .stg{font-family:var(--mono);font-size:8px;letter-spacing:.14em;color:var(--ink-3);
+  text-transform:uppercase;padding:8px 0 3px;text-align:center}
+.rail hr{border:none;border-top:1px solid var(--line-soft);margin:5px 6px 0}
+.rail .rail-end{margin-top:auto}
+
+.stage{grid-area:stage;overflow:auto;padding:18px}
+.view{display:none;animation:rise .22s ease-out}
+.view.on{display:block}
+@keyframes rise{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:none}}
+
+.logbar{grid-area:log;background:var(--sunk);border-top:1px solid var(--line);display:flex;flex-direction:column}
+.logbar .head{display:flex;align-items:center;gap:10px;padding:0 14px;height:30px;flex:none}
+.logbar .head .line{flex:1;min-width:0;font-family:var(--mono);font-size:11.5px;color:var(--ink-2);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.logbar .head button{color:var(--ink-3);font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase}
+.logbar .head button:hover{color:var(--accent)}
+.logbar .body{display:none;height:150px;overflow:auto;padding:2px 14px 10px;
+  font-family:var(--mono);font-size:11.5px;line-height:1.65}
+.logbar.open .body{display:block}
+.logbar .body div{display:flex;gap:10px;color:var(--ink-2)}
+.logbar .body time{color:var(--ink-3);flex:none}
+.logbar .body b{flex:none;width:38px;font-weight:600}
+.logbar .body .src{flex:none;width:34px;color:var(--ink-3)}
+.lv-info{color:var(--ink-3)}.lv-ok{color:var(--pass)}.lv-warn{color:var(--warn)}
+.lv-fail{color:var(--fail)}.lv-hv{color:var(--hv)}
+
+/* ============================================================ PANELS */
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:8px;box-shadow:var(--shadow)}
+.panel > header{display:flex;align-items:center;gap:10px;padding:11px 14px;border-bottom:1px solid var(--line-soft)}
+.panel > header h3{margin:0;font-size:12px;font-weight:650;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-2)}
+.panel > .pad{padding:14px}
+.cols{display:grid;gap:14px}
+.row{display:flex;gap:9px;flex-wrap:wrap;align-items:center}
+.btn{display:inline-flex;align-items:center;gap:7px;padding:7px 13px;border-radius:var(--r);
+  border:1px solid var(--line);font-family:var(--mono);font-size:11px;font-weight:600;
+  letter-spacing:.06em;text-transform:uppercase;color:var(--ink-2);background:var(--panel)}
+.btn:hover{border-color:var(--accent);color:var(--accent)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.btn.primary:hover{opacity:.88;color:var(--accent-ink)}
+.btn.hv{background:var(--hv);border-color:var(--hv);color:var(--panel)}
+.btn.hv:hover{opacity:.88;color:var(--panel)}
+.btn.ghost-hv{border-color:var(--hv);color:var(--hv);background:transparent}
+.btn.ghost-hv:hover{background:var(--hv-soft);color:var(--hv)}
+.btn[disabled]{opacity:.4;cursor:not-allowed;background:var(--sunk);border-color:var(--line);color:var(--ink-3)}
+.btn[disabled]:hover{border-color:var(--line);color:var(--ink-3);background:var(--sunk)}
+.btn.big{padding:10px 20px;font-size:12px}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
+.seg button{padding:5px 12px;font-family:var(--mono);font-size:11px;font-weight:600;
+  letter-spacing:.05em;text-transform:uppercase;color:var(--ink-3)}
+.seg button[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink)}
+.kv{display:grid;grid-template-columns:auto minmax(0,1fr);gap:7px 14px;align-items:baseline}
+.kv dt{font-family:var(--mono);font-size:10px;font-weight:600;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--ink-3)}
+.kv dd{margin:0;font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:12.5px;overflow-wrap:anywhere}
+.kv dd.big{font-size:16px}
+.path{background:var(--sunk);border-radius:var(--r);padding:11px 12px;font-family:var(--mono);
+  font-size:11px;line-height:1.75;color:var(--ink-2)}
+.path b{color:var(--accent);font-weight:600}
+.path.hvp b{color:var(--hv)}
+.band{display:flex;flex-wrap:wrap;background:var(--sunk);border:1px solid var(--line);
+  border-radius:8px;overflow:hidden}
+.band > div{padding:10px 16px;display:flex;flex-direction:column;gap:5px;
+  border-right:1px solid var(--line-soft);flex:1;min-width:150px}
+.band > div:last-child{border-right:none}
+.band .v{font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:13px;color:var(--ink)}
+.band .v.hot{color:var(--hv)}
+.conn{display:inline-flex;align-items:center;gap:7px;font-family:var(--mono);font-size:13px;
+  font-weight:650;color:var(--accent)}
+.conn::before{content:"";width:12px;height:12px;border:2px solid currentColor;border-radius:2px;
+  background:linear-gradient(currentColor,currentColor) center/100% 2px no-repeat}
+.conn.hv{color:var(--hv)}
+
+.viewbar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:13px 16px;
+  background:var(--panel);border:1px solid var(--line);border-radius:8px;box-shadow:var(--shadow)}
+.viewbar h2{margin:0;font-size:18px;font-weight:650;letter-spacing:-.01em}
+.stgbadge{font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:.12em;
+  text-transform:uppercase;padding:4px 9px;border-radius:4px;background:var(--accent-soft);color:var(--accent)}
+.stgbadge.hv{background:var(--hv-soft);color:var(--hv)}
+.viewbar .why{font-family:var(--mono);font-size:10.5px;color:var(--ink-3);max-width:250px;line-height:1.4}
+
+/* ── netlist strips — two independent files ── */
+.netbar{display:flex;align-items:center;gap:13px;flex-wrap:wrap;padding:11px 14px;
+  border:1px solid var(--line);border-radius:8px;background:var(--panel);box-shadow:var(--shadow)}
+.netbar .doc{display:grid;place-items:center;width:32px;height:32px;border-radius:var(--r);flex:none;
+  background:var(--accent-soft);color:var(--accent)}
+.netbar .doc svg{width:17px;height:17px;stroke:currentColor;fill:none;stroke-width:1.6;
+  stroke-linecap:round;stroke-linejoin:round}
+.netbar .kind{font-family:var(--mono);font-size:9px;font-weight:700;letter-spacing:.12em;
+  text-transform:uppercase;color:var(--accent);display:block;margin-bottom:2px}
+.netbar .fname{font-family:var(--mono);font-size:13px;font-weight:650;display:block}
+.netbar .fmeta{font-family:var(--mono);font-size:10.5px;color:var(--ink-3);display:block;margin-top:2px}
+.netbar .uses{font-family:var(--mono);font-size:10.5px;color:var(--ink-3);
+  border-left:1px solid var(--line-soft);padding-left:13px;max-width:240px;line-height:1.45}
+.netbar[data-dom="hv"] .doc{background:var(--hv-soft);color:var(--hv)}
+.netbar[data-dom="hv"] .kind{color:var(--hv)}
+.netbar[data-state="empty"]{border-color:var(--warn);
+  background:repeating-linear-gradient(135deg,var(--warn-soft) 0 14px,transparent 14px 28px),var(--panel)}
+.netbar[data-state="empty"] .doc{background:var(--warn-soft);color:var(--warn)}
+.netbar[data-state="empty"] .fname{color:var(--warn)}
+
+/* ============================================================ MODALS */
+.modal{position:fixed;inset:0;z-index:60;display:none;align-items:center;justify-content:center;
+  padding:22px;background:var(--scrim);animation:fade .16s ease-out}
+.modal.on{display:flex}
+@keyframes fade{from{opacity:0}to{opacity:1}}
+.mbox{background:var(--panel);border:1px solid var(--line);border-radius:10px;width:100%;max-width:580px;
+  max-height:92dvh;overflow:auto;box-shadow:0 24px 70px -22px rgba(0,0,0,.55);animation:pop .18s ease-out}
+@keyframes pop{from{transform:translateY(8px) scale(.99);opacity:0}to{transform:none;opacity:1}}
+.mbox > header{display:flex;gap:14px;align-items:flex-start;padding:19px 22px;border-bottom:1px solid var(--line-soft)}
+.mbox .mi{display:grid;place-items:center;width:38px;height:38px;border-radius:8px;flex:none}
+.mbox .mi svg{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.mbox .mi.acc{background:var(--accent-soft);color:var(--accent)}
+.mbox .mi.hot{background:var(--hv-soft);color:var(--hv)}
+.mbox h2{margin:0 0 3px;font-size:17px;font-weight:650;letter-spacing:-.01em}
+.mbox header p{margin:0;font-size:12.5px;color:var(--ink-2);line-height:1.5}
+.mbox .mbody{padding:18px 22px;display:flex;flex-direction:column;gap:14px}
+.mbox > footer{display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap;
+  padding:14px 22px;border-top:1px solid var(--line-soft);background:var(--sunk);
+  border-radius:0 0 10px 10px}
+
+.check{display:grid;grid-template-columns:20px minmax(0,1fr) auto;gap:12px;align-items:center;
+  padding:10px 13px;border:1px solid var(--line-soft);border-radius:var(--r);background:var(--sunk)}
+.check .ci{width:18px;height:18px;border-radius:50%;display:grid;place-items:center;
+  font-family:var(--mono);font-size:11px;font-weight:700;flex:none}
+.check.ok .ci{background:var(--pass-soft);color:var(--pass)}
+.check.warn .ci{background:var(--warn-soft);color:var(--warn)}
+.check.bad .ci{background:var(--fail-soft);color:var(--fail)}
+.check .ct{font-size:12.5px;font-weight:600;display:block}
+.check .cd{font-family:var(--mono);font-size:11px;color:var(--ink-3);display:block;margin-top:2px}
+.check .cv{font-family:var(--mono);font-size:11px;font-weight:600;white-space:nowrap}
+.check.ok .cv{color:var(--pass)} .check.warn .cv{color:var(--warn)} .check.bad .cv{color:var(--fail)}
+
+.ack{display:grid;grid-template-columns:auto minmax(0,1fr);gap:12px;align-items:start;
+  padding:14px;border:2px solid var(--hv);border-radius:var(--r);background:var(--hv-soft);cursor:pointer}
+.ack input{width:19px;height:19px;accent-color:var(--hv);margin:1px 0 0;cursor:pointer;flex:none}
+.ack span{font-size:12.5px;line-height:1.55}
+.ack b{font-weight:650}
+
+.filelist{display:flex;flex-direction:column;gap:1px;background:var(--line-soft);
+  border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
+.filerow{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:12px;align-items:center;
+  background:var(--panel);padding:11px 13px;text-align:left;width:100%}
+.filerow:hover{background:var(--panel-2)}
+.filerow .fn{font-family:var(--mono);font-size:12.5px;font-weight:600;display:block}
+.filerow .fd{font-family:var(--mono);font-size:10.5px;color:var(--ink-3);display:block;margin-top:2px}
+.filerow .ic{width:26px;height:26px;border-radius:5px;display:grid;place-items:center;
+  background:var(--hv-soft);color:var(--hv);flex:none}
+.filerow .ic svg{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:1.7}
+
+/* ============================================================ RUN */
+.run-grid{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(300px,.9fr);gap:14px;align-items:start}
+.verdict{position:relative;overflow:hidden;display:grid;grid-template-columns:minmax(0,1fr) auto;
+  gap:20px;align-items:center;padding:20px 22px;border-radius:8px;border:1px solid var(--line);
+  background:var(--panel);box-shadow:var(--shadow)}
+.verdict::before{content:"";position:absolute;inset:0 auto 0 0;width:4px;background:var(--idle)}
+body[data-phase="running"] .verdict::before{background:var(--accent)}
+body[data-phase="hold"] .verdict::before{background:var(--warn)}
+body[data-phase="armed"] .verdict::before{background:var(--hv)}
+body[data-phase="pass"] .verdict::before{background:var(--pass)}
+body[data-phase="fail"] .verdict::before{background:var(--fail)}
+.verdict h1{margin:0;font-size:42px;line-height:1;font-weight:700;letter-spacing:-.02em;
+  font-family:var(--mono);color:var(--ink-2)}
+body[data-phase="running"] .verdict h1{color:var(--accent)}
+body[data-phase="hold"] .verdict h1{color:var(--warn)}
+body[data-phase="armed"] .verdict h1{color:var(--hv)}
+body[data-phase="pass"] .verdict h1{color:var(--pass)}
+body[data-phase="fail"] .verdict h1{color:var(--fail)}
+.verdict .sub{margin:7px 0 0;color:var(--ink-2);font-size:13px;max-width:62ch}
+.verdict .meta{display:flex;gap:22px;margin-top:14px;flex-wrap:wrap}
+.verdict .meta div{display:flex;flex-direction:column;gap:4px}
+.verdict .meta .v{font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:15px}
+.act{display:grid;place-items:center;gap:5px;width:122px;height:122px;border-radius:50%;
+  border:2px solid var(--accent);color:var(--accent);background:var(--accent-soft);
+  font-family:var(--mono);font-weight:700;letter-spacing:.08em;font-size:13px;text-transform:uppercase;
+  transition:transform .1s,background .15s}
+.act:hover{background:var(--accent);color:var(--accent-ink)}
+.act:active{transform:scale(.97)}
+.act small{font-size:9px;letter-spacing:.06em;font-weight:600;opacity:.75}
+.act.stop{border-color:var(--fail);color:var(--fail);background:var(--fail-soft)}
+.act.stop:hover{background:var(--fail);color:var(--panel)}
+.act.hv{border-color:var(--hv);color:var(--hv);background:var(--hv-soft)}
+.act.hv:hover{background:var(--hv);color:var(--panel)}
+.act[disabled]{opacity:.4;cursor:not-allowed;border-color:var(--line);color:var(--ink-3);background:var(--sunk)}
+.act[disabled]:hover{background:var(--sunk);color:var(--ink-3)}
+
+.flow{display:grid;grid-template-columns:minmax(0,1fr) 46px minmax(0,1fr);align-items:stretch;padding:14px}
+.stagebox{border:1px solid var(--line);border-radius:var(--r);padding:12px 14px;
+  display:flex;flex-direction:column;gap:9px;background:var(--panel);transition:border-color .15s}
+.stagebox .sh{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+.stagebox .no{display:grid;place-items:center;width:20px;height:20px;border-radius:50%;flex:none;
+  border:1.5px solid var(--ink-3);color:var(--ink-3);font-family:var(--mono);font-size:10px;font-weight:700}
+.stagebox .tests{font-family:var(--mono);font-size:11px;color:var(--ink-3);line-height:1.6}
+.stagebox[data-s="active"]{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.stagebox[data-s="active"] .no{border-color:var(--accent);color:var(--accent)}
+.stagebox[data-s="pass"]{border-color:var(--pass)}
+.stagebox[data-s="pass"] .no{border-color:var(--pass);color:var(--pass)}
+.stagebox[data-s="fail"]{border-color:var(--fail)}
+.stagebox[data-s="fail"] .no{border-color:var(--fail);color:var(--fail)}
+.stagebox[data-s="lock"]{opacity:.5;border-style:dashed}
+.gate{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;color:var(--ink-3)}
+.gate svg{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+.gate span{font-family:var(--mono);font-size:8px;letter-spacing:.1em;text-transform:uppercase;text-align:center;line-height:1.3}
+.gate.armed{color:var(--warn)}
+
+.handover{display:none;gap:18px;align-items:center;padding:18px 20px;border-radius:8px;
+  border:2px solid var(--warn);background:
+    repeating-linear-gradient(135deg,var(--warn-soft) 0 14px,transparent 14px 28px),var(--panel)}
+body[data-phase="hold"] .handover{display:flex;flex-wrap:wrap}
+.handover .ic{display:grid;place-items:center;width:44px;height:44px;border-radius:50%;flex:none;
+  border:2px solid var(--warn);color:var(--warn)}
+.handover .ic svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.handover h2{margin:0 0 3px;font-size:16px;font-weight:700}
+.handover p{margin:0;font-size:12.5px;color:var(--ink-2);font-family:var(--mono)}
+.handover .go{background:var(--warn);border-color:var(--warn);color:var(--panel);padding:11px 18px;font-size:12px}
+.handover .go:hover{opacity:.88;color:var(--panel)}
+
+.domains{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:14px}
+.domain{display:flex;flex-direction:column;border:1px solid var(--line);border-radius:8px;
+  background:var(--panel);box-shadow:var(--shadow);overflow:hidden}
+.domain .dh{display:flex;align-items:center;gap:9px;padding:12px 14px;border-bottom:1px solid var(--line-soft)}
+.domain .dh svg{width:18px;height:18px;stroke:var(--ink-3);fill:none;stroke-width:1.6;
+  stroke-linecap:round;stroke-linejoin:round;flex:none}
+.domain .dh h4{margin:0;font-size:13.5px;font-weight:650}
+.domain .db{padding:12px 14px;display:flex;flex-direction:column;gap:9px}
+.domain .cond{font-family:var(--mono);font-size:11px;color:var(--ink-3);line-height:1.6}
+.domain .stat{display:flex;align-items:baseline;gap:8px}
+.domain .stat b{font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:25px;
+  font-weight:700;letter-spacing:-.02em;line-height:1}
+.domain .stat span{font-family:var(--mono);font-size:11px;color:var(--ink-3)}
+.domain .df{padding:10px 14px;border-top:1px solid var(--line-soft);background:var(--sunk);
+  display:flex;align-items:center;gap:9px}
+.domain .df .btn{flex:1;justify-content:center}
+.domain[data-s="pass"] .stat b{color:var(--pass)}
+.domain[data-s="fail"] .stat b{color:var(--fail)}
+.domain[data-s="run"] .stat b{color:var(--accent)}
+.domain[data-s="lock"]{opacity:.6}
+.domain .stg{font-family:var(--mono);font-size:9px;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--ink-3);border:1px solid var(--line);border-radius:3px;padding:2px 6px}
+.domain .open{color:var(--ink-3);font-family:var(--mono);font-size:10px;letter-spacing:.08em;
+  text-transform:uppercase;padding:7px 9px}
+.domain .open:hover{color:var(--accent)}
+.bar{height:5px;background:var(--sunk);border-radius:3px;overflow:hidden}
+.bar i{display:block;height:100%;width:0;background:var(--accent);border-radius:3px;transition:width .18s linear}
+.domain[data-s="pass"] .bar i{background:var(--pass)}
+.domain[data-s="fail"] .bar i{background:var(--fail)}
+
+.faults{display:flex;flex-direction:column}
+.fault{display:grid;grid-template-columns:52px minmax(0,1fr) auto;gap:11px;align-items:start;
+  padding:11px 14px;border-bottom:1px solid var(--line-soft);text-align:left;width:100%}
+.fault:last-child{border-bottom:none}
+.fault:hover{background:var(--panel-2)}
+.fault .code{font-family:var(--mono);font-size:11px;font-weight:700;color:var(--fail);
+  background:var(--fail-soft);border-radius:3px;padding:3px 0;text-align:center}
+.fault.h .code{color:var(--hv);background:var(--hv-soft)}
+.fault .ttl{font-size:12.5px;font-weight:600;display:block}
+.fault .det{font-family:var(--mono);font-size:11px;color:var(--ink-3);display:block;margin-top:2px}
+.fault .val{font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:12.5px;color:var(--fail);white-space:nowrap}
+.fault.h .val{color:var(--hv)}
+.empty{padding:26px 14px;text-align:center;color:var(--ink-3);font-size:12.5px}
+
+/* ============================================================ CONTINUITY */
+.two{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:14px;align-items:start}
+.modesel{display:flex;flex-wrap:wrap;border:1px solid var(--line);border-radius:8px;
+  overflow:hidden;background:var(--panel);box-shadow:var(--shadow)}
+.modesel button{flex:1;min-width:250px;display:flex;flex-direction:column;gap:5px;
+  padding:13px 16px;text-align:left;border-right:1px solid var(--line-soft);transition:background .13s}
+.modesel button:last-child{border-right:none}
+.modesel button:hover{background:var(--panel-2)}
+.modesel button[aria-pressed="true"]{background:var(--accent-soft)}
+.modesel .mt{display:flex;align-items:center;gap:8px;font-size:13.5px;font-weight:650}
+.modesel .mt::before{content:"";width:12px;height:12px;border-radius:50%;flex:none;border:2px solid var(--ink-3)}
+.modesel button[aria-pressed="true"] .mt{color:var(--accent)}
+.modesel button[aria-pressed="true"] .mt::before{border-color:var(--accent);
+  background:radial-gradient(circle,var(--accent) 0 3px,transparent 3px)}
+.modesel .md{font-family:var(--mono);font-size:11px;color:var(--ink-3);line-height:1.55}
+.modesel .req{font-family:var(--mono);font-size:10px;letter-spacing:.06em;text-transform:uppercase;
+  font-weight:600;margin-top:3px}
+.modesel .req.need{color:var(--warn)} .modesel .req.free{color:var(--pass)}
+
+/* ── connector diagram: the harness as it actually looks ── */
+.diagwrap{position:relative;padding:14px}
+.diagwrap canvas{width:100%;height:auto;display:block;border:1px solid var(--line);
+  background:var(--sunk);border-radius:var(--r);cursor:crosshair}
+.tip{position:absolute;pointer-events:none;z-index:3;display:none;max-width:280px;
+  background:var(--panel);border:1px solid var(--line);border-radius:var(--r);
+  box-shadow:var(--shadow);padding:9px 11px}
+.tip.on{display:block}
+.tip .tn{font-family:var(--mono);font-size:12px;font-weight:650;display:block}
+.tip .td{font-family:var(--mono);font-size:10.5px;color:var(--ink-3);display:block;margin-top:3px;line-height:1.5}
+.diagbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:11px 14px;
+  border-bottom:1px solid var(--line-soft)}
+.three{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px;align-items:start}
+.connlist{display:flex;flex-direction:column}
+.connrow{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:11px;align-items:center;
+  padding:9px 14px;border-bottom:1px solid var(--line-soft);text-align:left;width:100%}
+.connrow:last-child{border-bottom:none}
+.connrow:hover{background:var(--panel-2)}
+.connrow[aria-pressed="true"]{background:var(--accent-soft)}
+.connrow .cid{font-family:var(--mono);font-size:12px;font-weight:650;color:var(--accent)}
+.connrow .cl{font-size:12.5px;display:block}
+.connrow .cm{font-family:var(--mono);font-size:10.5px;color:var(--ink-3);display:block;margin-top:1px}
+.legend{display:flex;flex-wrap:wrap;gap:14px;padding:11px 14px;border-top:1px solid var(--line-soft)}
+.legend span{display:flex;align-items:center;gap:6px;font-family:var(--mono);font-size:10.5px;color:var(--ink-2)}
+.legend i{width:9px;height:9px;border-radius:2px;flex:none}
+.tally{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--line-soft)}
+.tally div{background:var(--panel);padding:11px 14px;display:flex;flex-direction:column;gap:6px}
+.tally b{font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:20px;font-weight:700;line-height:1}
+.tally .ok{color:var(--pass)} .tally .bad{color:var(--fail)} .tally .acc{color:var(--accent)}
+.fan{display:flex;gap:4px;flex-wrap:wrap}
+.fan i{font-style:normal;font-family:var(--mono);font-size:10.5px;padding:2px 6px;border-radius:3px;
+  background:var(--accent-soft);color:var(--accent)}
+body[data-cmode="net"] .only-cross{display:none}
+body[data-cmode="cross"] .only-net{display:none}
+
+/* ============================================================ RESISTANCE */
+.hist{width:100%;height:150px;display:block}
+.mbar{position:relative;height:20px;background:var(--sunk);border-radius:3px;min-width:110px;overflow:hidden}
+.mbar .win{position:absolute;top:0;bottom:0;background:var(--pass-soft);
+  border-left:1px solid var(--pass);border-right:1px solid var(--pass)}
+.mbar .pt{position:absolute;top:3px;bottom:3px;width:3px;border-radius:2px;background:var(--ink-2)}
+.mbar .pt.bad{background:var(--fail);width:4px}
+
+/* ============================================================ HV */
+.lockwrap{position:relative}
+.lockover{display:none;position:absolute;inset:0;z-index:2;border-radius:8px;
+  background:color-mix(in srgb,var(--bg) 88%,transparent);align-items:center;justify-content:center;padding:20px;text-align:center}
+body[data-stage2="lock"] .lockover{display:flex}
+body[data-stage2="lock"] .lockwrap > .cols{filter:blur(2px);pointer-events:none;user-select:none}
+.lockcard{background:var(--panel);border:1px solid var(--line);border-radius:8px;box-shadow:var(--shadow);
+  padding:24px 28px;max-width:460px;display:flex;flex-direction:column;gap:11px;align-items:center}
+.lockcard svg{width:30px;height:30px;stroke:var(--warn);fill:none;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+.lockcard h3{margin:0;font-size:15px;font-weight:650}
+.lockcard p{margin:0;font-size:12.5px;color:var(--ink-2);line-height:1.6}
+.cards{display:flex;flex-direction:column;gap:1px;background:var(--line-soft)}
+.card-row{background:var(--panel);padding:12px 14px;display:flex;flex-direction:column;gap:9px}
+.card-row .ch{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.card-row .ch b{font-family:var(--mono);font-size:12px;font-weight:650}
+.card-row.absent{opacity:.5}
+.rails{display:flex;flex-direction:column;gap:7px}
+.relay-row{display:grid;grid-template-columns:34px minmax(0,1fr);gap:10px;align-items:center}
+.relay-row .rl{font-family:var(--mono);font-size:9.5px;font-weight:600;letter-spacing:.1em;color:var(--ink-3)}
+.relays{display:grid;grid-template-columns:repeat(64,1fr);gap:2px}
+.relays i{aspect-ratio:1;border-radius:1px;background:var(--grid-empty);display:block}
+.relays i.closed{background:var(--accent)}
+.relays i.src{background:var(--hv);box-shadow:0 0 0 1px var(--hv)}
+.relays i.leak{background:var(--fail)}
+.relays i.absent{background:transparent;border:1px dashed var(--line)}
+.hvgauge{display:grid;grid-template-columns:auto minmax(0,1fr);gap:12px;align-items:center}
+.hvgauge .big{font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:34px;
+  font-weight:700;line-height:1;letter-spacing:-.02em;color:var(--ink-3)}
+.hvgauge .big.hot{color:var(--hv)}
+.hvtrack{height:8px;background:var(--sunk);border-radius:4px;overflow:hidden}
+.hvtrack i{display:block;height:100%;width:0;background:var(--hv);transition:width .1s linear}
+.meters{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--line-soft)}
+.meter{background:var(--panel);padding:12px 14px;display:flex;flex-direction:column;gap:6px}
+.meter .v{font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:21px;line-height:1;letter-spacing:-.02em}
+.meter .v u{text-decoration:none;font-size:11px;color:var(--ink-3);margin-left:3px}
+.meter .rng{font-family:var(--mono);font-size:10px;color:var(--ink-3)}
+.meter.bad .v{color:var(--fail)}
+
+/* ============================================================ TABLES */
+.tw{overflow-x:auto}
+table{border-collapse:collapse;width:100%;min-width:560px}
+th{font-family:var(--mono);font-size:9.5px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;
+  color:var(--ink-3);text-align:left;padding:9px 14px;border-bottom:1px solid var(--line);white-space:nowrap}
+td{padding:9px 14px;border-bottom:1px solid var(--line-soft);font-size:12.5px;white-space:nowrap}
+tbody tr:last-child td{border-bottom:none}
+tbody tr:hover{background:var(--panel-2)}
+td.n{font-family:var(--mono);font-variant-numeric:tabular-nums}
+th.r,td.r{text-align:right}
+.tag{font-family:var(--mono);font-size:10px;font-weight:600;letter-spacing:.06em;padding:2px 7px;
+  border-radius:3px;text-transform:uppercase}
+.tag.ok{color:var(--pass);background:var(--pass-soft)}
+.tag.bad{color:var(--fail);background:var(--fail-soft)}
+.tag.warn{color:var(--warn);background:var(--warn-soft)}
+.tag.mut{color:var(--ink-3);background:var(--panel-2)}
+.tag.hot{color:var(--hv);background:var(--hv-soft)}
+.tag.acc{color:var(--accent);background:var(--accent-soft)}
+
+/* ============================================================ DIAG */
+.diag-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(330px,1fr));gap:14px;align-items:start}
+.bus{display:grid;grid-template-columns:60px auto minmax(0,1fr) auto;gap:11px;align-items:center;
+  padding:9px 14px;border-bottom:1px solid var(--line-soft)}
+.bus:last-child{border-bottom:none}
+.bus .id{font-family:var(--mono);font-size:12px;font-weight:650;color:var(--accent)}
+.bus .devs{font-family:var(--mono);font-size:11px;color:var(--ink-3);overflow:hidden;text-overflow:ellipsis}
+.bus .hz{font-family:var(--mono);font-size:11px;color:var(--ink-2);font-variant-numeric:tabular-nums}
+.ctl{display:grid;grid-template-columns:auto minmax(0,1fr);gap:10px 14px;align-items:center}
+.ctl label{font-family:var(--mono);font-size:10px;font-weight:600;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--ink-3)}
+.ctl input[type=range]{width:100%;accent-color:var(--accent)}
+.out{font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:13px}
+.blocker{display:flex;gap:11px;padding:11px 14px;border-bottom:1px solid var(--line-soft);align-items:flex-start}
+.blocker:last-child{border-bottom:none}
+.blocker .id{font-family:var(--mono);font-size:10.5px;font-weight:700;color:var(--warn);flex:none;width:46px;padding-top:1px}
+.blocker p{margin:0;font-size:12px;color:var(--ink-2);line-height:1.5}
+.blocker p b{color:var(--ink);font-weight:600}
+.spark{display:block;width:100%;height:54px}
+
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation-duration:.001ms !important;animation-iteration-count:1 !important;
+    transition-duration:.001ms !important}
+}
+@media (max-width:1080px){
+  .run-grid,.two{grid-template-columns:minmax(0,1fr)}
+  .tally{grid-template-columns:1fr 1fr}
+  .flow{grid-template-columns:minmax(0,1fr)}
+  .gate{flex-direction:row;padding:8px 0}
+  .netbar .uses{border-left:none;padding-left:0}
+}
+@media (max-width:860px){
+  .app{height:auto;grid-template-columns:minmax(0,1fr);grid-template-areas:"status" "rail" "stage" "log"}
+  .rail{flex-direction:row;overflow-x:auto;border-right:none;border-bottom:1px solid var(--line);align-items:center}
+  .rail button{flex:none;min-width:70px}
+  .rail hr,.rail .stg{display:none}
+  .rail .rail-end{margin-top:0;margin-left:auto}
+  .status{overflow-x:auto}
+  .verdict{grid-template-columns:minmax(0,1fr)}
+  .stage{padding:12px}
+}
+
+.themebtn{display:grid;place-items:center;width:28px;height:28px;border-radius:var(--r);
+  border:1px solid var(--line);color:var(--ink-3);flex:none}
+.themebtn:hover{border-color:var(--accent);color:var(--accent)}
+.themebtn svg{width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:1.7;
+  stroke-linecap:round;stroke-linejoin:round}
+</style>
+
+</head>
+<body>
+<div class="app">
+
+  <header class="status">
+    <div class="mark"><b>HT</b><div><span>HT_MK1 Console</span><em>fw 0.9.3 &middot; g474</em></div></div>
+    <div class="slot"><div class="lbl">MTX netlist</div><div class="v" id="stNlM">AV-880_RevC.hnl</div></div>
+    <div class="slot"><div class="lbl">HV netlist</div><div class="v hvtint" id="stNlH">none</div></div>
+    <div class="slot"><div class="lbl">Connected to</div><div class="v" id="stFix">J-MTX &middot; stage 1</div></div>
+    <div class="spacer"></div>
+    <button class="themebtn" id="themeBtn" title="Toggle light / dark" aria-label="Toggle light / dark">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.5"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+    </button>
+    <span class="pill ok"><i></i>Link COM7</span>
+    <span class="pill idle" id="hvPill"><i></i>HV Safe</span>
+    <span class="pill idle" id="statePill"><i></i>Ready</span>
+  </header>
+
+  <div class="hazard" role="alert">
+    <span class="bolt" aria-hidden="true">&#9889;</span>
+    <div>
+      <h2>High voltage live &mdash; J-HV energized</h2>
+      <p>Insulation test running. Relays are cold-switched; the fixture stays live until discharge completes.</p>
+    </div>
+    <div class="spacer"></div>
+    <div class="slot"><div class="lbl">Rail</div><div class="v num" id="hzRail">0 V</div></div>
+    <div class="slot"><div class="lbl">Leakage</div><div class="v num" id="hzLeak">0.000 V</div></div>
+    <button class="btn ghost-hv" id="abortHv">Abort &amp; discharge</button>
+  </div>
+
+  <nav class="rail" role="tablist" aria-label="Instrument modes">
+    <button role="tab" aria-selected="true" data-view="run">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 4l13 8-13 8z"/></svg><span>Run</span><i class="badge"></i></button>
+    <div class="stg">Stage 1 &middot; MTX</div>
+    <button role="tab" aria-selected="false" data-view="cont" id="railCont">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12h5l2-5 4 10 2-5h5"/></svg><span>Contin</span><i class="badge"></i></button>
+    <button role="tab" aria-selected="false" data-view="res" id="railRes">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12h4l1.5-4 3 8 3-8 1.5 4h5"/><path d="M6 17h12"/></svg><span>Resist</span><i class="badge"></i></button>
+    <div class="stg">Stage 2 &middot; HV</div>
+    <button role="tab" aria-selected="false" data-view="hv" id="railHv" class="st-lock">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M13 2L4 14h6l-1 8 9-12h-6z"/></svg><span>HV</span><i class="badge"></i></button>
+    <hr>
+    <button role="tab" aria-selected="false" data-view="program">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h10"/></svg><span>Netlist</span><i class="badge"></i></button>
+    <button role="tab" aria-selected="false" data-view="results">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 20V9M12 20V4M19 20v-7"/></svg><span>Results</span><i class="badge"></i></button>
+    <button role="tab" aria-selected="false" data-view="diag" class="rail-end">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="1"/><path d="M10 3v4M14 3v4M10 17v4M14 17v4M3 10h4M3 14h4M17 10h4M17 14h4"/></svg><span>Diag</span><i class="badge"></i></button>
+  </nav>
+
+  <main class="stage">
+
+    <!-- ─────────── RUN ─────────── -->
+    <section class="view on" id="v-run" role="tabpanel" aria-label="Run">
+      <div class="run-grid">
+        <div class="cols">
+
+          <div class="verdict">
+            <div>
+              <h1 id="vTitle">READY</h1>
+              <p class="sub" id="vSub">Harness on J-MTX. Run continuity and resistance; HV unlocks only after both pass.</p>
+              <div class="meta">
+                <div><span class="lbl">Elapsed</span><span class="v" id="vElapsed">00.0 s</span></div>
+                <div><span class="lbl">Running</span><span class="v" id="vStage">&mdash;</span></div>
+                <div><span class="lbl">Faults</span><span class="v" id="vFaults">&mdash;</span></div>
+              </div>
+            </div>
+            <button class="act" id="actBtn"><span id="actLabel">Run S1</span><small id="actHint">F5</small></button>
+          </div>
+
+          <div class="netbar" id="nb-run" data-dom="mtx"></div>
+
+          <div class="handover">
+            <span class="ic"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h11l-3-3M20 17H9l3 3"/></svg></span>
+            <div>
+              <h2>Move the harness to the HV fixture</h2>
+              <p id="hoText">Continuity and resistance passed on J-MTX. Unplug from J-MTX, then plug into J-HV.</p>
+            </div>
+            <div class="spacer"></div>
+            <button class="btn go" id="hoConfirm">Harness moved &mdash; unlock HV</button>
+          </div>
+
+          <div class="panel">
+            <header><h3>Fixture sequence</h3><div class="spacer"></div>
+              <span class="lbl">one connector at a time &middot; DUT is moved between stages</span></header>
+            <div class="flow">
+              <div class="stagebox" id="sb1" data-s="active">
+                <div class="sh"><span class="no">1</span><span class="conn">J-MTX</span><div class="spacer"></div>
+                  <span class="pill idle" id="sb1Pill"><i></i>Ready</span></div>
+                <span class="tests">Matrix Card rev 6 &middot; 256 HS + 256 LS &middot; CD4067<br>
+                  Continuity &rarr; Resistance &middot; one shared netlist</span>
+              </div>
+              <div class="gate" id="gate">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h11l-3-3M20 17H9l3 3"/></svg>
+                <span>operator<br>moves DUT</span>
+              </div>
+              <div class="stagebox" id="sb2" data-s="lock">
+                <div class="sh"><span class="no">2</span><span class="conn hv">J-HV</span><div class="spacer"></div>
+                  <span class="pill idle" id="sb2Pill"><i></i>Locked</span></div>
+                <span class="tests" id="sb2Tests">HV Card rev 1 &middot; 1&ndash;4 card stack &middot; MHV05<br>
+                  Insulation at 500 V &middot; its own netlist</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="domains">
+            <div class="domain" data-s="idle" id="dCont">
+              <div class="dh"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12h5l2-5 4 10 2-5h5"/></svg>
+                <h4>Continuity</h4><div class="spacer"></div><span class="stg">S1 &middot; MTX</span></div>
+              <div class="db">
+                <span class="cond" id="dcCond">Netlist mode &middot; 312 pairs<br>3.3 V &middot; AD7476 U4 &middot; SPI3<br>OPTO_CNTR = LOW</span>
+                <div class="stat"><b id="dcN">&mdash;</b><span id="dcU">of 312 verified</span></div>
+                <div class="bar"><i id="dcBar"></i></div>
+              </div>
+              <div class="df"><button class="btn primary" data-run="cont">Run continuity</button>
+                <button class="open" data-go="cont">Open</button></div>
+            </div>
+
+            <div class="domain" data-s="idle" id="dRes">
+              <div class="dh"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12h4l1.5-4 3 8 3-8 1.5 4h5"/><path d="M6 17h12"/></svg>
+                <h4>Resistance</h4><div class="spacer"></div><span class="stg">S1 &middot; MTX</span></div>
+              <div class="db">
+                <span class="cond">1.84 mA &middot; 4-wire<br>ADS124S08 U68 &middot; SPI1 &middot; PGA &times;16<br>OPTO_CNTR = HIGH</span>
+                <div class="stat"><b id="drN">&mdash;</b><span id="drU">out of limit</span></div>
+                <div class="bar"><i id="drBar"></i></div>
+              </div>
+              <div class="df"><button class="btn primary" data-run="res">Run resistance</button>
+                <button class="open" data-go="res">Open</button></div>
+            </div>
+
+            <div class="domain" data-s="lock" id="dHv">
+              <div class="dh"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M13 2L4 14h6l-1 8 9-12h-6z"/></svg>
+                <h4>HV insulation</h4><div class="spacer"></div><span class="stg">S2 &middot; HV</span></div>
+              <div class="db">
+                <span class="cond" id="dhCond">500 V DC &middot; MHV05 reed<br>AD7476 U302 &middot; SPI2-iso<br>own netlist &middot; 1&ndash;4 card stack</span>
+                <div class="stat"><b id="dhN">&mdash;</b><span id="dhU">below 10 M&Omega;</span></div>
+                <div class="bar"><i id="dhBar"></i></div>
+              </div>
+              <div class="df"><button class="btn hv" data-run="hv" disabled>Run HV &middot; 500 V</button>
+                <button class="open" data-go="hv">Open</button></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="cols">
+          <div class="panel">
+            <header><h3>Faults</h3><div class="spacer"></div>
+              <span class="pill idle" id="faultCount"><i></i>0 open</span></header>
+            <div class="faults" id="faultList"><div class="empty">No faults. Run a test to populate.</div></div>
+          </div>
+          <div class="panel">
+            <header><h3>Demo harness</h3><div class="spacer"></div><span class="tag mut">mockup only</span></header>
+            <div class="pad" style="display:flex;flex-direction:column;gap:10px">
+              <div class="seg" role="group" id="scenario" style="width:100%">
+                <button aria-pressed="true" data-sc="good" style="flex:1">Good stage 1</button>
+                <button aria-pressed="false" data-sc="bad" style="flex:1">Faulty stage 1</button>
+              </div>
+              <p style="margin:0;font-size:12px;color:var(--ink-3);line-height:1.5" id="scNote">
+                Stage 1 passes, the handover appears, then the two HV prompts gate the 500 V pass.</p>
+            </div>
+          </div>
+          <div class="panel">
+            <header><h3>HV stack</h3><div class="spacer"></div><span class="pill acc" id="stackPill"><i></i>3 cards</span></header>
+            <div class="pad" style="display:flex;flex-direction:column;gap:10px">
+              <p style="margin:0;font-size:12px;color:var(--ink-2);line-height:1.5">
+                Detected on I2C2. The HV netlist must match the fitted stack &mdash; a 4-card netlist on a
+                3-card stack leaves 64 nets unreachable.</p>
+              <div class="seg" role="group" id="stackSel" style="width:100%">
+                <button aria-pressed="false" data-stack="1" style="flex:1">1</button>
+                <button aria-pressed="false" data-stack="2" style="flex:1">2</button>
+                <button aria-pressed="true" data-stack="3" style="flex:1">3</button>
+                <button aria-pressed="false" data-stack="4" style="flex:1">4</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ─────────── CONTINUITY ─────────── -->
+    <section class="view" id="v-cont" role="tabpanel" aria-label="Continuity test">
+      <div class="cols">
+        <div class="viewbar">
+          <span class="stgbadge">Stage 1</span>
+          <h2>Continuity</h2>
+          <span class="conn">J-MTX</span>
+          <span class="pill idle" id="cvPill"><i></i>Not run</span>
+          <div class="spacer"></div>
+          <span class="why" id="cvWhy">verifies the netlist's expected pairs</span>
+          <button class="btn primary big" data-run="cont">Run continuity</button>
+        </div>
+
+        <div class="netbar" id="nb-cont" data-dom="mtx"></div>
+        <div class="netbar" id="nb-fix" data-dom="fix"></div>
+
+        <div class="modesel" role="group" aria-label="Continuity mode">
+          <button aria-pressed="true" data-cmode="net">
+            <span class="mt">Netlist</span>
+            <span class="md">Test the pairs the netlist expects, then check each net against every<br>
+              other. Reports missing wires (F06) and unexpected shorts (F07).</span>
+            <span class="req need">requires the MTX netlist</span>
+          </button>
+          <button aria-pressed="false" data-cmode="cross">
+            <span class="mt">Cross continuity</span>
+            <span class="md">One to many. Energise one HS, scan all 256 LS, record every hit.<br>
+              Finds splices and multi-drop nets, and writes a netlist as it goes.</span>
+            <span class="req free">no netlist needed &mdash; it produces one</span>
+          </button>
+        </div>
+
+        <div class="band">
+          <div><span class="lbl">Connector</span><span class="conn">J-MTX</span></div>
+          <div><span class="lbl">Switching</span><span class="v">CD4067 &middot; 256 HS &times; 256 LS</span></div>
+          <div><span class="lbl">Stimulus</span><span class="v">3.3 V via R26 10 k&Omega;</span></div>
+          <div><span class="lbl">Sense</span><span class="v">AD7476 U4 &middot; SPI3</span></div>
+          <div><span class="lbl">Threshold</span><span class="v">&lt; 0.80 V connected</span></div>
+          <div><span class="lbl">Scan scope</span><span class="v" id="scScope">624 reads &middot; est 3 s</span></div>
+        </div>
+
+        <div class="panel">
+          <div class="tally only-net">
+            <div><span class="lbl">Expected nets</span><b id="ctExp">312</b></div>
+            <div><span class="lbl">Verified</span><b class="ok" id="ctFound">&mdash;</b></div>
+            <div><span class="lbl">Missing &middot; F06</span><b class="bad" id="ctMiss">&mdash;</b></div>
+            <div><span class="lbl">Unexpected &middot; F07</span><b class="bad" id="ctExtra">&mdash;</b></div>
+          </div>
+          <div class="tally only-cross">
+            <div><span class="lbl">Nets discovered</span><b class="acc" id="auNets">&mdash;</b></div>
+            <div><span class="lbl">Nodes mapped</span><b id="auNodes">&mdash;</b></div>
+            <div><span class="lbl">Multi-drop</span><b class="acc" id="auMulti">&mdash;</b></div>
+            <div><span class="lbl">HS columns swept</span><b id="auCols">&mdash;</b></div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <header><h3>Harness wiring</h3><div class="spacer"></div>
+            <span class="lbl" id="mxHint">hover a wire or a pin</span></header>
+          <div class="diagbar">
+            <span class="lbl">Show</span>
+            <div class="seg" role="group" aria-label="Wire filter">
+              <button aria-pressed="true" data-filter="all">All wires</button>
+              <button aria-pressed="false" data-filter="fault">Faults only</button>
+              <button aria-pressed="false" data-filter="conn">Selected connector</button>
+            </div>
+            <div class="spacer"></div>
+            <span class="lbl" id="diagCount">&mdash;</span>
+          </div>
+          <div class="diagwrap">
+            <canvas id="cvDiag" width="1060" height="440" aria-label="Harness wiring diagram between fixture connectors"></canvas>
+            <div class="tip" id="diagTip"></div>
+          </div>
+          <div class="legend">
+            <span><i style="background:var(--pass);height:3px;border-radius:2px;width:16px"></i>pass</span>
+            <span><i style="background:var(--fail);height:3px;border-radius:2px;width:16px"></i>open / fail</span>
+            <span><i style="background:var(--grid-empty);height:3px;border-radius:2px;width:16px"></i>not tested</span>
+            <span><i style="background:var(--accent);border-radius:50%"></i>Y joint &middot; branch splice</span>
+            <span><i style="background:var(--ink-2);border-radius:1px;width:14px;height:6px"></i>I joint &middot; inline splice</span>
+            <span style="margin-left:auto;color:var(--ink-3)">connector faces and pin maps come from the fixture file</span>
+          </div>
+        </div>
+
+        <div class="three">
+          <div class="panel">
+            <header><h3>Net inspector</h3><div class="spacer"></div><span class="tag mut" id="insTag">nothing selected</span></header>
+            <div class="pad"><dl class="kv">
+              <dt>Net</dt><dd class="big" id="insNet">&mdash;</dd>
+              <dt>From</dt><dd id="insHs">&mdash;</dd>
+              <dt>To</dt><dd id="insLs">&mdash;</dd>
+              <dt>Topology</dt><dd id="insFan">&mdash;</dd>
+              <dt>Measured</dt><dd id="insCont">&mdash;</dd>
+            </dl></div>
+          </div>
+
+          <div class="panel">
+            <header><h3>Fixture connectors</h3><div class="spacer"></div>
+              <span class="lbl" id="fixMeta">&mdash;</span></header>
+            <div class="connlist" id="connList"></div>
+          </div>
+
+          <div class="cols">
+            <div class="panel">
+              <header><h3>Switch path</h3></header>
+              <div class="pad"><div class="path" id="insPath">Select a wire to resolve the hardware path.</div></div>
+            </div>
+            <div class="panel only-cross">
+              <header><h3>Discovered netlist</h3></header>
+              <div class="pad" style="display:flex;flex-direction:column;gap:11px">
+                <p style="margin:0;font-size:12px;color:var(--ink-2);line-height:1.55" id="crossNote">
+                  Run cross continuity to build a netlist from the harness itself.</p>
+                <div class="row">
+                  <button class="btn primary" id="saveNl" disabled>Save as MTX netlist</button>
+                  <button class="btn">Export CSV</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel only-cross">
+          <header><h3>Discovery &mdash; one to many</h3><div class="spacer"></div>
+            <span class="lbl">every LS that answered each energised HS</span></header>
+          <div class="tw">
+            <table style="min-width:700px">
+              <thead><tr><th>Auto net</th><th>HS</th><th>LS answered</th><th class="r">Fan-out</th>
+                <th class="r">Worst V</th><th>Topology</th></tr></thead>
+              <tbody id="autoBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ─────────── RESISTANCE ─────────── -->
+    <section class="view" id="v-res" role="tabpanel" aria-label="Resistance test">
+      <div class="cols">
+        <div class="viewbar">
+          <span class="stgbadge">Stage 1</span>
+          <h2>Resistance</h2>
+          <span class="conn">J-MTX</span>
+          <span class="pill idle" id="rvPill"><i></i>Not run</span>
+          <div class="spacer"></div>
+          <span class="why" id="rvWhy">measures the pairs the netlist declares</span>
+          <button class="btn primary big" data-run="res">Run resistance</button>
+        </div>
+
+        <div class="netbar" id="nb-res" data-dom="mtx"></div>
+
+        <div class="band">
+          <div><span class="lbl">Connector</span><span class="conn">J-MTX</span></div>
+          <div><span class="lbl">Scope</span><span class="v" id="rScope">312 declared pairs</span></div>
+          <div><span class="lbl">Excitation</span><span class="v">1.84 mA &middot; DAC8775 ch A</span></div>
+          <div><span class="lbl">Sense</span><span class="v">ADS124S08 U68 &middot; SPI1</span></div>
+          <div><span class="lbl">Gain</span><span class="v">PGA &times;16 &middot; 20 SPS</span></div>
+          <div><span class="lbl">Offset cal</span><span class="v">0.412 &Omega; subtracted</span></div>
+        </div>
+
+        <div class="two">
+          <div class="cols">
+            <div class="panel">
+              <header><h3>Resistance distribution</h3><div class="spacer"></div>
+                <span class="lbl">limit window 0.05 &ndash; 2.00 &Omega;</span></header>
+              <div class="pad"><canvas class="hist" id="cvHist" aria-label="Distribution of measured wire resistance"></canvas></div>
+            </div>
+            <div class="panel">
+              <header><h3>Ranked by margin to limit</h3><div class="spacer"></div><span class="lbl">worst 8</span></header>
+              <div class="tw"><table>
+                <thead><tr><th>Net</th><th>From</th><th>To</th><th class="r">Measured</th>
+                  <th>Window</th><th class="r">Margin</th><th>Result</th></tr></thead>
+                <tbody id="resBody"></tbody>
+              </table></div>
+            </div>
+          </div>
+
+          <div class="cols">
+            <div class="panel">
+              <header><h3>Measurement conditions</h3></header>
+              <div class="pad"><dl class="kv">
+                <dt>Mode</dt><dd>2-wire fallback <span class="tag warn">HW-01</span></dd>
+                <dt>Set current</dt><dd>2.000 mA</dd>
+                <dt>Measured</dt><dd>1.840 mA <span class="tag warn">&minus;8 %</span></dd>
+                <dt>Compliance</dt><dd>3.3 V rail &middot; headroom 1.1 V</dd>
+                <dt>Resolution</dt><dd>&plusmn;0.9 m&Omega; at PGA &times;16</dd>
+                <dt>Limits from</dt><dd id="rLimSrc">MTX netlist &middot; per net</dd>
+              </dl></div>
+            </div>
+            <div class="panel">
+              <header><h3>Sense path</h3></header>
+              <div class="pad"><div class="path">
+                DAC8775 ch A &rarr; I_OUT &rarr; <b>Opto U3</b> (OPTO_CNTR=HIGH)<br>
+                &rarr; HI_COM &rarr; HI mux &rarr; HS &rarr; harness &rarr; LS<br>
+                &rarr; LO mux &rarr; LO_COM &rarr; <b>R131 100 &Omega; 0.01 %</b> &rarr; GND<br>
+                sense: HI_SENSE &minus; LO_SENSE &rarr; <b>ADS124S08 AIN0/AIN1</b><br>
+                R = V / I &minus; R_offset
+              </div></div>
+            </div>
+            <div class="panel">
+              <header><h3>Actions</h3></header>
+              <div class="pad row">
+                <button class="btn">Re-measure worst</button>
+                <button class="btn">Auto-range PGA</button>
+                <button class="btn">Compliance sweep</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ─────────── HV ─────────── -->
+    <section class="view" id="v-hv" role="tabpanel" aria-label="HV insulation test">
+      <div class="lockwrap">
+        <div class="lockover">
+          <div class="lockcard">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 018 0v3"/></svg>
+            <h3>HV locked</h3>
+            <p id="lockText">HV runs on J-HV, a different connector with its own netlist. Pass continuity and
+              resistance on J-MTX, then move the harness to the HV fixture to unlock this test.</p>
+          </div>
+        </div>
+
+        <div class="cols">
+          <div class="viewbar">
+            <span class="stgbadge hv">Stage 2</span>
+            <h2>HV insulation</h2>
+            <span class="conn hv" id="hvConnLbl">J-HV1&ndash;3</span>
+            <span class="pill idle" id="hvPill2"><i></i>Not run</span>
+            <div class="spacer"></div>
+            <span class="why">energizes the fixture to 500 V &mdash; keep clear</span>
+            <button class="btn hv big" data-run="hv" disabled>Run HV &middot; 500 V</button>
+          </div>
+
+          <div class="netbar" id="nb-hv" data-dom="hv"></div>
+
+          <div class="band">
+            <div><span class="lbl">Connector</span><span class="conn hv" id="hvConnLbl2">J-HV1&ndash;3</span></div>
+            <div><span class="lbl">Stack</span><span class="v" id="hvStackTxt">3 cards &middot; 192 HS + 192 LS</span></div>
+            <div><span class="lbl">Stimulus</span><span class="v hot">500 V DC &middot; R3002 1 M&Omega;</span></div>
+            <div><span class="lbl">Sense</span><span class="v">AD7476 U302 &middot; SPI2-iso</span></div>
+            <div><span class="lbl">Return</span><span class="v">all LS closed except own</span></div>
+            <div><span class="lbl">Limit</span><span class="v">&ge; 10 M&Omega; &middot; trip 0.045 V</span></div>
+          </div>
+
+          <div class="two">
+            <div class="cols">
+              <div class="panel">
+                <header><h3>Relay state</h3><div class="spacer"></div>
+                  <span class="lbl" id="hvNetLbl">idle &mdash; all relays open</span></header>
+                <div class="cards" id="hvCards"></div>
+                <div class="legend">
+                  <span><i style="background:var(--hv)"></i>energized HS</span>
+                  <span><i style="background:var(--accent)"></i>LS closed (return)</span>
+                  <span><i style="background:var(--grid-empty)"></i>open</span>
+                  <span><i style="background:var(--fail)"></i>leakage path found</span>
+                  <span style="margin-left:auto;color:var(--ink-3)">return pattern comes from the HV netlist</span>
+                </div>
+              </div>
+              <div class="panel">
+                <header><h3>Net results</h3><div class="spacer"></div><span class="lbl">worst 6</span></header>
+                <div class="tw"><table>
+                  <thead><tr><th>Net</th><th>Card</th><th>HS relay</th><th class="r">Leak V</th>
+                    <th class="r">Insulation</th><th>Result</th></tr></thead>
+                  <tbody>
+                    <tr><td>GND_RET</td><td class="n">H1</td><td class="n">HS-03</td><td class="n r">0.052</td><td class="n r">3.2 M&Omega;</td><td><span class="tag bad">Fail</span></td></tr>
+                    <tr><td>PWR_28V_A</td><td class="n">H1</td><td class="n">HS-01</td><td class="n r">0.021</td><td class="n r">11.4 M&Omega;</td><td><span class="tag warn">Marginal</span></td></tr>
+                    <tr><td>LAMP_RET</td><td class="n">H2</td><td class="n">HS-19</td><td class="n r">0.014</td><td class="n r">18.6 M&Omega;</td><td><span class="tag ok">Pass</span></td></tr>
+                    <tr><td>ARINC_A_LO</td><td class="n">H1</td><td class="n">HS-15</td><td class="n r">0.006</td><td class="n r">46.2 M&Omega;</td><td><span class="tag ok">Pass</span></td></tr>
+                    <tr><td>SENSE_RTD_1</td><td class="n">H3</td><td class="n">HS-11</td><td class="n r">0.004</td><td class="n r">72.1 M&Omega;</td><td><span class="tag ok">Pass</span></td></tr>
+                    <tr><td>PWR_28V_B</td><td class="n">H1</td><td class="n">HS-02</td><td class="n r">0.003</td><td class="n r">98.4 M&Omega;</td><td><span class="tag ok">Pass</span></td></tr>
+                  </tbody>
+                </table></div>
+              </div>
+            </div>
+
+            <div class="cols">
+              <div class="panel">
+                <header><h3>HV rail</h3><div class="spacer"></div><span class="pill idle" id="hvStatePill"><i></i>Safe</span></header>
+                <div class="pad" style="display:flex;flex-direction:column;gap:12px">
+                  <div class="hvgauge">
+                    <span class="big" id="gRail">0<u style="font-size:14px;text-decoration:none;color:var(--ink-3)"> V</u></span>
+                    <div style="display:flex;flex-direction:column;gap:6px">
+                      <div class="hvtrack"><i id="gTrack"></i></div>
+                      <span class="lbl">target 500 V &middot; ramp 10 %/step</span>
+                    </div>
+                  </div>
+                  <div class="meters" style="border:1px solid var(--line-soft);border-radius:var(--r);overflow:hidden">
+                    <div class="meter" id="mLeakBox"><span class="lbl">Leakage</span>
+                      <span class="v" id="mLeak">0.000<u>V</u></span><span class="rng">trip &ge; 0.045 V</span></div>
+                    <div class="meter"><span class="lbl">HV_Sense</span>
+                      <span class="v" id="mSense">0.000<u>V</u></span><span class="rng">ratio 0.00049</span></div>
+                  </div>
+                </div>
+              </div>
+              <div class="panel">
+                <header><h3>Leakage loop</h3></header>
+                <div class="pad"><div class="path hvp">
+                  DAC8830 &rarr; CA05P-5 &rarr; <b>+500 V</b><br>
+                  &rarr; R3002 1 M&Omega; &rarr; INS_VIN &rarr; <b>HS reed[n]</b><br>
+                  &rarr; net under test &rarr; [insulation] &rarr; adjacent conductor<br>
+                  &rarr; <b>its LS reed</b> &rarr; HV_RET &rarr; R3004 1 k&Omega; &rarr; GND<br>
+                  close every LS <b>except</b> net n&rsquo;s own return
+                </div></div>
+              </div>
+              <div class="panel">
+                <header><h3>Safety</h3></header>
+                <div class="pad" style="display:flex;flex-direction:column;gap:12px">
+                  <dl class="kv">
+                    <dt>Interlock</dt><dd>closed <span class="tag ok">safe</span></dd>
+                    <dt>Switching</dt><dd>cold &middot; discharge before every relay change</dd>
+                    <dt>Discharge</dt><dd>passive &middot; 10.05 M&Omega; &middot; 200 ms wait</dd>
+                    <dt>Return map</dt><dd id="hvRetSrc">HV netlist &middot; per net</dd>
+                  </dl>
+                  <div class="row">
+                    <button class="btn ghost-hv" id="abortHv2">Emergency discharge</button>
+                    <button class="btn">Relay self-test</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ─────────── NETLISTS ─────────── -->
+    <section class="view" id="v-program" role="tabpanel" aria-label="Netlists">
+      <div class="cols">
+        <div class="netbar" id="nb-progM" data-dom="mtx"></div>
+        <div class="netbar" id="nb-progH" data-dom="hv"></div>
+
+        <div class="panel">
+          <header><h3>Why two files</h3></header>
+          <div class="pad" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:18px">
+            <div style="display:flex;flex-direction:column;gap:7px">
+              <span class="conn">MTX netlist</span>
+              <p style="margin:0;font-size:12.5px;color:var(--ink-2);line-height:1.55">
+                Describes the harness on the matrix side: which HS pin connects to which LS pin, and the
+                resistance window for each net. Fixed for a given harness drawing &mdash; continuity and
+                resistance both read it.</p>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:7px">
+              <span class="conn hv">HV netlist</span>
+              <p style="margin:0;font-size:12.5px;color:var(--ink-2);line-height:1.55">
+                Describes the same harness against the HV stack: which card and relay each net lands on, and
+                which LS relays form its return. Changes with the stack size, so it is a separate file &mdash;
+                a 4-card map on a 3-card stack leaves the top 64 nets unreachable.</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <header><h3>MTX nets</h3><div class="spacer"></div>
+            <span class="lbl">continuity + resistance &middot; showing 8</span></header>
+          <div class="tw">
+            <table style="min-width:640px">
+              <thead><tr><th>Net</th><th>Wire</th><th>HS</th><th>LS</th>
+                <th class="r">R min</th><th class="r">R max</th><th>Topology</th></tr></thead>
+              <tbody>
+                <tr><td>PWR_28V_A</td><td class="n">14 AWG</td><td class="n">J1-01 / 001</td><td class="n">J3-14 / 142</td><td class="n r">0.02</td><td class="n r">0.35</td><td><span class="tag mut">1:1</span></td></tr>
+                <tr><td>PWR_28V_B</td><td class="n">14 AWG</td><td class="n">J1-02 / 002</td><td class="n">J3-15 / 143</td><td class="n r">0.02</td><td class="n r">0.35</td><td><span class="tag mut">1:1</span></td></tr>
+                <tr><td>GND_RET</td><td class="n">12 AWG</td><td class="n">J1-03 / 003</td><td class="n">J2-22 / 086</td><td class="n r">0.01</td><td class="n r">0.20</td><td><span class="tag mut">1:1</span></td></tr>
+                <tr><td>ARINC_A_HI</td><td class="n">24 AWG TSP</td><td class="n">J1-14 / 014</td><td class="n">J2-07 / 071</td><td class="n r">0.10</td><td class="n r">3.00</td><td><span class="tag mut">1:1</span></td></tr>
+                <tr><td>ARINC_A_LO</td><td class="n">24 AWG TSP</td><td class="n">J1-15 / 015</td><td class="n">J2-08 / 072</td><td class="n r">0.10</td><td class="n r">3.00</td><td><span class="tag mut">1:1</span></td></tr>
+                <tr><td>LAMP_CMD</td><td class="n">22 AWG</td><td class="n">J1-22 / 022</td><td class="n">J3-05 / 133</td><td class="n r">0.05</td><td class="n r">2.00</td><td><span class="tag mut">1:1</span></td></tr>
+                <tr><td>SPLICE_28V</td><td class="n">18 AWG</td><td class="n">J1-31 / 031</td><td class="n">J2-04 &middot; J3-09 &middot; J4-01</td><td class="n r">0.05</td><td class="n r">1.20</td><td><span class="tag acc">1:3 splice</span></td></tr>
+                <tr><td>SENSE_RTD_1</td><td class="n">26 AWG</td><td class="n">J2-11 / 075</td><td class="n">J4-03 / 195</td><td class="n r">0.20</td><td class="n r">5.00</td><td><span class="tag mut">1:1</span></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="panel">
+          <header><h3>HV nets</h3><div class="spacer"></div>
+            <span class="lbl" id="hvNlHdr">no HV netlist loaded</span></header>
+          <div class="tw">
+            <table style="min-width:640px">
+              <thead><tr><th>Net</th><th>Card</th><th>HS relay</th><th>Return LS</th>
+                <th class="r">Insul min</th><th>Reachable</th></tr></thead>
+              <tbody id="hvNlBody">
+                <tr><td colspan="6" style="text-align:center;color:var(--ink-3);padding:22px">
+                  Load an HV netlist to see the relay map.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ─────────── RESULTS ─────────── -->
+    <section class="view" id="v-results" role="tabpanel" aria-label="Results">
+      <div class="cols">
+        <div class="panel">
+          <header><h3>First-pass yield &middot; last 24 builds</h3><div class="spacer"></div>
+            <span class="pill acc"><i></i>78 %</span></header>
+          <div class="pad"><canvas class="spark" id="cvSpark" aria-label="First-pass yield trend"></canvas></div>
+        </div>
+        <div class="panel">
+          <header><h3>Run history</h3><div class="spacer"></div>
+            <div class="row"><button class="btn">Export CSV</button><button class="btn">Print report</button></div></header>
+          <div class="tw">
+            <table style="min-width:900px">
+              <thead><tr><th>Run</th><th>Serial</th><th>MTX netlist</th><th>HV netlist</th>
+                <th>Continuity</th><th>Resistance</th><th>HV</th><th>Verdict</th></tr></thead>
+              <tbody>
+                <tr><td class="n">0418</td><td class="n">24-A0417</td><td class="n">AV-880_RevC</td><td class="n">AV-880_HV_3card</td><td><span class="tag ok">Pass</span></td><td><span class="tag ok">Pass</span></td><td><span class="tag bad">1 low</span></td><td><span class="tag bad">Fail</span></td></tr>
+                <tr><td class="n">0417</td><td class="n">24-A0416</td><td class="n">AV-880_RevC</td><td class="n">AV-880_HV_3card</td><td><span class="tag ok">Pass</span></td><td><span class="tag ok">Pass</span></td><td><span class="tag ok">Pass</span></td><td><span class="tag ok">Pass</span></td></tr>
+                <tr><td class="n">0416</td><td class="n">24-A0415</td><td class="n">&mdash; built</td><td class="n">&mdash;</td><td><span class="tag acc">310 found</span></td><td><span class="tag mut">Not run</span></td><td><span class="tag mut">Not run</span></td><td><span class="tag acc">Netlist built</span></td></tr>
+                <tr><td class="n">0415</td><td class="n">24-A0414</td><td class="n">AV-880_RevC</td><td class="n">&mdash;</td><td><span class="tag bad">1 open</span></td><td><span class="tag mut">Not run</span></td><td><span class="tag mut">Not run</span></td><td><span class="tag bad">Fail</span></td></tr>
+                <tr><td class="n">0414</td><td class="n">24-A0413</td><td class="n">AV-880_RevC</td><td class="n">AV-880_HV_3card</td><td><span class="tag ok">Pass</span></td><td><span class="tag ok">Pass</span></td><td><span class="tag ok">Pass</span></td><td><span class="tag ok">Pass</span></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div class="panel">
+          <header><h3>Fault pareto &middot; this shift</h3></header>
+          <div class="tw">
+            <table>
+              <thead><tr><th>Code</th><th>Test</th><th>Fault</th><th>Most common location</th><th class="r">Count</th><th class="r">Share</th></tr></thead>
+              <tbody>
+                <tr><td class="n">F06</td><td>Continuity</td><td>Open circuit</td><td class="n">J2-07 backshell</td><td class="n r">14</td><td class="n r">46 %</td></tr>
+                <tr><td class="n">F08</td><td>Resistance</td><td>Resistance high</td><td class="n">J3-05 crimp</td><td class="n r">9</td><td class="n r">30 %</td></tr>
+                <tr><td class="n">F04</td><td>HV</td><td>Below 10 M&Omega;</td><td class="n">H1 HS-03</td><td class="n r">4</td><td class="n r">13 %</td></tr>
+                <tr><td class="n">F07</td><td>Continuity</td><td>Unexpected short</td><td class="n">J4-03 splice</td><td class="n r">3</td><td class="n r">11 %</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ─────────── DIAG ─────────── -->
+    <section class="view" id="v-diag" role="tabpanel" aria-label="Diagnostics">
+      <div class="diag-grid">
+        <div class="panel">
+          <header><h3>Bus map</h3><div class="spacer"></div><button class="btn">Rescan</button></header>
+          <div>
+            <div class="bus"><span class="id">I2C2</span><span class="pill ok"><i></i>OK</span><span class="devs" id="busHv">HV MCP23017 &middot; 3-card stack &middot; iso ADuM1250</span><span class="hz">100 kHz</span></div>
+            <div class="bus"><span class="id">I2C3</span><span class="pill warn"><i></i>Slow</span><span class="devs">Matrix MCP23017 &times;5 &middot; 0x20 0x21 0x23 0x24 0x25</span><span class="hz">100 kHz</span></div>
+            <div class="bus"><span class="id">SPI1</span><span class="pill bad"><i></i>Fault</span><span class="devs">AD7476 U33 &middot; ADS124S08 U68 &mdash; CS unrouted</span><span class="hz">16 MHz</span></div>
+            <div class="bus"><span class="id">SPI2</span><span class="pill ok"><i></i>OK</span><span class="devs">DAC8775 &middot; DAC8830 &middot; HV AD7476 &times;2 &middot; isolated</span><span class="hz">8 MHz</span></div>
+            <div class="bus"><span class="id">SPI3</span><span class="pill ok"><i></i>OK</span><span class="devs">Control AD7476 U4 &middot; ADC_IN</span><span class="hz">16 MHz</span></div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <header><h3>Cards</h3><div class="spacer"></div><span class="lbl">by stage</span></header>
+          <div class="tw"><table style="min-width:0">
+            <thead><tr><th>Slot</th><th>Card</th><th>Stage</th><th>Status</th><th class="r">Rail</th></tr></thead>
+            <tbody id="cardBody"></tbody>
+          </table></div>
+        </div>
+
+        <div class="panel">
+          <header><h3>Manual switch &middot; J-MTX</h3><div class="spacer"></div><span class="tag warn">Engineer</span></header>
+          <div class="pad" style="display:flex;flex-direction:column;gap:14px">
+            <div class="ctl">
+              <label for="hsPin">HS pin</label>
+              <div style="display:flex;gap:11px;align-items:center">
+                <input type="range" id="hsPin" min="0" max="255" value="14">
+                <span class="out" id="hsOut" style="width:118px">014 &middot; b0 ch14</span></div>
+              <label for="lsPin">LS pin</label>
+              <div style="display:flex;gap:11px;align-items:center">
+                <input type="range" id="lsPin" min="0" max="255" value="71">
+                <span class="out" id="lsOut" style="width:118px">071 &middot; b4 ch07</span></div>
+              <label>Opto mode</label>
+              <div class="seg" role="group" aria-label="OPTO_CNTR mode">
+                <button aria-pressed="true">Continuity</button><button aria-pressed="false">Current src</button></div>
+            </div>
+            <div class="row"><button class="btn primary">Close path</button>
+              <button class="btn">Read ADC</button><button class="btn">Sweep this HS</button></div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <header><h3>Manual relay &middot; J-HV</h3><div class="spacer"></div><span class="tag hot">HV &middot; interlocked</span></header>
+          <div class="pad" style="display:flex;flex-direction:column;gap:14px">
+            <div class="ctl">
+              <label>Card</label>
+              <div class="seg" role="group" aria-label="HV card" id="hvCardSel"></div>
+              <label for="hvRelay">HS relay</label>
+              <div style="display:flex;gap:11px;align-items:center">
+                <input type="range" id="hvRelay" min="0" max="63" value="3">
+                <span class="out" id="hvOut" style="width:118px">HS-03 &middot; 0x21 b3</span></div>
+              <label for="hvSet">Set voltage</label>
+              <div style="display:flex;gap:11px;align-items:center">
+                <input type="range" id="hvSet" min="0" max="500" step="10" value="0">
+                <span class="out" id="hvSetOut" style="width:118px">0 V</span></div>
+            </div>
+            <div class="row"><button class="btn">Close HS only</button>
+              <button class="btn">Close LS pattern</button><button class="btn ghost-hv">Discharge</button></div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <header><h3>Calibration</h3><div class="spacer"></div><span class="pill ok"><i></i>Valid 6 h</span></header>
+          <div class="pad" style="display:flex;flex-direction:column;gap:14px">
+            <dl class="kv">
+              <dt>Loopback 0 &Omega;</dt><dd>0.412 &Omega; system offset <span class="tag ok">stored</span></dd>
+              <dt>Reference</dt><dd>100.004 &Omega; vs R131 &middot; 0.01 %</dd>
+              <dt>Excitation</dt><dd>1.84 mA measured &middot; 2.00 mA set <span class="tag warn">&minus;8 %</span></dd>
+              <dt>ADC offset</dt><dd>&minus;3.1 &micro;V &middot; ADS124S08 self-cal</dd>
+              <dt>HV divider</dt><dd>0.245 V @ 500 V &middot; ratio 0.00049</dd>
+            </dl>
+            <div class="row"><button class="btn primary">Run self-cal</button>
+              <button class="btn">Compliance sweep</button><button class="btn">Cal certificate</button></div>
+          </div>
+        </div>
+
+        <div class="panel" style="grid-column:1/-1">
+          <header><h3>Instrument limits</h3><div class="spacer"></div><span class="tag warn">2 blocking &middot; 2 pending</span></header>
+          <div>
+            <div class="blocker"><span class="id">HW-01</span>
+              <p><b>Kelvin path offline &mdash; resistance only.</b> ADS124S08 control lines do not reach the card connector. Resistance falls back to the 2-wire AD7476 path; milliohm resolution unavailable. Continuity and HV are unaffected.</p></div>
+            <div class="blocker"><span class="id">HW-02</span>
+              <p><b>Sense array cannot switch &mdash; resistance only.</b> HI_SENSE_EN / LO_SENSE_EN nets do not match the expander outputs, so 4-wire measurements report as 2-wire until the rename lands.</p></div>
+            <div class="blocker"><span class="id">FW-04</span>
+              <p><b>Cross continuity is bus-bound.</b> A full 256 &times; 256 sweep is roughly 70 s of I2C traffic at 100 kHz against 18 s at 400 kHz. Netlist mode needs only ~624 reads. Raise I2C3 to 400 kHz before cross mode is usable on the line.</p></div>
+            <div class="blocker"><span class="id">BU-06</span>
+              <p><b>Stack encoding lives in the cable.</b> ISO_HV_CARD_ENx is set per slot by the harness build, not the schematic. A miswired cable makes the console report a stack size the instrument does not actually have &mdash; verify against the I2C2 scan before trusting the HV netlist match.</p></div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="logbar" id="logbar">
+    <div class="head">
+      <span class="lbl">Log</span>
+      <span class="line" id="logLine">[   0.000] INFO  bsp   Board_Init complete &mdash; idle state safe</span>
+      <button id="logToggle" aria-expanded="false">Expand</button>
+    </div>
+    <div class="body" id="logBody"></div>
+  </footer>
+</div>
+
+<!-- ══ MODAL 1 · HV netlist required ══ -->
+<div class="modal" id="mdNl" role="dialog" aria-modal="true" aria-labelledby="mdNlT">
+  <div class="mbox">
+    <header>
+      <span class="mi hot"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3H7a2 2 0 00-2 2v14a2 2 0 002 2h10a2 2 0 002-2V8z"/><path d="M14 3v5h5"/></svg></span>
+      <div>
+        <h2 id="mdNlT">Select the HV netlist</h2>
+        <p>HV uses its own netlist because the relay map depends on how many HV cards are stacked.
+           The instrument reports a <b id="mdNlStack">3-card</b> stack on I2C2.</p>
+      </div>
+    </header>
+    <div class="mbody">
+      <div class="filelist" id="mdNlList"></div>
+      <button class="btn" id="mdNlBrowse" style="align-self:flex-start">Browse the file system&hellip;</button>
+      <p style="margin:0;font-size:11.5px;color:var(--ink-3);line-height:1.55">
+        The HV netlist maps each net to a card and HS relay, and declares which LS relays form its
+        return. Without it the test cannot build the return pattern &mdash; and a wrong pattern reads
+        as a pass.</p>
+    </div>
+    <footer>
+      <button class="btn" data-close>Cancel</button>
+    </footer>
+  </div>
+</div>
+
+<!-- ══ MODAL 2 · pre-HV verification ══ -->
+<div class="modal" id="mdVerify" role="dialog" aria-modal="true" aria-labelledby="mdVT">
+  <div class="mbox">
+    <header>
+      <span class="mi hot"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 9v4M12 17h.01M10.3 3.9L1.8 18a2 2 0 001.7 3h17a2 2 0 001.7-3L13.7 3.9a2 2 0 00-3.4 0z"/></svg></span>
+      <div>
+        <h2 id="mdVT">Confirm before energizing to 500 V</h2>
+        <p>The HV test drives 500 V through the harness on J-HV. Check that this is the same harness
+           that passed on J-MTX before continuing.</p>
+      </div>
+    </header>
+    <div class="mbody">
+      <div id="mdVChecks" style="display:flex;flex-direction:column;gap:8px"></div>
+      <label class="ack" for="ackBox">
+        <input type="checkbox" id="ackBox">
+        <span><b>I confirm</b> that the harness now on J-HV is the same unit that passed continuity and
+          resistance on J-MTX, that its serial matches, and that the fixture is clear of hands and tools.</span>
+      </label>
+    </div>
+    <footer>
+      <button class="btn" data-close>Cancel</button>
+      <button class="btn hv big" id="mdVGo" disabled>Energize 500 V</button>
+    </footer>
+  </div>
+</div>
+
+<input type="file" id="fileM" accept=".csv,.txt,.net,.hnl,.xml" hidden>
+<input type="file" id="fileH" accept=".csv,.txt,.net,.hnl,.xml" hidden>
+<input type="file" id="fileF" accept=".csv,.txt,.json,.fixture,.xml" hidden>
+
+<script>
+(function(){
+"use strict";
+const $=s=>document.querySelector(s), $$=s=>Array.from(document.querySelectorAll(s));
+const N=256, reduce=matchMedia("(prefers-reduced-motion: reduce)").matches;
+const css=k=>getComputedStyle(document.documentElement).getPropertyValue(k).trim();
+const fmt=(v,d)=>v.toFixed(d);
+const clock=()=>new Date().toLocaleTimeString([],{hour:"2-digit",minute:"2-digit",second:"2-digit"});
+function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);
+  t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
+
+/* ══ FIXTURE ═════════════════════════════════════════════════
+   The board exposes 256 test points, but the operator never sees
+   those — the harness lands on real D-sub / circular / rectangular
+   connectors. This description comes from the fixture file, which is
+   a third artifact: it maps connector + pin → board pin, and is a
+   property of the FIXTURE, not of the harness or the HV stack.
+   ═══════════════════════════════════════════════════════════ */
+const PITCH=13;
+const FIX={
+  name:"FX-880-C.fixture", rev:"C",
+  connectors:[
+    {id:"J1",label:"Engine bay",  type:"dsub",pins:37,side:"L",base:0},
+    {id:"J2",label:"Airframe",    type:"dsub",pins:37,side:"L",base:37},
+    {id:"J3",label:"Sensors",     type:"circ",pins:24,side:"L",base:74},
+    {id:"J4",label:"Power",       type:"rect",pins:30,side:"L",base:98},
+    {id:"J5",label:"Avionics A",  type:"dsub",pins:25,side:"R",base:0},
+    {id:"J6",label:"Avionics B",  type:"dsub",pins:25,side:"R",base:25},
+    {id:"J7",label:"Lighting",    type:"circ",pins:19,side:"R",base:50},
+    {id:"J8",label:"Main bundle", type:"rect",pins:59,side:"R",base:69}
+  ]
+};
+const TYPE_NAME={dsub:"D-sub",circ:"Circular 38999",rect:"Amphenol rect"};
+const CONN=Object.fromEntries(FIX.connectors.map(c=>[c.id,c]));
+const L_CONNS=FIX.connectors.filter(c=>c.side==="L");
+const R_CONNS=FIX.connectors.filter(c=>c.side==="R");
+const FIX_PINS=FIX.connectors.reduce((a,c)=>a+c.pins,0);
+
+/* ── nets, addressed by connector + pin ── */
+const NAMES=["PWR_28V_A","PWR_28V_B","GND_RET","ARINC_A_HI","ARINC_A_LO","LAMP_CMD","LAMP_RET",
+  "SENSE_RTD_1","SENSE_RTD_2","FUEL_LVL","OIL_PRESS","FIRE_LOOP_A","FIRE_LOOP_B","STARTER_CMD",
+  "GEN_FIELD","BUS_TIE","PITOT_HEAT","NAV_LT","BEACON","STROBE","INTERCOM_HI","INTERCOM_LO"];
+const nets=[];
+(function build(){
+  const rnd=mulberry32(880);
+  const freeL=[], freeR=[];
+  L_CONNS.forEach(c=>{for(let p=1;p<=c.pins;p++)freeL.push({c:c.id,p})});
+  R_CONNS.forEach(c=>{for(let p=1;p<=c.pins;p++)freeR.push({c:c.id,p})});
+  const take=a=>a.splice((rnd()*a.length)|0,1)[0];
+  const NETC=118;
+  for(let k=0;k<NETC;k++){
+    const src=take(freeL), dst=take(freeR);
+    if(!src||!dst)break;
+    nets.push({
+      name:k<NAMES.length?NAMES[k]:"NET_"+String(k+1).padStart(3,"0"),
+      src, dsts:[dst], joint:null,
+      hs:CONN[src.c].base+src.p-1, ls:CONN[dst.c].base+dst.p-1,
+      r:0.05+rnd()*1.55, v:0.09+rnd()*0.42, ins:12+rnd()*180,
+      rmin:0.05, rmax:2.00, wire:["14 AWG","18 AWG","22 AWG","24 AWG TSP","26 AWG"][(rnd()*5)|0],
+      open:false, card:0, relay:0
+    });
+  }
+  // six Y joints — one source branching to two or three destinations
+  [3,11,24,47,68,93].forEach((i,k)=>{
+    if(!nets[i])return;
+    const extra=k%2?2:1;
+    for(let j=0;j<extra;j++){const d=take(freeR); if(d)nets[i].dsts.push(d)}
+    nets[i].joint="Y";
+    if(nets[i].dsts.length>1&&!NAMES.includes(nets[i].name))nets[i].name="SPLICE_"+String(i).padStart(3,"0");
+  });
+  nets[11].name="SPLICE_28V";
+  // four I joints — inline butt splices on a point-to-point run
+  [7,19,55,102].forEach(i=>{if(nets[i]&&nets[i].dsts.length===1)nets[i].joint="I"});
+  // HV relay assignment follows the source connector order
+  nets.forEach((n,i)=>{n.card=(i/64)|0; n.relay=i%64});
+  // seeded faults
+  nets[4].open=true;                       // ARINC_A_LO open
+  nets[5].r=4.812;                         // LAMP_CMD resistance high
+  nets[2].ins=3.2;                         // GND_RET insulation low
+  [9,14,21,33,40].forEach((i,k)=>{if(nets[i])nets[i].r=[1.91,1.87,1.78,1.72,1.66][k]});
+})();
+const NETC=nets.length;
+const netAt=new Map();                     // "J1:14" → net (any node)
+nets.forEach(n=>{netAt.set(n.src.c+":"+n.src.p,n); n.dsts.forEach(d=>netAt.set(d.c+":"+d.p,n))});
+const refOf=nd=>nd.c+"-"+String(nd.p).padStart(2,"0");
+
+/* ══ TWO NETLISTS ════════════════════════════════════════════
+   MTX  · harness on the matrix side — HS/LS pin pairs and R limits.
+          Shared by continuity and resistance; both read the same file.
+   HV   · the same harness against the HV stack — card, HS relay and
+          the LS relays that form each net's return. Separate file
+          because the map changes with a 1..4 card stack.
+   The pair is cross-checked at run time: the HV file declares a card
+   count, and it must match the stack detected on I2C2.
+   ═══════════════════════════════════════════════════════════ */
+const NL={
+  mtx:{loaded:true,name:"AV-880_RevC.hnl",nets:NETC,pins:NETC*2+8,time:clock(),origin:"file"},
+  hv :{loaded:false,name:null,nets:0,cards:0,time:null},
+  fix:{loaded:true,name:FIX.name,conns:FIX.connectors.length,pins:FIX_PINS,time:clock()}
+};
+let stack=3;                          // HV cards detected on I2C2
+const HV_FILES=[
+  {name:"AV-880_HV_3card.hnl",cards:3,nets:NETC,note:NETC+" nets · 3-card map"},
+  {name:"AV-880_HV_4card.hnl",cards:4,nets:NETC+42,note:(NETC+42)+" nets · 4-card map"},
+  {name:"AV-880_HV_1card.hnl",cards:1,nets:52,note:"52 nets · single card"}
+];
+const USES={
+  run:"continuity + resistance read this file",
+  cont:"expected pairs and isolation checks",
+  res:"pair list and per-net R limits",
+  progM:"the J-MTX side of the harness",
+  hv:"card + relay map and the LS return pattern",
+  progH:"the J-HV side, sized to the fitted stack"
+};
+const DOC='<span class="doc"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3H7a2 2 0 00-2 2v14a2 2 0 002 2h10a2 2 0 002-2V8z"/><path d="M14 3v5h5"/></svg></span>';
+
+function stackMatch(){return NL.hv.loaded && NL.hv.cards===stack}
+function hvConnName(){return stack===1?"J-HV1":"J-HV1–"+stack}
+
+function renderNetbars(){
+  const fixEl=$("#nb-fix");
+  if(fixEl){
+    fixEl.dataset.state=NL.fix.loaded?"loaded":"empty";
+    fixEl.innerHTML=NL.fix.loaded
+      ? DOC+'<div><span class="kind">Fixture file · connectors</span><span class="fname">'+NL.fix.name+'</span>'+
+        '<span class="fmeta">'+NL.fix.conns+' connectors · '+NL.fix.pins+' pins · rev '+FIX.rev+'</span></div>'+
+        '<span class="uses">connector faces, pin layout and pin → board mapping</span><div class="spacer"></div>'+
+        '<button class="btn" data-browse="fix">Change&hellip;</button>'
+      : DOC+'<div><span class="kind">Fixture file · connectors</span>'+
+        '<span class="fname">No fixture file loaded</span>'+
+        '<span class="fmeta">the wiring diagram cannot be drawn without it</span></div>'+
+        '<div class="spacer"></div><button class="btn primary" data-browse="fix">Select&hellip;</button>';
+  }
+  const mk=(el,dom,useKey)=>{
+    if(!el)return;
+    const f = dom==="mtx"?NL.mtx:NL.hv;
+    el.dataset.state=f.loaded?"loaded":"empty";
+    const kind = dom==="mtx"?"MTX netlist · J-MTX":"HV netlist · "+hvConnName();
+    if(f.loaded){
+      const meta = dom==="mtx"
+        ? f.nets+" nets · "+f.pins+" pins · loaded "+f.time+(f.origin==="cross"?" · built by cross scan":"")
+        : f.nets+" nets · "+f.cards+"-card map · loaded "+f.time;
+      const warn = dom==="hv"&&!stackMatch()
+        ? '<span class="pill warn"><i></i>stack mismatch</span>' : "";
+      el.innerHTML=DOC+'<div><span class="kind">'+kind+'</span><span class="fname">'+f.name+'</span>'+
+        '<span class="fmeta">'+meta+'</span></div>'+warn+
+        '<span class="uses">'+USES[useKey]+'</span><div class="spacer"></div>'+
+        '<button class="btn" data-browse="'+dom+'">Change&hellip;</button>'+
+        '<button class="btn" data-clear="'+dom+'">Unload</button>';
+    }else{
+      el.innerHTML=DOC+'<div><span class="kind">'+kind+'</span>'+
+        '<span class="fname">No '+(dom==="mtx"?"MTX":"HV")+' netlist loaded</span>'+
+        '<span class="fmeta">required for '+USES[useKey]+'</span></div>'+
+        '<span class="uses">'+(dom==="mtx"
+          ? "cross continuity can run without one and build it for you"
+          : "asked for automatically when you start the HV test")+'</span><div class="spacer"></div>'+
+        '<button class="btn primary" data-browse="'+dom+'">Select&hellip;</button>';
+    }
+  };
+  mk($("#nb-run"),"mtx","run"); mk($("#nb-cont"),"mtx","cont");
+  mk($("#nb-res"),"mtx","res"); mk($("#nb-progM"),"mtx","progM");
+  mk($("#nb-hv"),"hv","hv");    mk($("#nb-progH"),"hv","progH");
+
+  $("#stNlM").textContent=NL.mtx.loaded?NL.mtx.name:"none";
+  $("#stNlH").textContent=NL.hv.loaded?NL.hv.name:"none";
+  $("#ctExp").textContent=NL.mtx.loaded?NL.mtx.nets:"—";
+  $("#rScope").textContent=NL.mtx.loaded?NL.mtx.nets+" declared pairs":"no netlist";
+  $("#rLimSrc").textContent=NL.mtx.loaded?"MTX netlist · per net":"— none loaded";
+  $("#hvRetSrc").textContent=NL.hv.loaded?"HV netlist · per net":"— none loaded";
+  $("#hvNlHdr").textContent=NL.hv.loaded
+    ? NL.hv.name+" · "+NL.hv.nets+" nets · "+NL.hv.cards+"-card map"
+    : "no HV netlist loaded";
+  renderHvNlTable();
+  $$('[data-browse]').forEach(b=>b.onclick=()=>{
+    const d=b.dataset.browse;
+    $(d==="mtx"?"#fileM":d==="hv"?"#fileH":"#fileF").click();
+  });
+  $$('[data-clear]').forEach(b=>b.onclick=()=>{
+    const d=b.dataset.clear;
+    if(d==="mtx"){NL.mtx.loaded=false; log("warn","prog","MTX netlist unloaded — netlist continuity and resistance blocked")}
+    else{NL.hv.loaded=false; log("warn","prog","HV netlist unloaded — HV test blocked")}
+    renderNetbars(); updateControls();
+  });
+}
+function renderHvNlTable(){
+  const b=$("#hvNlBody");
+  if(!NL.hv.loaded){b.innerHTML='<tr><td colspan="6" style="text-align:center;color:var(--ink-3);padding:22px">'+
+    'Load an HV netlist to see the relay map.</td></tr>'; return}
+  const rows=[["GND_RET",0,3],["PWR_28V_A",0,1],["PWR_28V_B",0,2],["ARINC_A_HI",0,14],
+    ["LAMP_RET",1,19],["SENSE_RTD_1",2,11],["AUX_SPARE",3,7]];
+  b.innerHTML=rows.map(([n,c,r])=>{
+    const reach=c<stack;
+    return '<tr><td>'+n+'</td><td class="n">H'+(c+1)+'</td><td class="n">HS-'+String(r).padStart(2,"0")+'</td>'+
+      '<td class="n">all except LS-'+String(r).padStart(2,"0")+'</td><td class="n r">10 MΩ</td>'+
+      '<td><span class="tag '+(reach?"ok":"bad")+'">'+(reach?"yes":"card not fitted")+'</span></td></tr>';
+  }).join("");
+}
+function loadMtx(name,origin){
+  NL.mtx={loaded:true,name,nets:NETC,pins:NETC*2+8,time:clock(),origin:origin||"file"};
+  log("ok","prog","MTX netlist loaded: "+name+" — "+NETC+" nets. Bound to continuity and resistance.");
+  renderNetbars(); updateControls();
+}
+function loadHv(name,cards,nets){
+  NL.hv={loaded:true,name,cards,nets,time:clock()};
+  log("ok","prog","HV netlist loaded: "+name+" — "+nets+" nets, "+cards+"-card map.");
+  if(!stackMatch())log("warn","prog","HV netlist declares "+cards+" cards, "+stack+" fitted — "+
+    ((cards-stack)*64)+" nets unreachable");
+  renderNetbars(); updateControls();
+}
+$("#fileM").addEventListener("change",e=>{const f=e.target.files&&e.target.files[0];
+  if(f)loadMtx(f.name,"file"); e.target.value=""});
+$("#fileH").addEventListener("change",e=>{const f=e.target.files&&e.target.files[0];
+  if(f)loadHv(f.name,stack,NETC); e.target.value=""; if($("#mdNl").classList.contains("on")){closeModal("mdNl"); openVerify()}});
+$("#fileF").addEventListener("change",e=>{const f=e.target.files&&e.target.files[0];
+  if(f){NL.fix={loaded:true,name:f.name,conns:FIX.connectors.length,pins:FIX_PINS,time:clock()};
+    log("ok","fix","fixture file loaded: "+f.name+" — "+FIX.connectors.length+" connectors, "+FIX_PINS+" pins");
+    renderNetbars(); renderConnList(); paintDiag()}
+  e.target.value=""});
+
+/* ══ state ══ */
+let cmode="net", scenario="good";
+let running=null, onHv=false;
+const R={cont:null,res:null,hv:null};
+let t0=0, raf=0;
+const faultsOn={f06:false,f08:false,f04:false};
+
+/* ══ HV stack ══ */
+function setStack(n){
+  stack=n;
+  $("#stackPill").className="pill acc"; $("#stackPill").innerHTML='<i></i>'+n+" card"+(n>1?"s":"");
+  $("#busHv").innerHTML="HV MCP23017 &middot; "+n+"-card stack &middot; iso ADuM1250";
+  $("#hvConnLbl").textContent=hvConnName(); $("#hvConnLbl2").textContent=hvConnName();
+  $("#hvStackTxt").textContent=n+" card"+(n>1?"s":"")+" · "+(n*64)+" HS + "+(n*64)+" LS";
+  $("#mdNlStack").textContent=n+"-card";
+  $("#sb2Tests").innerHTML="HV Card rev 1 &middot; "+n+"-card stack &middot; MHV05<br>Insulation at 500 V &middot; its own netlist";
+  $("#dhCond").innerHTML="500 V DC &middot; MHV05 reed<br>AD7476 U302 &middot; SPI2-iso<br>own netlist &middot; "+n+"-card stack";
+  $("#cardBody").innerHTML=
+    '<tr><td class="n">—</td><td>Control rev 4</td><td class="n">both</td><td><span class="tag ok">Ready</span></td><td class="n r">3.301 V</td></tr>'+
+    '<tr><td class="n">M1</td><td>Matrix rev 6</td><td class="n">1 · J-MTX</td><td><span class="tag warn">Degraded</span></td><td class="n r">3.298 V</td></tr>'+
+    [0,1,2,3].map(i=>'<tr><td class="n">H'+(i+1)+'</td><td>'+(i<n?"HV rev 1":"—")+'</td><td class="n">2 · J-HV'+(i+1)+'</td>'+
+      '<td><span class="tag '+(i<n?"ok":"mut")+'">'+(i<n?"Ready":"Empty")+'</span></td>'+
+      '<td class="n r">'+(i<n?(4.98+i*0.004).toFixed(3)+" V":"—")+'</td></tr>').join("");
+  $("#hvCardSel").innerHTML=[0,1,2,3].map(i=>'<button aria-pressed="'+(i===0)+'"'+(i<n?"":" disabled")+
+    ' style="flex:1">H'+(i+1)+'</button>').join("");
+  buildCards(); setRelays(null); renderNetbars(); updateControls();
+}
+$$('[data-stack]').forEach(b=>b.addEventListener("click",()=>{
+  $$('[data-stack]').forEach(o=>o.setAttribute("aria-pressed",String(o===b)));
+  setStack(+b.dataset.stack);
+  log("info","bsp","I2C2 rescan — "+stack+"-card HV stack detected");
+}));
+
+/* ══ CONNECTOR GEOMETRY ══════════════════════════════════════
+   Each connector type gets a real face: D-subs are two staggered
+   rows in a D shell, circulars are concentric rings filled from the
+   outside in, rectangulars are a grid. Pin coordinates are cached so
+   wires can be drawn straight onto them.
+   ═══════════════════════════════════════════════════════════ */
+function circRings(n){
+  for(let R=PITCH;R<400;R+=PITCH*0.5){
+    const caps=[]; let tot=1;
+    for(let r=R;r>=PITCH*0.9;r-=PITCH*0.95){const c=Math.floor(2*Math.PI*r/PITCH); caps.push({r,c}); tot+=c}
+    if(tot>=n)return {R,caps};
+  }
+  return {R:PITCH,caps:[]};
+}
+function connSize(c){
+  if(c.type==="dsub"){const n1=Math.ceil(c.pins/2); return {w:n1*PITCH+30,h:2*PITCH+34}}
+  if(c.type==="circ"){const {R}=circRings(c.pins); return {w:2*R+34,h:2*R+40}}
+  const cols=Math.ceil(Math.sqrt(c.pins*1.7)), rows=Math.ceil(c.pins/cols);
+  return {w:cols*PITCH+26,h:rows*PITCH+34};
+}
+function layoutConn(c,x,y){
+  const s=connSize(c); c.x=x; c.y=y; c.w=s.w; c.h=s.h; c.pts=[];
+  const top=y+20;
+  if(c.type==="dsub"){
+    const n1=Math.ceil(c.pins/2), n2=c.pins-n1;
+    for(let i=0;i<n1;i++)c.pts.push({x:x+18+i*PITCH,y:top+7});
+    for(let i=0;i<n2;i++)c.pts.push({x:x+18+PITCH/2+i*PITCH,y:top+7+PITCH});
+  }else if(c.type==="circ"){
+    const {caps}=circRings(c.pins), cx=x+s.w/2, cy=top+(s.h-20)/2;
+    let rem=c.pins;
+    for(const ring of caps){
+      if(rem<=0)break;
+      const take=Math.min(rem,ring.c);
+      for(let i=0;i<take;i++){const a=-Math.PI/2+(i/take)*Math.PI*2;
+        c.pts.push({x:cx+Math.cos(a)*ring.r,y:cy+Math.sin(a)*ring.r})}
+      rem-=take;
+    }
+    if(rem>0)c.pts.push({x:cx,y:cy});
+  }else{
+    const cols=Math.ceil(Math.sqrt(c.pins*1.7));
+    for(let i=0;i<c.pins;i++)c.pts.push({x:x+16+(i%cols)*PITCH,y:top+7+((i/cols)|0)*PITCH});
+  }
+  return y+s.h+18;
+}
+const CW=1060, CH=440;
+function layoutFixture(){
+  const lw=Math.max(...L_CONNS.map(c=>connSize(c).w)), rw=Math.max(...R_CONNS.map(c=>connSize(c).w));
+  const lh=L_CONNS.reduce((a,c)=>a+connSize(c).h+18,-18);
+  const rh=R_CONNS.reduce((a,c)=>a+connSize(c).h+18,-18);
+  let y=Math.max(14,(CH-lh)/2); L_CONNS.forEach(c=>{y=layoutConn(c,16,y)});
+  y=Math.max(14,(CH-rh)/2);     R_CONNS.forEach(c=>{y=layoutConn(c,CW-16-rw,y)});
+  FIX.midL=16+lw; FIX.midR=CW-16-rw;
+}
+const pinXY=nd=>{const c=CONN[nd.c]; return c.pts[nd.p-1]||{x:0,y:0}};
+
+/* ── wire paths, joints and hit samples ── */
+function bez(p0,p1,t){const dx=(p1.x-p0.x)*0.45;
+  const c0={x:p0.x+dx,y:p0.y}, c1={x:p1.x-dx,y:p1.y}, u=1-t;
+  return {x:u*u*u*p0.x+3*u*u*t*c0.x+3*u*t*t*c1.x+t*t*t*p1.x,
+          y:u*u*u*p0.y+3*u*u*t*c0.y+3*u*t*t*c1.y+t*t*t*p1.y}}
+function strokeBez(ctx,p0,p1){const dx=(p1.x-p0.x)*0.45;
+  ctx.moveTo(p0.x,p0.y); ctx.bezierCurveTo(p0.x+dx,p0.y,p1.x-dx,p1.y,p1.x,p1.y)}
+function netSegments(n){
+  const s=pinXY(n.src), ds=n.dsts.map(pinXY);
+  if(n.joint==="Y"&&ds.length>1){
+    const j={x:(s.x+ds.reduce((a,d)=>a+d.x,0)/ds.length)/2,
+             y:(s.y+ds.reduce((a,d)=>a+d.y,0)/ds.length)/2};
+    return {segs:[[s,j]].concat(ds.map(d=>[j,d])),joint:j,kind:"Y"};
+  }
+  return {segs:ds.map(d=>[s,d]),joint:n.joint==="I"?bez(s,ds[0],0.5):null,kind:n.joint};
+}
+function netState(n){
+  if(!tested)return "idle";
+  return (n.open&&faultsOn.f06)?"fail":"pass";
+}
+let tested=false, hoverNet=null, selNet=null, filter="all", selConn=null, scanX=null;
+
+function paintDiag(){
+  const cv=$("#cvDiag"); if(!cv)return;
+  const ctx=cv.getContext("2d");
+  const C={sunk:css("--sunk"),line:css("--line"),soft:css("--line-soft"),ink3:css("--ink-3"),
+    ink:css("--ink"),acc:css("--accent"),pass:css("--pass"),fail:css("--fail"),
+    empty:css("--grid-empty"),panel:css("--panel")};
+  ctx.clearRect(0,0,CW,CH); ctx.fillStyle=C.sunk; ctx.fillRect(0,0,CW,CH);
+
+  // connector shells
+  FIX.connectors.forEach(c=>{
+    const dim=selConn&&selConn!==c.id;
+    ctx.globalAlpha=dim?.35:1;
+    ctx.fillStyle=C.panel; ctx.strokeStyle=selConn===c.id?C.acc:C.line;
+    ctx.lineWidth=selConn===c.id?2:1.2;
+    const x=c.x,y=c.y+20,w=c.w,h=c.h-20;
+    ctx.beginPath();
+    if(c.type==="dsub"){
+      const i=9;
+      ctx.moveTo(x+2,y+3); ctx.lineTo(x+w-2,y+3);
+      ctx.lineTo(x+w-2-i,y+h-3); ctx.lineTo(x+2+i,y+h-3); ctx.closePath();
+    }else if(c.type==="circ"){
+      ctx.arc(x+w/2,y+h/2,Math.min(w,h)/2-3,0,7);
+    }else{
+      ctx.roundRect(x+2,y+3,w-4,h-6,4);
+    }
+    ctx.fill(); ctx.stroke();
+    if(c.type==="circ"){ // keyway
+      ctx.beginPath(); ctx.arc(x+w/2,y+h/2,Math.min(w,h)/2-8,0,7);
+      ctx.strokeStyle=C.soft; ctx.lineWidth=1; ctx.stroke();
+    }
+    // pins
+    c.pts.forEach((p,i)=>{
+      const n=netAt.get(c.id+":"+(i+1));
+      const st=n?netState(n):null;
+      ctx.beginPath(); ctx.arc(p.x,p.y,3.1,0,7);
+      ctx.fillStyle=!n?C.empty:st==="fail"?C.fail:st==="pass"?C.pass:C.ink3;
+      ctx.fill();
+      if(n&&(n===hoverNet||n===selNet)){ctx.strokeStyle=C.acc;ctx.lineWidth=1.6;ctx.stroke()}
+    });
+    // label
+    ctx.fillStyle=dim?C.ink3:C.ink;
+    ctx.font='600 11px '+css("--ui").split(",")[0];
+    ctx.textAlign="left";
+    ctx.fillText(c.id+"  "+c.label,x+2,c.y+12);
+    ctx.fillStyle=C.ink3; ctx.font='9px '+css("--mono").split(",")[0].replace(/'/g,"");
+    const tw=ctx.measureText(c.id+"  "+c.label).width;
+    ctx.fillText(TYPE_NAME[c.type]+" · "+c.pins+"w",x+2+tw+34,c.y+12);
+    ctx.globalAlpha=1;
+  });
+
+  // wires — untested first, then pass, then fail, so faults are never hidden
+  const vis=nets.filter(n=>{
+    if(scanX!==null&&pinXY(n.src).x>scanX)return false;
+    if(filter==="fault")return netState(n)==="fail";
+    if(filter==="conn"&&selConn)return n.src.c===selConn||n.dsts.some(d=>d.c===selConn);
+    return true;
+  });
+  const order={idle:0,pass:1,fail:2};
+  vis.sort((a,b)=>order[netState(a)]-order[netState(b)]);
+  vis.forEach(n=>{
+    const st=netState(n), hot=(n===hoverNet||n===selNet);
+    const {segs,joint,kind}=netSegments(n);
+    ctx.strokeStyle=hot?C.acc:st==="fail"?C.fail:st==="pass"?C.pass:C.empty;
+    ctx.lineWidth=hot?3:st==="fail"?2.4:1.5;
+    ctx.globalAlpha=hot?1:(selNet||selConn)&&!hot?.3:st==="idle"?.55:.85;
+    ctx.beginPath(); segs.forEach(([a,b])=>strokeBez(ctx,a,b)); ctx.stroke();
+    if(joint&&kind==="Y"){
+      ctx.beginPath(); ctx.arc(joint.x,joint.y,4.5,0,7);
+      ctx.fillStyle=hot?C.acc:st==="fail"?C.fail:C.acc; ctx.fill();
+      ctx.strokeStyle=C.panel; ctx.lineWidth=1.4; ctx.stroke();
+    }else if(joint&&kind==="I"){
+      const a=bez(pinXY(n.src),pinXY(n.dsts[0]),0.46), b=bez(pinXY(n.src),pinXY(n.dsts[0]),0.54);
+      const ang=Math.atan2(b.y-a.y,b.x-a.x);
+      ctx.save(); ctx.translate(joint.x,joint.y); ctx.rotate(ang);
+      ctx.fillStyle=hot?C.acc:css("--ink-2"); ctx.strokeStyle=C.panel; ctx.lineWidth=1.2;
+      ctx.beginPath(); ctx.roundRect(-7,-3.2,14,6.4,2); ctx.fill(); ctx.stroke(); ctx.restore();
+    }
+    ctx.globalAlpha=1;
+  });
+
+  // cross-mode sweep marker
+  if(scanX!==null&&!reduce){
+    ctx.strokeStyle=C.acc; ctx.lineWidth=2; ctx.globalAlpha=.7;
+    ctx.beginPath(); ctx.moveTo(scanX,8); ctx.lineTo(scanX,CH-8); ctx.stroke(); ctx.globalAlpha=1;
+  }
+  $("#diagCount").textContent=vis.length+" of "+NETC+" nets shown";
+}
+
+/* ── hit testing: nearest sampled point on any visible wire ── */
+function hitNet(mx,my){
+  let best=null,bd=11;
+  for(const n of nets){
+    if(filter==="fault"&&netState(n)!=="fail")continue;
+    if(filter==="conn"&&selConn&&n.src.c!==selConn&&!n.dsts.some(d=>d.c===selConn))continue;
+    const {segs}=netSegments(n);
+    for(const [a,b] of segs)for(let t=0;t<=1;t+=1/18){
+      const p=bez(a,b,t), d=Math.hypot(p.x-mx,p.y-my);
+      if(d<bd){bd=d;best=n}
+    }
+  }
+  return best;
+}
+function hitPin(mx,my){
+  for(const c of FIX.connectors)for(let i=0;i<c.pts.length;i++){
+    const p=c.pts[i];
+    if(Math.hypot(p.x-mx,p.y-my)<6)return {c:c.id,p:i+1,net:netAt.get(c.id+":"+(i+1))};
+  }
+  return null;
+}
+(function bindDiag(){
+  const cv=$("#cvDiag"), tip=$("#diagTip"); if(!cv)return;
+  const toLocal=e=>{const r=cv.getBoundingClientRect();
+    return {x:(e.clientX-r.left)*CW/r.width, y:(e.clientY-r.top)*CH/r.height, rx:e.clientX-r.left, ry:e.clientY-r.top}};
+  cv.addEventListener("mousemove",e=>{
+    const m=toLocal(e), pin=hitPin(m.x,m.y);
+    const n=pin?pin.net:hitNet(m.x,m.y);
+    if(n!==hoverNet){hoverNet=n; paintDiag()}
+    if(n){
+      const st=netState(n);
+      tip.className="tip on";
+      tip.innerHTML='<span class="tn">'+n.name+'</span><span class="td">'+
+        refOf(n.src)+" → "+n.dsts.map(refOf).join(" · ")+
+        (n.joint==="Y"?"<br>Y joint · 1:"+n.dsts.length+" branch":n.joint==="I"?"<br>I joint · inline splice":"")+
+        "<br>"+(st==="idle"?"not tested":st==="fail"?"OPEN · 3.281 V (F06)":n.v.toFixed(3)+" V · connected")+
+        '</span>';
+      const tw=tip.offsetWidth||220;
+      tip.style.left=Math.min(m.rx+14,cv.clientWidth-tw-8)+"px";
+      tip.style.top=(m.ry+16)+"px";
+    }else tip.className="tip";
+  });
+  cv.addEventListener("mouseleave",()=>{hoverNet=null;tip.className="tip";paintDiag()});
+  cv.addEventListener("click",e=>{
+    const m=toLocal(e), pin=hitPin(m.x,m.y);
+    const n=pin?pin.net:hitNet(m.x,m.y);
+    selNet=n||null; inspect(n); paintDiag();
+  });
+})();
+$$('[data-filter]').forEach(b=>b.addEventListener("click",()=>{
+  $$('[data-filter]').forEach(o=>o.setAttribute("aria-pressed",String(o===b)));
+  filter=b.dataset.filter; paintDiag();
+}));
+
+function renderConnList(){
+  $("#fixMeta").textContent=FIX.connectors.length+" connectors · "+FIX_PINS+" pins";
+  $("#connList").innerHTML=FIX.connectors.map(c=>{
+    const cnt=nets.filter(n=>n.src.c===c.id||n.dsts.some(d=>d.c===c.id)).length;
+    return '<button class="connrow" data-conn="'+c.id+'" aria-pressed="'+(selConn===c.id)+'">'+
+      '<span class="cid">'+c.id+'</span>'+
+      '<span><span class="cl">'+c.label+'</span><span class="cm">'+TYPE_NAME[c.type]+' · '+c.pins+
+      ' way · board '+(c.side==="L"?"HS":"LS")+' '+String(c.base).padStart(3,"0")+'–'+
+      String(c.base+c.pins-1).padStart(3,"0")+'</span></span>'+
+      '<span class="tag mut">'+cnt+' nets</span></button>';
+  }).join("");
+  $$('[data-conn]').forEach(b=>b.addEventListener("click",()=>{
+    selConn=selConn===b.dataset.conn?null:b.dataset.conn;
+    renderConnList(); paintDiag();
+  }));
+}
+
+function inspect(n){
+  const bank=i=>"bank "+((i/16)|0)+" ch "+String(i%16).padStart(2,"0");
+  if(!n){
+    $("#insTag").className="tag mut"; $("#insTag").textContent="nothing selected";
+    $("#insNet").textContent="—"; $("#insHs").textContent="—"; $("#insLs").textContent="—";
+    $("#insCont").textContent="—"; $("#insFan").textContent="—";
+    $("#insPath").textContent="Select a wire to resolve the hardware path.";
+    return;
+  }
+  const st=netState(n);
+  $("#insTag").className="tag "+(st==="fail"?"bad":st==="pass"?"ok":"mut");
+  $("#insTag").textContent=st==="fail"?"open":st==="pass"?"connected":"not tested";
+  $("#insNet").textContent=n.name;
+  $("#insHs").textContent=refOf(n.src)+"  ·  "+CONN[n.src.c].label;
+  $("#insLs").innerHTML=n.dsts.map(d=>refOf(d)+"  ·  "+CONN[d.c].label).join("<br>");
+  $("#insFan").innerHTML=n.joint==="Y"
+    ? '<span style="color:var(--accent)">Y joint · 1:'+n.dsts.length+" branch splice</span>"
+    : n.joint==="I" ? "I joint · inline butt splice" : "1:1 · point to point";
+  $("#insCont").textContent=st==="idle"?"—"
+    :st==="fail"?"3.281 V  —  OPEN (F06)":n.v.toFixed(3)+" V  —  below 0.80 V  ·  "+n.wire;
+  $("#insPath").innerHTML=
+    "ADC_IN &rarr; <b>Opto U3</b> (OPTO_CNTR=LOW) &rarr; HI_COM<br>"+
+    "&rarr; HI mux <b>"+bank(n.hs)+"</b> &mdash; EN via U101 @0x20<br>"+
+    "&rarr; <b>"+refOf(n.src)+"</b> &rarr; harness &rarr; <b>"+n.dsts.map(refOf).join(" / ")+"</b><br>"+
+    "&rarr; LO mux <b>"+bank(n.ls)+"</b> &mdash; EN via U102 @0x21<br>"+
+    "&rarr; LO_COM &rarr; R131 100 &Omega; &rarr; GND";
+}
+const paintMatrix=paintDiag;   // keep the old call sites working
+
+function setMode(m){
+  cmode=m; document.body.dataset.cmode=m;
+  $$('[data-cmode]').forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.cmode===m)));
+  $("#scScope").textContent=m==="net"?"624 reads · est 3 s":"65,536 reads · est 18 s @ 400 kHz";
+  $("#mxHint").textContent=m==="net"?"click a cell to inspect the pair":"one HS energised at a time, all 256 LS read";
+  $("#dcCond").innerHTML=m==="net"
+    ? "Netlist mode &middot; "+(NL.mtx.loaded?NL.mtx.nets:"—")+" pairs<br>3.3 V &middot; AD7476 U4 &middot; SPI3<br>OPTO_CNTR = LOW"
+    : "Cross continuity &middot; 65,536 reads<br>3.3 V &middot; AD7476 U4 &middot; SPI3<br>one to many discovery";
+  $("#dcU").textContent=m==="net"?"of "+(NL.mtx.loaded?NL.mtx.nets:"—")+" verified":"nets discovered";
+  updateControls(); paintMatrix();
+}
+$$('[data-cmode]').forEach(b=>b.addEventListener("click",()=>setMode(b.dataset.cmode)));
+
+function buildAutoTable(){
+  const rows=nets.filter(n=>n.dsts.length>1).concat(nets.filter(n=>n.joint==="I").slice(0,2))
+    .concat(nets.filter(n=>!n.joint).slice(0,3));
+  $("#autoBody").innerHTML=rows.slice(0,9).map((n,i)=>{
+    const fan=n.dsts.length;
+    return '<tr><td class="n">AUTO_'+String(i+1).padStart(3,"0")+'</td>'+
+      '<td class="n">'+refOf(n.src)+'</td>'+
+      '<td><span class="fan">'+n.dsts.map(d=>'<i>'+refOf(d)+'</i>').join("")+'</span></td>'+
+      '<td class="n r">1:'+fan+'</td><td class="n r">'+n.v.toFixed(3)+' V</td>'+
+      '<td><span class="tag '+(fan>1?"acc":n.joint==="I"?"warn":"mut")+'">'+
+        (fan>1?"Y joint · branch":n.joint==="I"?"I joint · inline":"point to point")+'</span></td></tr>';
+  }).join("");
+}
+
+/* ══ resistance charts ══ */
+function paintHist(){
+  const cv=$("#cvHist"); if(!cv||!cv.clientWidth)return;
+  const dpr=devicePixelRatio||1,w=cv.clientWidth,h=150;
+  cv.width=w*dpr; cv.height=h*dpr;
+  const c=cv.getContext("2d"); c.scale(dpr,dpr); c.clearRect(0,0,w,h);
+  const pad=26,iw=w-pad*2,ih=h-34,MAX=5.2,bins=new Array(52).fill(0);
+  nets.forEach(n=>{if(n.open&&faultsOn.f06)return; bins[Math.min(51,(n.r/MAX*52)|0)]++});
+  const top=Math.max(...bins)||1, X=v=>pad+v/MAX*iw, bw=iw/52;
+  c.fillStyle=css("--pass-soft"); c.fillRect(X(0.05),8,X(2.0)-X(0.05),ih-8);
+  c.strokeStyle=css("--pass"); c.lineWidth=1;
+  [0.05,2.0].forEach(v=>{c.beginPath();c.moveTo(X(v)+.5,8);c.lineTo(X(v)+.5,ih);c.stroke()});
+  bins.forEach((v,i)=>{const x=pad+i*bw,r=(i+.5)/52*MAX,hgt=(v/top)*(ih-16);
+    c.fillStyle=(r>2.0||r<0.05)?css("--fail"):css("--accent");
+    c.fillRect(x+.5,ih-hgt,Math.max(1,bw-1.5),hgt)});
+  c.strokeStyle=css("--line"); c.beginPath(); c.moveTo(pad,ih+.5); c.lineTo(w-pad,ih+.5); c.stroke();
+  c.fillStyle=css("--ink-3"); c.font='10px '+css("--mono").split(",")[0].replace(/'/g,"");
+  [0,1,2,3,4,5].forEach(v=>c.fillText(v.toFixed(0)+" Ω",X(v)-8,h-6));
+  c.fillStyle=css("--pass"); c.fillText("limit window",X(0.05)+6,20);
+}
+function buildResTable(){
+  const rows=nets.filter(n=>!(n.open&&faultsOn.f06))
+    .map(n=>({n,m:n.rmax-n.r})).sort((a,b)=>a.m-b.m).slice(0,8);
+  $("#resBody").innerHTML=rows.map(({n,m})=>{
+    const bad=n.r>n.rmax||n.r<n.rmin, MAX=5.2, pct=v=>Math.min(100,v/MAX*100);
+    return '<tr><td>'+n.name+'</td><td class="n">'+refOf(n.src)+'</td><td class="n">'+refOf(n.dsts[0])+'</td>'+
+      '<td class="n r" style="color:'+(bad?"var(--fail)":"inherit")+'">'+n.r.toFixed(3)+' Ω</td>'+
+      '<td><div class="mbar"><span class="win" style="left:'+pct(n.rmin)+'%;width:'+(pct(n.rmax)-pct(n.rmin))+'%"></span>'+
+      '<span class="pt'+(bad?' bad':'')+'" style="left:'+pct(n.r)+'%"></span></div></td>'+
+      '<td class="n r" style="color:'+(bad?"var(--fail)":"inherit")+'">'+(m>=0?"+":"")+m.toFixed(3)+'</td>'+
+      '<td><span class="tag '+(bad?"bad":(m<0.2?"warn":"ok"))+'">'+(bad?"F08 high":(m<0.2?"Marginal":"Pass"))+'</span></td></tr>';
+  }).join("");
+}
+
+/* ══ HV relay banks ══ */
+function buildCards(){
+  $("#hvCards").innerHTML=[0,1,2,3].map(ci=>{
+    const fitted=ci<stack, cells=()=>Array.from({length:64},()=>'<i'+(fitted?'':' class="absent"')+'></i>').join("");
+    return '<div class="card-row'+(fitted?'':' absent')+'"><div class="ch"><b>H'+(ci+1)+'</b>'+
+      '<span class="conn hv" style="font-size:11px">J-HV'+(ci+1)+'</span>'+
+      '<span class="lbl">64 HS + 64 LS</span><div class="spacer"></div>'+
+      '<span class="pill '+(fitted?'ok':'idle')+'"><i></i>'+(fitted?'Ready':'Not fitted')+'</span></div>'+
+      '<div class="rails">'+
+        '<div class="relay-row"><span class="rl">HS</span><div class="relays" data-hs="'+ci+'">'+cells()+'</div></div>'+
+        '<div class="relay-row"><span class="rl">LS</span><div class="relays" data-ls="'+ci+'">'+cells()+'</div></div>'+
+      '</div></div>';
+  }).join("");
+}
+function setRelays(net,leak){
+  $$('.relays i').forEach(el=>{if(!el.classList.contains("absent"))el.className=""});
+  if(!net){$("#hvNetLbl").textContent="idle — all relays open";return}
+  const hs=document.querySelector('.relays[data-hs="'+net.card+'"]');
+  if(hs&&net.card<stack)hs.children[net.relay].className="src";
+  let closed=0;
+  for(let ci=0;ci<stack;ci++){
+    const row=document.querySelector('.relays[data-ls="'+ci+'"]'); if(!row)continue;
+    for(let i=0;i<64;i++){
+      if(ci===net.card&&i===net.relay)continue;
+      row.children[i].className=(leak&&ci===0&&i===22)?"leak":"closed"; closed++;
+    }
+  }
+  $("#hvNetLbl").textContent="H"+(net.card+1)+" HS-"+String(net.relay).padStart(2,"0")+"  ·  "+
+    net.name+"  ·  "+closed+" LS closed, own return open";
+}
+
+/* ══ views ══ */
+function go(v){
+  $$('.rail button').forEach(o=>o.setAttribute("aria-selected",String(o.dataset.view===v)));
+  $$('.view').forEach(s=>s.classList.toggle("on",s.id==="v-"+v));
+  requestAnimationFrame(()=>{paintMatrix();paintHist();paintSpark()});
+}
+$$('.rail button').forEach(b=>b.addEventListener("click",()=>go(b.dataset.view)));
+$$('[data-go]').forEach(b=>b.addEventListener("click",()=>go(b.dataset.go)));
+$$('.seg').forEach(g=>g.addEventListener("click",e=>{const b=e.target.closest("button");
+  if(!b||b.disabled||b.dataset.sc||b.dataset.stack)return;
+  Array.from(g.children).forEach(o=>o.setAttribute("aria-pressed",String(o===b)))}));
+
+/* ══ log ══ */
+const logBody=$("#logBody"),logLine=$("#logLine"); let lt=0.4;
+function log(lvl,src,msg){
+  lt+=0.03+Math.random()*0.4;
+  const d=document.createElement("div");
+  d.innerHTML='<time>['+lt.toFixed(3).padStart(8)+']</time><b class="lv-'+lvl+'">'+lvl.toUpperCase().padEnd(4)+
+    '</b><span class="src">'+src+'</span><span>'+msg+'</span>';
+  logBody.appendChild(d); logBody.scrollTop=logBody.scrollHeight;
+  logLine.textContent='['+lt.toFixed(3).padStart(8)+'] '+lvl.toUpperCase().padEnd(4)+'  '+src+'   '+msg;
+}
+$("#logToggle").addEventListener("click",()=>{const o=$("#logbar").classList.toggle("open");
+  $("#logToggle").textContent=o?"Collapse":"Expand"; $("#logToggle").setAttribute("aria-expanded",String(o))});
+log("info","bsp","Board_Init complete — idle state safe");
+log("info","bsp","I2C3 scan: 0x20 0x21 0x23 0x24 0x25 — 5 devices on J-MTX");
+log("info","bsp","I2C2 scan — 3-card HV stack detected");
+log("warn","spi","SPI1 ADS124S08 device-ID read failed — CS unrouted (HW-01)");
+log("ok","prog","MTX netlist loaded: AV-880_RevC.hnl — "+NETC+" nets across "+FIX.connectors.length+" connectors");
+log("warn","prog","no HV netlist loaded — HV test will ask for one");
+
+/* ══ faults ══ */
+const ALL={
+  f06:{c:"F06",t:"Open circuit",d:()=>"Continuity · "+nets[4].name+" · "+refOf(nets[4].src)+" → "+refOf(nets[4].dsts[0]),v:"3.281 V",k:"",go:"cont",net:4},
+  f08:{c:"F08",t:"Resistance high",d:()=>"Resistance · "+nets[5].name+" · limit 2.000 Ω",v:"4.812 Ω",k:"",go:"res",net:5},
+  f04:{c:"F04",t:"Insulation below limit",d:()=>"HV · H1 HS-02 · "+nets[2].name+" · 500 V",v:"3.2 MΩ",k:"h",go:"hv",net:2}
+};
+function renderFaults(){
+  const list=Object.keys(faultsOn).filter(k=>faultsOn[k]).map(k=>ALL[k]), el=$("#faultList");
+  if(!list.length){el.innerHTML='<div class="empty">No faults. Run a test to populate.</div>';
+    $("#faultCount").className="pill idle"; $("#faultCount").innerHTML='<i></i>0 open';
+    $("#vFaults").textContent=running?"0":"—"; return}
+  el.innerHTML=list.map(f=>'<button class="fault '+f.k+'"><span class="code">'+f.c+'</span>'+
+    '<span><span class="ttl">'+f.t+'</span><span class="det">'+f.d()+'</span></span>'+
+    '<span class="val">'+f.v+'</span></button>').join("");
+  $("#faultCount").className="pill bad"; $("#faultCount").innerHTML='<i></i>'+list.length+" open";
+  $("#vFaults").textContent=list.length;
+  el.querySelectorAll(".fault").forEach((b,i)=>b.addEventListener("click",()=>{
+    const f=list[i], n=nets[f.net];
+    if(f.go==="hv"&&!onHv)return;
+    go(f.go);
+    if(f.go==="cont"){selNet=n; selConn=null; filter="fault";
+      $$('[data-filter]').forEach(o=>o.setAttribute("aria-pressed",String(o.dataset.filter==="fault")));
+      renderConnList(); inspect(n); paintDiag()}
+    if(f.go==="hv")setRelays(n,true);
+  }));
+}
+
+/* ══ scenario ══ */
+$$('[data-sc]').forEach(b=>b.addEventListener("click",()=>{
+  $$('[data-sc]').forEach(o=>o.setAttribute("aria-pressed",String(o===b)));
+  scenario=b.dataset.sc;
+  $("#scNote").textContent=scenario==="good"
+    ? "Stage 1 passes, the handover appears, then the two HV prompts gate the 500 V pass."
+    : "Continuity finds an open on ARINC_A_HI. The gate holds — the harness is never moved and HV never runs.";
+  resetAll();
+}));
+
+/* ══ gating ══ */
+function can(test){
+  if(running) return [false,"A test is already running"];
+  if(test==="cont"){
+    if(onHv) return [false,"Harness is on J-HV — reset to return it to J-MTX"];
+    if(cmode==="net"&&!NL.mtx.loaded) return [false,"Netlist mode needs the MTX netlist — or switch to cross continuity"];
+    return [true,""];
+  }
+  if(test==="res"){
+    if(onHv) return [false,"Harness is on J-HV — reset to return it to J-MTX"];
+    if(!NL.mtx.loaded) return [false,"Resistance needs the MTX netlist for the pair list and limits"];
+    return [true,""];
+  }
+  if(test==="hv"){
+    if(!onHv) return R.cont==="pass"&&R.res==="pass"
+      ? [false,"Confirm the harness has been moved to J-HV first"]
+      : [false,"Continuity and resistance must pass before HV unlocks"];
+    return [true,""];   // the HV netlist is requested by the run flow, not blocked here
+  }
+  return [false,""];
+}
+function updateControls(){
+  ["cont","res","hv"].forEach(t=>{const [ok,why]=can(t);
+    $$('[data-run="'+t+'"]').forEach(b=>{b.disabled=!ok; b.title=ok?"":why})});
+  const pills={cont:"#cvPill",res:"#rvPill",hv:"#hvPill2"};
+  ["cont","res","hv"].forEach(t=>{const p=$(pills[t]); if(!p)return;
+    const s=running===t?["acc","Running"]:R[t]==="pass"?["ok","Pass"]:R[t]==="fail"?["bad","Fail"]:["idle","Not run"];
+    p.className="pill "+s[0]; p.innerHTML='<i></i>'+s[1]});
+  $("#cvWhy").textContent=can("cont")[1]||(cmode==="net"?"verifies the netlist's expected pairs":"builds a netlist from the harness");
+  $("#rvWhy").textContent=can("res")[1]||"measures the pairs the netlist declares";
+  const rb={cont:"#railCont",res:"#railRes",hv:"#railHv"};
+  ["cont","res","hv"].forEach(t=>{const e=$(rb[t]); if(!e)return;
+    e.className=e.className.replace(/\bst-\w+\b/g,"").trim();
+    if(R[t]==="pass")e.classList.add("st-pass");
+    else if(R[t]==="fail")e.classList.add("st-fail");
+    else if(t==="hv"&&!onHv)e.classList.add("st-lock")});
+  document.body.dataset.stage2=onHv?"open":"lock";
+  const a=$("#actBtn"),l=$("#actLabel"),h=$("#actHint");
+  a.classList.remove("stop","hv"); a.disabled=false;
+  if(running){a.classList.add("stop"); l.textContent="Stop"; h.textContent="Esc"}
+  else if(!onHv&&R.cont==="pass"&&R.res==="pass"){l.textContent="Move DUT"; h.textContent="see below"; a.disabled=true}
+  else if(onHv&&R.hv===null){a.classList.add("hv"); l.textContent="Run HV"; h.textContent="500 V"}
+  else if(R.cont===null&&R.res===null){l.textContent="Run S1"; h.textContent="F5"}
+  else{l.textContent="Reset"; h.textContent="Esc"}
+  const doneS1=!running&&!onHv&&R.cont==="pass"&&R.res==="pass";
+  const anyFail=R.cont==="fail"||R.res==="fail"||R.hv==="fail";
+  document.body.dataset.phase=running?"running":doneS1?"hold"
+    :onHv&&R.hv===null?"armed":anyFail?"fail":R.hv==="pass"?"pass":"";
+}
+$$('[data-run]').forEach(b=>b.addEventListener("click",()=>{
+  const t=b.dataset.run; if(!can(t)[0])return;
+  if(t==="cont")runCont(); if(t==="res")runRes(); if(t==="hv")requestHv();
+}));
+
+/* ══ MODALS ══════════════════════════════════════════════════
+   Starting HV always walks two prompts:
+     1. select the HV netlist — only when one is not already loaded
+     2. verify this is the harness that passed on J-MTX — always
+   ═══════════════════════════════════════════════════════════ */
+function openModal(id){$("#"+id).classList.add("on")}
+function closeModal(id){$("#"+id).classList.remove("on")}
+$$('[data-close]').forEach(b=>b.addEventListener("click",()=>{
+  closeModal("mdNl"); closeModal("mdVerify"); log("info","seq","HV start cancelled by operator")}));
+$$('.modal').forEach(m=>m.addEventListener("click",e=>{if(e.target===m)m.classList.remove("on")}));
+
+function requestHv(){
+  if(!NL.hv.loaded){ openNlPicker(); return }
+  openVerify();
+}
+function openNlPicker(){
+  log("warn","seq","HV start blocked — no HV netlist loaded, prompting operator");
+  $("#mdNlList").innerHTML=HV_FILES.map((f,i)=>{
+    const ok=f.cards===stack;
+    return '<button class="filerow" data-hvfile="'+i+'">'+
+      '<span class="ic"><svg viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 00-2 2v14a2 2 0 002 2h10a2 2 0 002-2V8z"/><path d="M14 3v5h5"/></svg></span>'+
+      '<span><span class="fn">'+f.name+'</span><span class="fd">'+f.note+'</span></span>'+
+      '<span class="tag '+(ok?"ok":"warn")+'">'+(ok?"matches stack":f.cards+"-card ≠ "+stack)+'</span></button>';
+  }).join("");
+  $$('[data-hvfile]').forEach(b=>b.onclick=()=>{
+    const f=HV_FILES[+b.dataset.hvfile];
+    loadHv(f.name,f.cards,f.nets);
+    closeModal("mdNl"); openVerify();
+  });
+  openModal("mdNl");
+}
+$("#mdNlBrowse").addEventListener("click",()=>$("#fileH").click());
+
+function openVerify(){
+  const rows=[];
+  const mk=(s,t,d,v)=>'<div class="check '+s+'"><span class="ci">'+(s==="ok"?"✓":s==="warn"?"!":"✕")+'</span>'+
+    '<span><span class="ct">'+t+'</span><span class="cd">'+d+'</span></span><span class="cv">'+v+'</span></div>';
+  rows.push(mk(R.cont==="pass"?"ok":"bad","Continuity passed on J-MTX",
+    NL.mtx.name+" · "+(cmode==="net"?"netlist mode":"cross mode"), R.cont==="pass"?NETC+" / "+NETC:"not passed"));
+  rows.push(mk(R.res==="pass"?"ok":"bad","Resistance passed on J-MTX",
+    "worst margin +0.09 Ω · 1.84 mA excitation", R.res==="pass"?"0 out of limit":"not passed"));
+  rows.push(mk("ok","Harness moved to "+hvConnName(),"operator confirmed the transfer","confirmed"));
+  rows.push(mk(stackMatch()?"ok":"warn","HV netlist matches the stack",
+    NL.hv.name+" · "+NL.hv.cards+"-card map · "+stack+" fitted",
+    stackMatch()?"match":((NL.hv.cards-stack)*64)+" nets unreachable"));
+  rows.push(mk("ok","Interlock closed","cold-switched relays · 200 ms discharge","safe"));
+  $("#mdVChecks").innerHTML=rows.join("");
+  $("#ackBox").checked=false; $("#mdVGo").disabled=true;
+  openModal("mdVerify");
+  log("info","seq","HV pre-start verification shown — awaiting operator acknowledgement");
+}
+$("#ackBox").addEventListener("change",e=>{$("#mdVGo").disabled=!e.target.checked});
+$("#mdVGo").addEventListener("click",()=>{
+  closeModal("mdVerify");
+  log("ok","seq","operator acknowledged HV pre-start checks — energizing");
+  runHv();
+});
+
+/* ══ tests ══ */
+function setDom(id,s){$(id).dataset.s=s}
+function verdictIdle(){
+  $("#vTitle").textContent="READY";
+  $("#vSub").textContent="Harness on J-MTX. Run continuity and resistance; HV unlocks only after both pass.";
+  $("#vStage").textContent="—"; $("#vElapsed").textContent="00.0 s";
+}
+function resetAll(){
+  running=null; onHv=false; cancelAnimationFrame(raf);
+  scanX=null; tested=false; selNet=null; hoverNet=null;
+  R.cont=R.res=R.hv=null; faultsOn.f06=faultsOn.f08=faultsOn.f04=false;
+  document.body.classList.remove("hv-live");
+  closeModal("mdNl"); closeModal("mdVerify");
+  $("#sb1").dataset.s="active"; $("#sb1Pill").className="pill idle"; $("#sb1Pill").innerHTML='<i></i>Ready';
+  $("#sb2").dataset.s="lock"; $("#sb2Pill").className="pill idle"; $("#sb2Pill").innerHTML='<i></i>Locked';
+  $("#gate").classList.remove("armed");
+  $("#stFix").textContent="J-MTX · stage 1";
+  setDom("#dCont","idle"); setDom("#dRes","idle"); setDom("#dHv","lock");
+  ["dcBar","drBar","dhBar"].forEach(i=>$("#"+i).style.width="0%");
+  ["dcN","drN","dhN"].forEach(i=>$("#"+i).textContent="—");
+  ["ctFound","ctMiss","ctExtra","auNets","auNodes","auMulti","auCols"].forEach(i=>$("#"+i).textContent="—");
+  $("#statePill").className="pill idle"; $("#statePill").innerHTML='<i></i>Ready';
+  $("#hvPill").className="pill idle"; $("#hvPill").innerHTML='<i></i>HV Safe';
+  $("#hvStatePill").className="pill idle"; $("#hvStatePill").innerHTML='<i></i>Safe';
+  $("#gRail").innerHTML='0<u style="font-size:14px;text-decoration:none;color:var(--ink-3)"> V</u>';
+  $("#gRail").className="big"; $("#gTrack").style.width="0%";
+  $("#mLeak").innerHTML="0.000<u>V</u>"; $("#mSense").innerHTML="0.000<u>V</u>";
+  $("#mLeakBox").className="meter"; $("#saveNl").disabled=true;
+  $("#crossNote").textContent="Run cross continuity to build a netlist from the harness itself.";
+  setRelays(null); renderFaults(); verdictIdle(); inspect(null);
+  renderConnList(); paintDiag(); buildResTable(); updateControls();
+}
+
+function runCont(){
+  running="cont"; t0=performance.now();
+  faultsOn.f06=false; scanX=0; tested=false; R.cont=null; setDom("#dCont","run");
+  $("#statePill").className="pill acc"; $("#statePill").innerHTML='<i></i>Continuity';
+  $("#vTitle").textContent="RUNNING"; $("#vStage").textContent="Continuity · J-MTX";
+  $("#vSub").textContent=cmode==="net"
+    ? "J-MTX — testing the pairs the MTX netlist expects, then checking each net against every other."
+    : "J-MTX — energising one HS at a time and reading all 256 LS. Building the netlist as it goes.";
+  $("#sb1").dataset.s="active"; $("#sb1Pill").className="pill acc"; $("#sb1Pill").innerHTML='<i></i>Running';
+  log("info","cont","continuity start — "+(cmode==="net"?"NETLIST mode against "+NL.mtx.name:"CROSS one-to-many sweep"));
+  updateControls(); renderFaults();
+  const total=cmode==="net"?3000:4200; let fired=false;
+  const NODES=nets.reduce((a,n)=>a+1+n.dsts.length,0), MULTI=nets.filter(n=>n.dsts.length>1).length;
+  const tick=()=>{
+    const e=performance.now()-t0, p=Math.min(1,e/total);
+    $("#vElapsed").textContent=fmt(e/1000,1).padStart(4,"0")+" s";
+    scanX=FIX.midL*p; tested=true;
+    $("#dcBar").style.width=(p*100)+"%";
+    const found=Math.round(p*(scenario==="good"?NETC:NETC-1));
+    $("#dcN").textContent=found; $("#ctFound").textContent=found;
+    $("#auNets").textContent=Math.round(p*NETC); $("#auNodes").textContent=Math.round(p*NODES);
+    $("#auMulti").textContent=Math.round(p*MULTI); $("#auCols").textContent=Math.round(p*256)+" / 256";
+    if(scenario==="bad"&&p>.45&&!fired){fired=true; faultsOn.f06=true; renderFaults();
+      log("fail","cont","F06 OPEN  "+refOf(nets[4].src)+" → "+refOf(nets[4].dsts[0])+"  "+nets[4].name+"  3.281 V");
+      $("#ctMiss").textContent="1"; $("#ctExtra").textContent="0"}
+    paintDiag();
+    if(e<total)raf=requestAnimationFrame(tick);
+    else{
+      running=null; scanX=null; paintDiag(); buildResTable();
+      const pass=scenario==="good"; R.cont=pass?"pass":"fail";
+      setDom("#dCont",pass?"pass":"fail"); $("#dcBar").style.width="100%";
+      $("#dcN").textContent=pass?NETC:NETC-1; $("#ctFound").textContent=pass?NETC:NETC-1;
+      $("#ctMiss").textContent=pass?"0":"1"; $("#ctExtra").textContent="0";
+      $("#auNets").textContent=NETC; $("#auNodes").textContent=NODES;
+      $("#auMulti").textContent=MULTI; $("#auCols").textContent="256 / 256";
+      if(cmode==="cross"){
+        $("#saveNl").disabled=false;
+        $("#crossNote").textContent=NETC+" nets, "+MULTI+" Y joints, "+NODES+" nodes mapped across "+
+          FIX.connectors.length+" connectors. Save as the MTX netlist to enable resistance.";
+        log("ok","cont","cross scan complete — "+NETC+" nets, "+MULTI+" Y joints. MTX netlist ready to save.");
+      }else log(pass?"ok":"fail","cont","continuity "+(pass?"PASS — "+NETC+" / "+NETC+" verified":"FAIL — 1 open (F06)"));
+      finishStage1();
+    }
+  };
+  raf=requestAnimationFrame(tick);
+}
+$("#saveNl").addEventListener("click",()=>loadMtx("AV-880_cross_"+String(Date.now()).slice(-4)+".hnl","cross"));
+
+function runRes(){
+  running="res"; t0=performance.now();
+  faultsOn.f08=false; R.res=null; setDom("#dRes","run");
+  $("#statePill").className="pill acc"; $("#statePill").innerHTML='<i></i>Resistance';
+  $("#vTitle").textContent="RUNNING"; $("#vStage").textContent="Resistance · J-MTX";
+  $("#vSub").textContent="J-MTX — opto switched to the current source. Measuring every pair the netlist declares.";
+  $("#sb1").dataset.s="active"; $("#sb1Pill").className="pill acc"; $("#sb1Pill").innerHTML='<i></i>Running';
+  if(R.cont===null)log("warn","kelv","continuity has not run — an open will read as out-of-range, not as F06");
+  log("info","kelv","resistance start — "+NL.mtx.nets+" declared pairs from "+NL.mtx.name);
+  updateControls();
+  const total=2600; let fired=false;
+  const tick=()=>{
+    const e=performance.now()-t0, p=Math.min(1,e/total);
+    $("#vElapsed").textContent=fmt(e/1000,1).padStart(4,"0")+" s";
+    $("#drBar").style.width=(p*100)+"%";
+    if(p>.55&&!fired){fired=true; log("warn","kelv","PGA autorange: gain 32 → 16 (input near full scale)")}
+    if(e<total)raf=requestAnimationFrame(tick);
+    else{running=null; R.res="pass"; setDom("#dRes","pass");
+      $("#drBar").style.width="100%"; $("#drN").textContent="0";
+      log("ok","kelv","resistance PASS — 0 out of limit, worst margin +0.09 Ω");
+      finishStage1()}
+  };
+  raf=requestAnimationFrame(tick);
+}
+
+function finishStage1(){
+  const pass=R.cont==="pass"&&R.res==="pass", fail=R.cont==="fail"||R.res==="fail";
+  if(fail){
+    $("#sb1").dataset.s="fail"; $("#sb1Pill").className="pill bad"; $("#sb1Pill").innerHTML='<i></i>Fail';
+    $("#vTitle").textContent="FAIL";
+    $("#vSub").textContent="Stage 1 failed on J-MTX. The harness stays where it is — HV is not attempted.";
+    $("#statePill").className="pill bad"; $("#statePill").innerHTML='<i></i>Fail';
+  }else if(pass){
+    $("#sb1").dataset.s="pass"; $("#sb1Pill").className="pill ok"; $("#sb1Pill").innerHTML='<i></i>Pass';
+    $("#gate").classList.add("armed");
+    $("#sb2").dataset.s="active"; $("#sb2Pill").className="pill warn"; $("#sb2Pill").innerHTML='<i></i>Awaiting DUT';
+    $("#vTitle").textContent="MOVE DUT"; $("#vStage").textContent="handover";
+    $("#vSub").textContent="Continuity and resistance passed on J-MTX. Move the harness to the HV fixture.";
+    $("#statePill").className="pill warn"; $("#statePill").innerHTML='<i></i>Handover';
+    $("#stFix").textContent="none · moving";
+    $("#hoText").textContent="Continuity and resistance passed on J-MTX. Unplug from J-MTX, then plug into "+hvConnName()+".";
+    log("ok","seq","stage 1 PASS — awaiting DUT transfer to "+hvConnName());
+  }else{
+    $("#sb1Pill").className="pill acc"; $("#sb1Pill").innerHTML='<i></i>Partial';
+    $("#vTitle").textContent="PARTIAL"; $("#vStage").textContent="—";
+    $("#vSub").textContent=(R.cont===null?"Continuity":"Resistance")+" has not run yet. Both must pass before HV unlocks.";
+    $("#statePill").className="pill idle"; $("#statePill").innerHTML='<i></i>Idle';
+  }
+  updateControls();
+}
+
+$("#hoConfirm").addEventListener("click",()=>{
+  onHv=true;
+  $("#sb2Pill").className="pill warn"; $("#sb2Pill").innerHTML='<i></i>Armed';
+  $("#sb1Pill").className="pill idle"; $("#sb1Pill").innerHTML='<i></i>Released';
+  $("#stFix").textContent=hvConnName()+" · stage 2";
+  setDom("#dHv","idle");
+  $("#vTitle").textContent="ARMED"; $("#vStage").textContent="HV ready";
+  $("#vSub").textContent="Harness on "+hvConnName()+". Press Run HV — you will be asked to confirm before 500 V is applied.";
+  $("#statePill").className="pill warn"; $("#statePill").innerHTML='<i></i>Armed';
+  log("info","fix","DUT transferred to "+hvConnName()+" — HV armed, interlock closed");
+  updateControls();
+});
+
+function runHv(){
+  running="hv"; t0=performance.now();
+  faultsOn.f04=false; R.hv=null; setDom("#dHv","run"); renderFaults();
+  $("#sb2").dataset.s="active"; $("#sb2Pill").className="pill acc"; $("#sb2Pill").innerHTML='<i></i>Running';
+  $("#vTitle").textContent="RUNNING"; $("#vStage").textContent="HV · "+hvConnName();
+  $("#vSub").textContent=hvConnName()+" — energising to 500 V one net at a time. Fixture is live.";
+  $("#statePill").className="pill acc"; $("#statePill").innerHTML='<i></i>HV';
+  log("hv","insu","HV start — return pattern from "+NL.hv.name+", "+stack+"-card stack, cold-switching");
+  updateControls();
+  const total=3600, done={};
+  const tick=()=>{
+    const e=performance.now()-t0, p=Math.min(1,e/total);
+    $("#vElapsed").textContent=fmt(e/1000,1).padStart(4,"0")+" s";
+    document.body.classList.toggle("hv-live",p<.72);
+    const rail=p<.42?(p/.42)*500:(p<.72?500:Math.max(0,500*(1-(p-.72)/.28)));
+    const leak=(p>.45&&p<.72)?.052+Math.random()*.004:.001+Math.random()*.002;
+    $("#gRail").innerHTML=Math.round(rail)+'<u style="font-size:14px;text-decoration:none;color:var(--ink-3)"> V</u>';
+    $("#gRail").className="big"+(rail>10?" hot":"");
+    $("#gTrack").style.width=(rail/500*100)+"%";
+    $("#mLeak").innerHTML=fmt(leak,3)+"<u>V</u>";
+    $("#mSense").innerHTML=fmt(rail*0.00049,3)+"<u>V</u>";
+    $("#mLeakBox").className="meter"+(leak>=.045?" bad":"");
+    $("#hzRail").textContent=Math.round(rail)+" V"; $("#hzLeak").textContent=fmt(leak,3)+" V";
+    $("#hvPill").className=rail>10?"pill hot":"pill idle";
+    $("#hvPill").innerHTML='<i></i>'+(rail>10?"HV Live "+Math.round(rail)+" V":"HV Safe");
+    $("#hvStatePill").className=rail>10?"pill hot":"pill idle";
+    $("#hvStatePill").innerHTML='<i></i>'+(rail>10?"Live":"Safe");
+    $("#dhBar").style.width=(Math.min(1,p/.72)*100)+"%";
+    if(!done.r&&p>.12){done.r=1; setRelays(nets[92],false);
+      log("hv","insu","ramp 10 %/step — H1 HS-03 energized, own return open")}
+    if(!done.f&&p>.5){done.f=1; faultsOn.f04=true; setRelays(nets[92],true); renderFaults();
+      log("fail","insu","F04 INSULATION  H1 HS-03  GND_RET  0.052 V → 3.2 MΩ"); $("#dhN").textContent="1"}
+    if(!done.d&&p>.72){done.d=1; setRelays(null);
+      log("info","insu","discharge complete — rail < 10 V, all reed relays open")}
+    if(e<total)raf=requestAnimationFrame(tick);
+    else{
+      running=null; document.body.classList.remove("hv-live");
+      R.hv="fail"; setDom("#dHv","fail");
+      $("#dhBar").style.width="100%"; $("#dhN").textContent="1";
+      $("#sb2").dataset.s="fail"; $("#sb2Pill").className="pill bad"; $("#sb2Pill").innerHTML='<i></i>Fail';
+      $("#vTitle").textContent="FAIL"; $("#vStage").textContent="complete";
+      $("#vSub").textContent="Stage 1 passed on J-MTX. HV found 1 insulation fault on H1.";
+      $("#statePill").className="pill bad"; $("#statePill").innerHTML='<i></i>Fail';
+      $("#hvPill").className="pill idle"; $("#hvPill").innerHTML='<i></i>HV Safe';
+      log("fail","seq","verdict FAIL — HV insulation, report 0418 stored");
+      updateControls();
+    }
+  };
+  raf=requestAnimationFrame(tick);
+}
+
+$("#actBtn").addEventListener("click",()=>{
+  if(running){resetAll();return}
+  if(onHv&&R.hv===null&&can("hv")[0]){requestHv();return}
+  if(!onHv&&R.cont===null&&can("cont")[0]){runCont();return}
+  if(!onHv&&R.cont==="pass"&&R.res===null&&can("res")[0]){runRes();return}
+  resetAll();
+});
+$("#abortHv").addEventListener("click",resetAll);
+$("#abortHv2").addEventListener("click",resetAll);
+addEventListener("keydown",e=>{
+  if(e.key==="F5"&&!running){e.preventDefault(); $("#actBtn").click()}
+  if(e.key==="Escape"){
+    if($("#mdNl").classList.contains("on")||$("#mdVerify").classList.contains("on")){
+      closeModal("mdNl"); closeModal("mdVerify"); return}
+    resetAll();
+  }
+});
+
+/* ══ manual controls ══ */
+function bindPin(id,out){const r=$("#"+id),o=$("#"+out);
+  const u=()=>{const v=+r.value;o.textContent=String(v).padStart(3,"0")+" · b"+((v/16)|0)+" ch"+String(v%16).padStart(2,"0")};
+  r.addEventListener("input",u); u()}
+bindPin("hsPin","hsOut"); bindPin("lsPin","lsOut");
+(function(){const r=$("#hvRelay"),o=$("#hvOut");
+  const u=()=>{const v=+r.value;o.textContent="HS-"+String(v).padStart(2,"0")+" · 0x2"+((v/8)|0)+" b"+(v%8)};
+  r.addEventListener("input",u); u()})();
+(function(){const r=$("#hvSet"),o=$("#hvSetOut");
+  const u=()=>{o.textContent=r.value+" V"; o.style.color=+r.value>10?"var(--hv)":""};
+  r.addEventListener("input",u); u()})();
+
+/* ══ sparkline ══ */
+function paintSpark(){
+  const cv=$("#cvSpark"); if(!cv||!cv.clientWidth)return;
+  const d=[92,88,90,84,79,81,86,90,88,72,68,74,80,83,87,85,78,71,76,82,86,84,79,78];
+  const dpr=devicePixelRatio||1,w=cv.clientWidth,h=54;
+  cv.width=w*dpr; cv.height=h*dpr;
+  const c=cv.getContext("2d"); c.scale(dpr,dpr); c.clearRect(0,0,w,h);
+  const pad=6,iw=w-pad*2,ih=h-pad*2,min=60,max=100;
+  const X=i=>pad+i/(d.length-1)*iw, Y=v=>pad+(1-(v-min)/(max-min))*ih;
+  c.strokeStyle=css("--line-soft"); c.lineWidth=1;
+  [70,80,90].forEach(g=>{c.beginPath();c.moveTo(pad,Y(g)+.5);c.lineTo(w-pad,Y(g)+.5);c.stroke()});
+  const gr=c.createLinearGradient(0,pad,0,h);
+  gr.addColorStop(0,css("--accent-soft")); gr.addColorStop(1,"rgba(0,0,0,0)");
+  c.beginPath(); c.moveTo(X(0),Y(d[0])); d.forEach((v,i)=>c.lineTo(X(i),Y(v)));
+  c.lineTo(X(d.length-1),h-pad); c.lineTo(X(0),h-pad); c.closePath(); c.fillStyle=gr; c.fill();
+  c.beginPath(); d.forEach((v,i)=>i?c.lineTo(X(i),Y(v)):c.moveTo(X(i),Y(v)));
+  c.strokeStyle=css("--accent"); c.lineWidth=1.75; c.stroke();
+  const li=d.length-1; c.beginPath(); c.arc(X(li),Y(d[li]),3.5,0,7); c.fillStyle=css("--accent"); c.fill();
+}
+
+/* ══ LIVE SEAM ═══════════════════════════════════════════════
+   The markup, CSS and every render function above are the approved
+   design, untouched. This object is the only hole cut in the
+   closure: it lets live.js swap the three simulated run functions
+   for protocol-driven ones and rebuild the net model from a real
+   netlist, while all the drawing stays exactly as designed.
+   ═══════════════════════════════════════════════════════════ */
+window.HT_SEAM={
+  $, $$, nets, NL, FIX, CONN, R, faultsOn, refOf,
+  log, renderFaults, updateControls, setDom, verdictIdle, finishStage1,
+  paintDiag, buildResTable, buildAutoTable, layoutFixture, renderConnList,
+  renderNetbars, paintHist, inspect, setRelays, resetAll, openModal, closeModal,
+  get running(){return running}, set running(v){running=v},
+  get onHv(){return onHv},     set onHv(v){onHv=v},
+  get cmode(){return cmode},
+  setRun(c,r,h){ if(c)runCont=c; if(r)runRes=r; if(h)runHv=h; },
+  /* Rebuild the harness model from real (hi,lo) pin pairs. The fixture map -
+     which connector each board pin lands on - is a GUI-side artifact; the
+     instrument only ever talks in pins 1..256. */
+  rebuildNets(pairs){
+    const slotL=[], slotR=[];
+    FIX.connectors.forEach(c=>{
+      for(let p=1;p<=c.pins;p++)(c.side==="L"?slotL:slotR).push({c:c.id,p});
+    });
+    const pinNode=(pin,side)=>{
+      const arr=side==="L"?slotL:slotR;
+      return arr[(pin-1)%arr.length];
+    };
+    nets.length=0;
+    pairs.forEach((pr,i)=>{
+      const src=pinNode(pr.hi,"L"), dst=pinNode(pr.lo,"R");
+      nets.push({
+        name:"NET_"+String(i+1).padStart(3,"0"), src, dsts:[dst], joint:null,
+        hs:pr.hi-1, ls:pr.lo-1, pinHi:pr.hi, pinLo:pr.lo,
+        r:0, v:0, ins:0, rmin:0.05, rmax:2.00, wire:"—",
+        open:false, card:(i/64)|0, relay:i%64
+      });
+    });
+    NL.mtx.loaded=nets.length>0; NL.mtx.nets=nets.length;
+    NL.mtx.pins=nets.length*2;
+    layoutFixture(); renderConnList(); buildAutoTable(); buildResTable();
+    renderNetbars(); paintDiag(); updateControls();
+  }
+};
+
+/* ══ boot ══ */
+layoutFixture(); renderConnList(); buildAutoTable(); buildResTable();
+setStack(3); setMode("net"); resetAll();
+selNet=nets[11]; inspect(nets[11]); paintDiag();
+paintHist(); paintSpark();
+addEventListener("resize",()=>{paintHist();paintSpark()});
+const redraw=()=>{paintDiag();paintHist();paintSpark()};
+new MutationObserver(redraw).observe(document.documentElement,{attributes:true,attributeFilter:["data-theme"]});
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change",redraw);
+})();
+</script>
+
+<script>
+(function(){
+  var r=document.documentElement, b=document.getElementById("themeBtn");
+  var stored=null; try{stored=localStorage.getItem("ht-theme")}catch(e){}
+  if(stored)r.setAttribute("data-theme",stored);
+  b.addEventListener("click",function(){
+    var dark = r.getAttribute("data-theme")==="dark" ||
+      (!r.getAttribute("data-theme") && matchMedia("(prefers-color-scheme: dark)").matches);
+    var next = dark?"light":"dark";
+    r.setAttribute("data-theme",next);
+    try{localStorage.setItem("ht-theme",next)}catch(e){}
+    window.dispatchEvent(new Event("resize"));
+  });
+})();
+</script>
+<!-- Live protocol layer. Loaded last, so it attaches to a fully built page and
+     replaces the design's simulated runs with real instrument traffic. -->
+<script src="/live.js"></script>
+</body>
+</html>

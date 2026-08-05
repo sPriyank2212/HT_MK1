@@ -1,0 +1,12 @@
+2026-08-05T19:49:27.700 [gui] session log opened
+2026-08-05T19:49:27.700 [gui] connected 127.0.0.1:51817
+2026-08-05T19:49:27.700 [rx] # HT_MK1 simulator scenario=pass
+2026-08-05T19:49:27.701 [tx] >STATUS
+2026-08-05T19:49:27.701 [rx] <STATUS state=idle fixture=none hv_mv=0
+2026-08-05T19:49:27.701 [tx] >CAL GET
+2026-08-05T19:49:27.701 [rx] <CAL current_ua=1000 gain=16 rref_mohm=100000
+2026-08-05T19:49:27.701 [tx] >LIMITS GET
+2026-08-05T19:49:27.701 [rx] <LIMITS r_max_mohm=1000 ins_min_mohm=100
+2026-08-05T19:49:29.699 [tx] >CONT RUN verify
+2026-08-05T19:49:29.699 [rx] <ERR ERANGE no netlist
+2026-08-05T19:49:30.905 [gui] disconnected

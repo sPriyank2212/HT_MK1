@@ -12,10 +12,13 @@ htproto/messages.py    reply/event dataclasses
 htproto/connection.py  connection manager: timeouts, link-loss, reconnect, session log
 htproto/simulator.py   instrument simulator (TCP) with the five test scenarios
 htproto/handtest.py    interactive terminal client (bring-up aid)
+htweb/index.html       THE frontend — the approved design, markup and CSS verbatim
+htweb/live.js          live protocol layer that drives that design
+htweb/server.py        local HTTP + SSE bridge between the page and htproto
 htgui/model.py         instrument state + the safety rules (no Tk — testable headless)
-htgui/app.py           shell: HV banner, navigation, always-reachable abort
-htgui/screens.py       the eight operator screens
-tests/                 unittest suite (codec, simulator, connection, model, GUI)
+htgui/app.py           fallback Tk shell: HV banner, navigation, abort
+htgui/screens.py       the eight Tk screens
+tests/                 unittest suite (codec, simulator, connection, model, GUI, web)
 ```
 
 ## Run the GUI
@@ -24,8 +27,38 @@ Start the simulator in one terminal and the GUI in another:
 
 ```
 python -m htproto.simulator --scenario pass --port 46000
-python -m htgui --host 127.0.0.1 --port 46000
+python -m htweb --port 46000
 ```
+
+That serves the operator GUI on <http://127.0.0.1:8770/> and opens a browser.
+**The page is `Doc/HT_MK1_GUI_Proposal.html` — the approved design, markup and
+CSS unchanged** — so the running instrument looks exactly like the mock-up. The
+only edit to it is a small `window.HT_SEAM` export at the end of its script, so
+`live.js` can swap the three simulated run functions for protocol-driven ones
+and rebuild the net model from a real netlist. Everything that draws is the
+design's own code.
+
+`--allow-remote` binds all interfaces instead of loopback. Think before using
+it: the page can arm and fire 500 V.
+
+### What is live, and what is still presentation
+
+The instrument's protocol is narrower than the design, so be clear about which
+is which:
+
+| Live from the instrument | Presentational only |
+|---|---|
+| link state, `!STATE`, `!HV`, `!SAFE`, `!FIXTURE` | connector/fixture map (`J1…J8`) — a GUI-side artifact; the instrument only knows pins 1..256 |
+| continuity, resistance and insulation results and progress | net *names* — the protocol carries pin pairs, not names |
+| faults, instrument log lines | HV card-stack detection, leakage voltage trace |
+| netlist upload/download, cal, limits, abort, arm, fixture handover | scenario/seed pickers left from the mock |
+
+### There is also a Tk frontend
+
+`python -m htgui` runs the earlier Tk build. It is kept because its state model
+(`htgui/model.py`) is where the safety rules are unit-tested without a display,
+and because it needs no browser. The web frontend is the one that matches the
+approved design.
 
 For real hardware, point `TcpTransport` at a serial transport (115200 8N1 on the
 USB VCP); nothing above the transport changes.

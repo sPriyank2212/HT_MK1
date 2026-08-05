@@ -1,0 +1,10 @@
+2026-08-05T19:37:13.596 [gui] session log opened
+2026-08-05T19:37:13.596 [gui] connected 127.0.0.1:51215
+2026-08-05T19:37:13.596 [rx] # HT_MK1 simulator scenario=pass
+2026-08-05T19:37:13.597 [tx] >STATUS
+2026-08-05T19:37:13.597 [rx] <STATUS state=idle fixture=none hv_mv=0
+2026-08-05T19:37:13.597 [tx] >CAL GET
+2026-08-05T19:37:13.597 [rx] <CAL current_ua=1000 gain=16 rref_mohm=100000
+2026-08-05T19:37:13.597 [tx] >LIMITS GET
+2026-08-05T19:37:13.597 [rx] <LIMITS r_max_mohm=1000 ins_min_mohm=100
+2026-08-05T19:37:16.425 [gui] disconnected

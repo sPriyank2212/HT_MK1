@@ -23,7 +23,7 @@ ID prefixes: `HW-` schematic/hardware · `FW-` firmware · `BU-` bring-up/verify
 | Firmware work queued | 5 |
 | Awaiting the GUI side | 1 |
 | Verify at bring-up | 10 |
-| Closed to date | 17 |
+| Closed to date | 18 |
 
 **`>ABORT` is correct by inspection at last.** FW-07, FW-08 and FW-09 are closed
 (CL-12, CL-13, CL-15): the comms thread was starved for the whole of every run so the flag could
@@ -134,6 +134,7 @@ one place, not only from inside the brief.
 
 | ID | Closed | Item | Resolution |
 |---|---|---|---|
+| CL-18 | 2026-08-05 | Frontend must match the approved HTML design | Web frontend in `gui/htweb/`. `index.html` is `Doc/HT_MK1_GUI_Proposal.html` **verbatim** — same markup, same CSS, same render code — so the running instrument looks exactly like the design that was signed off. The only change to it is a `window.HT_SEAM` export at the end of its closure, which lets `live.js` swap the three simulated run functions for protocol-driven ones and rebuild the net model from a real netlist. `server.py` is a stdlib HTTP bridge: page, `GET /api/events` (SSE), `POST /api/cmd`. Binds loopback unless `--allow-remote`, because the page can arm and fire 500 V. The Tk frontend stays as the fallback and as the home of the headless safety-rule tests. |
 | CL-17 | 2026-08-05 | GUI tasks 3–10 | Operator GUI built in `gui/htgui/` — Tk, standard library only, no dependencies. `model.py` holds the instrument state and every safety rule and imports no Tk, so the rules are tested headlessly; `app.py` is the shell (HV banner on every screen, always-reachable abort, 100 ms redraw tick); `screens.py` is the eight screens. Commands always go out on a worker thread, because `execute()` blocks up to 2 s and freezing the UI would freeze the abort button with it. Suite is now **83 tests**, including a smoke test that drives the real Tk app against the real simulator over a socket and asserts the HV controls are gated by the instrument's reported fixture, not by what the GUI asked for. |
 | CL-16 | 2026-08-05 | FW-10 latched fault wedged the run path | `run_command` now answers a run command it cannot execute: `!STATE fault` then `!DONE <kind> 0 0`, so `s_busy` clears and the GUI is released instead of waiting for a `!DONE` that never comes. Added **`>FAULT CLEAR`** (`CMD_CLEAR_FAULT`), handled *before* the fault gate since it is the only recovery short of a power cycle — it forces safe first, then clears the latch, so clearing can never be a way to re-energise something by accident. Protocol addition, so §3.2 and §3.2.1 of the brief were updated, and the simulator and codec now carry it too. |
 | CL-15 | 2026-08-05 | FW-09 abort lost at run start | The three `Proto_ClearAbort()` calls at run entry are gone, and **the function itself is deleted** — `proto.h` carries a comment saying why, because the only thing it was ever used for was the bug. The flag now has exactly three writers: `proto_post_run` clears it before the run is queued (the one point where clearing is correct), `>ABORT` and an invalidating fixture change set it, and `Proto_EvtDone` clears it on the way out. No window remains in which an operator stop can be swallowed. Correct by inspection at every point in a run; **BU-12 still has to prove it on hardware.** |
@@ -172,6 +173,22 @@ one place, not only from inside the brief.
 - **GUI-03 remains open** (acknowledged, not started): the three minor items from §8.4 —
   decode `errors="replace"`, the `_transport` nulling race, empty-line tolerance.
 - Brief §8.2 updated to record the fixes.
+
+### 2026-08-05 (frontend rebuilt on the approved HTML design)
+- **The frontend is now the mock-up itself** (CL-18). `gui/htweb/index.html` is
+  `Doc/HT_MK1_GUI_Proposal.html` verbatim — markup, CSS and every render function — served by a
+  stdlib HTTP + SSE bridge and driven by real instrument traffic. Tk could never have matched
+  that design; using the design as the frontend is the only way to get "exactly the same".
+- The one hole cut in the mock's closure is a `window.HT_SEAM` export, so `live.js` can replace
+  the three simulated run functions and rebuild the net model from a real netlist. Nothing that
+  draws was touched.
+- **Recorded honestly in `gui/README.md`: what is live and what is still presentation.** The
+  protocol is narrower than the design — it has no fixture/connector map, no net names, no HV
+  card-stack detection. Those panels keep the mock's data. Everything else — link state, HV,
+  fixture, results, progress, faults, netlist, cal, limits, abort, arm — is real.
+- The server binds loopback unless `--allow-remote`; the page can arm and fire 500 V.
+- Suite now **91 tests**. `node --check` used on `live.js` and on both inline blocks of the page
+  after the seam edit, since a syntax error in the frontend would not show up in the Python suite.
 
 ### 2026-08-05 (FW-10 closed, GUI tasks 3–10 built)
 - **FW-10 fixed** (CL-16). A run command that cannot execute now says so — `!STATE fault` then
