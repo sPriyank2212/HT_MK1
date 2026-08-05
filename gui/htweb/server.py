@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import json
 import queue
+import sys
 import threading
 from dataclasses import asdict, is_dataclass
 from enum import Enum
@@ -36,8 +37,22 @@ from pathlib import Path
 
 from htproto import ConnectionManager, LinkState, ProtocolError, commands
 from htproto.codec import parse_line
+from htproto.paths import default_log_dir
 
-HERE = Path(__file__).resolve().parent
+
+def _resource_dir() -> Path:
+    """Directory holding index.html and live.js.
+
+    PyInstaller unpacks bundled data into a temporary tree and points
+    ``sys._MEIPASS`` at it, so resolve from there when frozen rather than from
+    ``__file__`` - which inside a one-file build refers to a path that has no
+    data files next to it.
+    """
+    base = getattr(sys, "_MEIPASS", None)
+    return (Path(base) / "htweb") if base else Path(__file__).resolve().parent
+
+
+HERE = _resource_dir()
 INDEX = HERE / "index.html"
 
 
@@ -57,14 +72,18 @@ def _jsonable(obj):
 class Bridge:
     """Owns the ConnectionManager and fans events out to browser clients."""
 
-    def __init__(self, host: str, port: int) -> None:
+    def __init__(self, host: str, port: int, log_dir=None) -> None:
         self.host, self.port = host, port
         self._clients: list[queue.Queue] = []
         self._lock = threading.Lock()
+        # Never a relative path: the exe is launched from wherever the operator
+        # happens to be, and a read-only cwd used to fail the connect outright.
+        self.log_dir = Path(log_dir) if log_dir else default_log_dir()
         self.cm = ConnectionManager(
             on_event=self._on_event,
             on_link_state=self._on_link_state,
             on_protocol_error=self._on_proto_err,
+            log_dir=self.log_dir,
         )
 
     # -- fan-out ---------------------------------------------------------------
@@ -225,7 +244,7 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def serve(instrument_host: str, instrument_port: int,
-          http_host: str, http_port: int, on_ready=None) -> None:
+          http_host: str, http_port: int, on_ready=None, log_dir=None) -> None:
     """Serve the GUI. Blocks until interrupted.
 
     @p on_ready is called with the bound port only once the socket is listening.
@@ -234,7 +253,7 @@ def serve(instrument_host: str, instrument_port: int,
     ERR_CONNECTION_REFUSED (Chromium error -102) on a page that is about to
     exist.
     """
-    Handler.bridge = Bridge(instrument_host, instrument_port)
+    Handler.bridge = Bridge(instrument_host, instrument_port, log_dir=log_dir)
     try:
         # ThreadingHTTPServer binds and listens in its constructor, so once
         # this returns a connection will be accepted even before serve_forever.
@@ -247,6 +266,7 @@ def serve(instrument_host: str, instrument_port: int,
 
     print(f"HT_MK1 GUI on http://{http_host}:{httpd.server_address[1]}/")
     print(f"instrument at {instrument_host}:{instrument_port}")
+    print(f"session logs in {Handler.bridge.log_dir}")
     if on_ready is not None:
         # On a worker, not here: the socket is already listening so a connect
         # will not be refused, but requests are only *answered* once

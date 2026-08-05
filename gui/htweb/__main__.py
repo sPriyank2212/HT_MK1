@@ -19,7 +19,23 @@ def main() -> int:
                          "and fire 500 V — only do this on a trusted network.")
     ap.add_argument("--no-browser", action="store_true",
                     help="do not open a browser window")
+    ap.add_argument("--log-dir", default=None,
+                    help="where to write session logs (default: a per-user "
+                         "directory under LOCALAPPDATA)")
+    ap.add_argument("--sim", action="store_true",
+                    help="run the built-in simulator on --port and talk to it. "
+                         "For demos and training with no instrument attached — "
+                         "nothing it shows comes from real hardware.")
     args = ap.parse_args()
+
+    sim = None
+    if args.sim:
+        from htproto.simulator import SimulatorServer, make_scenario
+        sim = SimulatorServer(make_scenario("pass", 12), host="127.0.0.1",
+                              port=args.port, interval=0.02).start()
+        args.host, args.port = "127.0.0.1", sim.port
+        print(f"SIMULATOR MODE on port {sim.port} — no real instrument. "
+              "Nothing shown is a measurement.")
 
     http_host = "0.0.0.0" if args.allow_remote else "127.0.0.1"
     if args.allow_remote:
@@ -34,7 +50,12 @@ def main() -> int:
             webbrowser.open(f"http://127.0.0.1:{port}/")
 
     from .server import serve
-    serve(args.host, args.port, http_host, args.http_port, on_ready=ready)
+    try:
+        serve(args.host, args.port, http_host, args.http_port, on_ready=ready,
+              log_dir=args.log_dir)
+    finally:
+        if sim is not None:
+            sim.stop()
     return 0
 
 

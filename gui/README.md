@@ -21,6 +21,38 @@ htgui/screens.py       the eight Tk screens
 tests/                 unittest suite (codec, simulator, connection, model, GUI, web)
 ```
 
+## Build a standalone .exe
+
+```
+pip install pyinstaller     once, on the build machine only
+build_exe.cmd
+```
+
+Produces `dist\HT_MK1_GUI.exe` (~8 MB). **The exe needs no Python on the target
+machine** — copy it to the shop-floor PC and double-click it. PyInstaller is a
+build-time dependency only; nothing at runtime has changed.
+
+```
+HT_MK1_GUI.exe                       connect to an instrument on port 46000
+HT_MK1_GUI.exe --sim                 demo mode: built-in simulator, no hardware
+HT_MK1_GUI.exe --port 46000 --http-port 8770
+```
+
+`--sim` runs the simulator inside the same process and says so on the console —
+useful for training and for showing the GUI without an instrument. Nothing it
+displays is a measurement.
+
+Two things the packaging had to get right, both of which bit during testing:
+
+- `index.html` and `live.js` are **data**, not code, so PyInstaller cannot find
+  them by import analysis. `build_exe.cmd` adds them explicitly, and
+  `htweb/server.py` resolves them through `sys._MEIPASS` when frozen.
+- **Session logs go to `%LOCALAPPDATA%\HT_MK1\sessions`**, not to a relative
+  `sessions/`. An exe launched from Explorer or a shortcut has a working
+  directory the operator often cannot write to, and because the log is opened
+  as part of connecting, a failure there used to take the whole link down with
+  `PermissionError: [WinError 5]`. Override with `--log-dir`.
+
 ## Run the GUI
 
 **Easiest — double-click, or run from any directory:**

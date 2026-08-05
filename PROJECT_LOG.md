@@ -174,6 +174,24 @@ one place, not only from inside the brief.
   decode `errors="replace"`, the `_transport` nulling race, empty-line tolerance.
 - Brief §8.2 updated to record the fixes.
 
+### 2026-08-05 (packaged as a standalone exe)
+- **`build_exe.cmd` produces `dist\HT_MK1_GUI.exe`**, ~8 MB, PyInstaller one-file. The exe needs
+  no Python on the target machine; PyInstaller is a build-time dependency only. `--sim` runs the
+  simulator in-process for demos and training, and says on the console that nothing shown is a
+  measurement.
+- **Two real defects surfaced only when running the packaged exe**, both now fixed:
+  - `index.html` and `live.js` are data, not imports, so PyInstaller could not find them.
+    Added explicitly at build time, and `server.py` resolves them via `sys._MEIPASS` when frozen.
+  - **Session logs defaulted to a relative `sessions/`.** Launched from `C:\Windows` the exe
+    died with `PermissionError: [WinError 5]` on *connect*, because the log is opened as part of
+    connecting — so an unwritable working directory took the whole link down. Now
+    `%LOCALAPPDATA%\HT_MK1\sessions` via a new `htproto/paths.py`, with a temp-dir fallback and
+    a `--log-dir` override. The Tk frontend had the same bug and got the same fix.
+- Also added `.cmd` launchers (`ht-demo`, `ht-sim`, `ht-gui`) after the module-not-found trap:
+  `python -m htweb` only resolves from `gui\`, and running it from `gui\tests` fails.
+- Verified by running the built exe from `C:\Windows` — page served, connect, fixture, discover
+  all fine, session log written to LOCALAPPDATA. Suite 95 tests.
+
 ### 2026-08-05 (frontend rebuilt on the approved HTML design)
 - **The frontend is now the mock-up itself** (CL-18). `gui/htweb/index.html` is
   `Doc/HT_MK1_GUI_Proposal.html` verbatim — markup, CSS and every render function — served by a

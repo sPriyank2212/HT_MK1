@@ -56,10 +56,15 @@ class HtGuiApp(tk.Tk):
         self._toasts: queue.Queue[str] = queue.Queue()
         self._after_id: str | None = None
 
+        from htproto.paths import default_log_dir
         self.cm = ConnectionManager(
             on_event=self._on_event,
             on_link_state=self._on_link_state,
             on_protocol_error=self._on_protocol_error,
+            # Absolute, per-user: a relative "sessions/" fails to open when the
+            # app is launched from a directory the operator cannot write to,
+            # and that failure takes the whole connect down with it.
+            log_dir=default_log_dir(),
         )
         self.model.subscribe(self._dirty.set)
 

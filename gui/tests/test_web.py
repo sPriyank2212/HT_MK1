@@ -184,6 +184,34 @@ class LaunchOrdering(unittest.TestCase):
             s.close()
 
 
+class LogLocation(unittest.TestCase):
+    """Session logs must land somewhere writable, wherever the app was started.
+
+    A packaged exe is launched from Explorer, a shortcut, or C:\\Windows. The
+    old relative "sessions/" default raised PermissionError there, and because
+    the log is opened as part of connecting, that took the whole link down.
+    """
+
+    def test_default_is_absolute_and_writable(self):
+        from htproto.paths import default_log_dir
+        d = default_log_dir()
+        self.assertTrue(d.is_absolute(), f"{d} is relative")
+        probe = d / ".test-writable"
+        probe.write_text("x", encoding="ascii")
+        probe.unlink()
+
+    def test_bridge_does_not_use_a_relative_dir(self):
+        import os
+        from htweb.server import Bridge
+        here = os.getcwd()
+        try:
+            os.chdir(os.path.dirname(here) or here)
+            b = Bridge("127.0.0.1", 46000)
+            self.assertTrue(b.log_dir.is_absolute())
+        finally:
+            os.chdir(here)
+
+
 class PageOnDisk(unittest.TestCase):
     def test_index_matches_the_proposal_markup(self):
         """The served page must stay the approved design.
