@@ -562,6 +562,10 @@ int Tasks_PostCommand(const TestCmd_t *cmd)
   * @note   Bypasses the log queue so a boot banner / failure message appears
   *         even if tasks or the heap failed to come up, as long as the UART
   *         itself is alive. No-op if the console or @p s is NULL.
+  *         Callers must prefix '#': every instrument -> GUI line has to carry a
+  *         marker (GUI_development_brief.md 3.1), and a bare banner is a parse
+  *         error at the other end. No leading newline either, for the same
+  *         reason - an empty line is not a valid frame.
   * @param  s : [in] NUL-terminated string to transmit.
   * @retval None
   */
@@ -585,10 +589,10 @@ static void console_puts(const char *s)
 void Tasks_Init(void)
 {
   s_console = Log_HwInit_LPUART1();   /* Nucleo VCP; swap for the product UART */
-  console_puts("\r\n[boot] HT_MK1 console up @115200\r\n");
+  console_puts("#[boot] HT_MK1 console up @115200\r\n");
   if (Log_Init(s_console) != HAL_OK)
   {
-    console_puts("[boot] LOG init FAILED\r\n");
+    console_puts("#[boot] LOG init FAILED\r\n");
   }
 
   s_hwmtx = osMutexNew(NULL);
@@ -598,7 +602,7 @@ void Tasks_Init(void)
   s_rxq   = osMessageQueueNew(PROTO_RX_MAX + 8U, sizeof(uint8_t), NULL);
   if (s_cmdq == NULL || s_rxq == NULL)
   {
-    console_puts("[boot] queue alloc FAILED (heap?)\r\n");
+    console_puts("#[boot] queue alloc FAILED (heap?)\r\n");
   }
 
   s_logger = osThreadNew(Log_Task,      NULL, &s_attr_logger);
@@ -609,14 +613,14 @@ void Tasks_Init(void)
   /* Loud, synchronous report if any thread failed to allocate (heap too small). */
   if (s_logger == NULL || s_safety == NULL || s_seq == NULL || s_comms == NULL)
   {
-    console_puts("[boot] TASK CREATE FAILED - increase configTOTAL_HEAP_SIZE\r\n");
+    console_puts("#[boot] TASK CREATE FAILED - increase configTOTAL_HEAP_SIZE\r\n");
   }
 
 #if (HT_ENABLE_ADS1232 != 0)
   s_ads1232 = osThreadNew(Ads1232BenchTask, NULL, &s_attr_ads1232);
   if (s_ads1232 == NULL)
   {
-    console_puts("[boot] ADS1232 bench task alloc FAILED\r\n");
+    console_puts("#[boot] ADS1232 bench task alloc FAILED\r\n");
   }
 #endif
 

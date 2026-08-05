@@ -119,6 +119,25 @@ window and nothing downstream can be finalised without it.
 
 ## Activity log
 
+### 2026-08-05 (GUI tasks 1 and 2 reviewed)
+- Reviewed the `gui/` code against §6 of the brief — codec, messages, connection manager and
+  tests. Suite runs clean: **57 tests, all passing**. Structure and intent are right; findings
+  written up as **§8.4** of the brief. Their code is theirs to fix — not edited here.
+- **One blocker.** A send failure deadlocks the connection manager: `_execute` calls
+  `_link_lost()` while holding `_io_lock`, and `_link_lost` → `_fail_all_pending` takes the same
+  non-reentrant lock. Reproduced — `execute()` never returns, and the lock is never released, so
+  every later command hangs too. This is the ordinary "link dropped mid-run" path that §6 says
+  gets tested by pulling the plug. Their failure tests only cover receive-side failures.
+- **One conformance bug.** `!RES <milliohms>`, `!INSUL <leak_mohm>`, `hv_mv=` and the `LIMITS`
+  values are printed `%ld` from `int32_t`, but the codec parses them as unsigned — a negative
+  reading is rejected as a protocol violation. Masked today because `RES RUN` always reports
+  `0`/`fail_high`; it will bite the moment FW-02 lands, since a near-zero 4-wire resistance goes
+  negative once offset is subtracted (BU-10). Told them before it costs a debugging session.
+- **A firmware bug fell out of the review.** The boot banner was not protocol-framed — `[boot]`
+  lines carried no `#`, and the banner led with a bare `\r\n` that framed as an empty line, both
+  parse errors at the GUI end per §3.1. Fixed: all five `console_puts` lines are now `#`-prefixed
+  with no leading newline. The GUI was right to reject them.
+
 ### 2026-08-05 (FW-07 and FW-08 fixed)
 - **`>ABORT` works.** The abort flag the run loops poll could never be set, because `tComms` sat
   below `tSequencer` and the sequencer never yielded — its settle delays were the stock

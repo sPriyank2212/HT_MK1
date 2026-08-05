@@ -569,6 +569,67 @@ both rounds is three firmware defects found from the GUI side — the two in `5d
 FW-07. Verifying the contract against a simulator you wrote from it is doing exactly what it
 should.
 
+### 8.4 Review of tasks 1 and 2 (firmware side, 2026-08-05)
+
+Per §6. Read `codec.py`, `messages.py`, `connection.py` and the tests; ran the suite (**57 tests,
+all passing**) and a targeted probe of the failure paths. **Structure and intent are right** —
+the codec is genuinely byte-exact on the commands, the framer is correct, `_Pending` handles the
+`NETLIST GET` multi-line reply properly, reply ordering is protected by serialising append+send
+under one lock, and the session logger flushes per line as §3.5 rule 5 requires. The three items
+below are what stands between this and a pass.
+
+**1 — BLOCKER: a send failure deadlocks the connection manager.**
+`_execute` calls `_link_lost()` from *inside* `with self._io_lock:` (the `except OSError` around
+`_send_line`). `_link_lost` → `_fail_all_pending` → `with self._io_lock` again, and
+`threading.Lock` is not reentrant. The lock is never released, so the calling thread hangs
+forever **and every later command hangs with it** — if that is the UI thread, the GUI freezes
+solid with HV possibly still live. Reproduced with a transport whose `send` raises `OSError`:
+`execute()` never returns.
+
+This is the ordinary link-drop path, not an exotic one — a closed port usually lets one send
+buffer and fails on the next, so "pull the plug mid-run" (§6) lands here. Your failure tests
+cover *receive*-side failures only: silent server, garbage, closed socket. There is no test where
+`send` itself raises. Fix: call `_link_lost` after releasing the lock, or give `_fail_all_pending`
+a no-lock variant. Then add the missing test.
+
+**2 — Signed fields are parsed as unsigned; a valid reading will be rejected.**
+`_uint` refuses a leading `-`, but the firmware prints these with `%ld` from `int32_t`, and
+negative is a legal wire value:
+
+| Field | Why it goes negative |
+|---|---|
+| `!RES <milliohms>` | a near-zero resistance reads negative once system offset is subtracted — that is the whole subject of BU-10, and `fail_low` exists as a verdict for exactly this |
+| `!INSUL <leak_mohm>` | same `int32_t` path |
+| `<STATUS hv_mv=` / `<LIMITS ...` | `int32_t`; `LIMITS SET` accepts any value and echoes it back |
+
+`parse_line('!RES 12 34 -5 pass')` raises `ProtocolError`, so the GUI would classify a correct
+measurement as a contract violation. It has not bitten yet only because `RES RUN` currently
+reports `0`/`fail_high` on every net (Appendix B) — it will the moment FW-02 lands. Use a signed
+parse for those four fields; keep `_uint` for pins, counts and progress, which really are
+unsigned.
+
+**3 — Minor, worth fixing while you are in there.**
+
+- **A single non-ASCII byte costs a 5 s link-loss.** `UnicodeDecodeError` is caught *outside* the
+  read loop, so the reader thread exits, events stop, and the watchdog eventually reports "no
+  traffic" — a misleading diagnosis for one corrupted byte on a 115200 line. Decode with
+  `errors="replace"`, surface one protocol error for that line, and keep reading.
+- **`AttributeError` instead of `LinkLostError`.** `_link_lost` sets `self._transport = None`
+  while the reader is in `self._transport.recv(...)` and a sender may be in `_send_line`. Neither
+  `except OSError` catches `AttributeError`. Take a local reference once, or guard for `None`.
+- **Empty lines.** `parse_line('')` raises. The firmware no longer emits one (see below), but a
+  `\r\n` pair or a reset mid-line can still produce one. Ignoring empty lines is safer than
+  reporting them.
+
+**Not your bug — fixed on the firmware side today.** The boot banner was not protocol-framed:
+`[boot] HT_MK1 console up @115200` and the `[boot] ... FAILED` lines carried no `<`, `!` or `#`,
+and the banner led with a bare `\r\n` that framed as an empty line. Your codec was right to
+reject them. They are now `#`-prefixed with no leading newline. If you saw a burst of protocol
+errors at connect, that was why.
+
+**Verdict:** finding 1 must be fixed before task 3 — it is a hang in the exact scenario §6 tests.
+Finding 2 before FW-02 lands. Neither is a design problem; the design is sound.
+
 
 ---
 
