@@ -174,6 +174,14 @@ or suspend the timeout during a run.
 > a run yield instead of busy-spinning. Commands are answered mid-run and `ABORT` stops a run at
 > the next measurement point, as §3.2.1 has always said. Nothing for the GUI to change — the
 > contract did not move.
+>
+> ⚠ **One hole is still open — `FW-09`.** An `ABORT` arriving in the first moments of a run can
+> still be lost: the sequencer clears the abort flag a second time as the run starts, and an
+> abort landing in that window is wiped after the GUI has already had its `<OK`. Three lines to
+> fix, not yet done. **No GUI change required** — the contract is unchanged and your behaviour
+> should be unchanged. It matters only in that an abort pressed the instant a run starts may do
+> nothing on the current firmware, so do not treat a missing stop as a GUI bug until FW-09 and
+> BU-12 are closed.
 
 > Side effect to expect: `CONT RUN` and `RES RUN` assert the matrix fixture *before* the busy
 > check, so a refused run is still preceded by `!FIXTURE mtx` — and, if HV was armed, by

@@ -8,7 +8,8 @@ each working day.
 - This file tracks *tasks and decisions*. See [README.md](README.md) for the document map —
   there are four living docs and this is the entry point to them.
 
-ID prefixes: `HW-` schematic/hardware · `FW-` firmware · `BU-` bring-up/verify · `DOC-` documentation.
+ID prefixes: `HW-` schematic/hardware · `FW-` firmware · `BU-` bring-up/verify · `DOC-` documentation ·
+`GUI-` raised against the external GUI effort (tracked here so nothing is only in the brief).
 
 ---
 
@@ -19,15 +20,17 @@ ID prefixes: `HW-` schematic/hardware · `FW-` firmware · `BU-` bring-up/verify
 | Blocking — firmware cannot proceed | **0** |
 | Agreed, awaiting schematic edit | 3 |
 | Awaiting a decision | 2 |
-| Firmware work queued | 4 |
+| Firmware work queued | 6 |
+| Awaiting the GUI side | 3 |
 | Verify at bring-up | 10 |
-| Closed to date | 13 |
+| Closed to date | 14 |
 
-**`>ABORT` works again.** FW-07 and FW-08 are closed (CL-12, CL-13) — the comms thread was
+**`>ABORT` mostly works again.** FW-07 and FW-08 are closed (CL-12, CL-13) — the comms thread was
 starved for the whole of every run, so the abort flag could never be set, and the fixture path
 announced `!SAFE` before the hardware had been touched. Both were found by the GUI-side review.
-**Add to the bring-up list: prove abort on real hardware** — press it during a discover scan and
-during an insulation run, and confirm the run stops within one measurement point.
+**One hole is left: FW-09.** An abort landing in the first moments of a run is still wiped by the
+sequencer's redundant clear-on-entry, so it is silently lost. Three lines to fix. Until it is
+fixed, and until **BU-12** proves abort on real hardware, do not treat abort as working.
 
 **The 4-wire method is now proven on real hardware**, not just on paper: the ADS1232 bench rig
 measured a 0.033 Ω resistor to **0.4 %** with no current calibration at all, because the
@@ -76,7 +79,21 @@ window and nothing downstream can be finalised without it.
 | FW-06 | **`>STATUS` never reports `running` or `fault`.** `proto_exec` builds the reply from `s_armed` alone, so a GUI that reconnects mid-run and re-issues `>STATUS` — which the brief §3.5 rule 4 requires it to do — is told `idle` while a run is executing. `!STATE` does carry `running`, so the information exists; only the polled path is missing it. Documented as-is in the brief for now (§3.2, Appendix B) rather than changed silently: the reply is protocol-visible and the GUI is being built against it, so agree it first. Fix is to report from `s_busy` and `Safety_InFault()` as well. | 2026-08-05 |
 | ~~FW-07~~ | **DONE 2026-08-05** — see CL-12. Original scope: **`>ABORT` cannot stop a run — the comms thread is starved for the whole run.** `tSequencer` is `osPriorityNormal`, `tComms` is `osPriorityBelowNormal`, and the sequencer never yields during a run: the settle delays are `HAL_Delay` (the stock `__weak` one — a busy-spin on `HAL_GetTick`, TIM1 timebase, nothing overrides it) and the I2C/SPI calls are polled. With `configUSE_PREEMPTION=1` a lower-priority task never runs while a higher-priority one is runnable, so `Proto_RxByte` is never called during a run: **the abort flag the run loops poll can never be set, and the polling in `tasks.c` is unreachable in practice.** Worse, RX is single-byte polled with no interrupt or DMA, so mid-run bytes are lost to overrun rather than buffered. Scale: insulation is 256 × ~250 ms ≈ 64 s, discover 65,536 × ~2 ms ≈ 131 s — an operator pressing Abort during a 500 V run has no effect for that long. Physical E-stop and the safety task (`osPriorityHigh`, blocks on `osDelay`) are unaffected. Found by the GUI-side task-2 review. Two candidate fixes, neither started: interrupt/DMA RX into a ring buffer with `tComms` blocking on it, or `osDelay` instead of `HAL_Delay` in the test settle paths so the sequencer yields. | 2026-08-05 |
 | ~~FW-08~~ | **DONE 2026-08-05** — see CL-13. Original scope: **`Proto_SetFixture` announces `!SAFE` before the hardware is safe.** It posts `CMD_FORCE_SAFE` to the queue and then immediately emits `!HV 0` and `!SAFE`, without waiting for execution — so the instrument tells the GUI it is safe while the rail may still be up. Directly contradicts the brief's central rule that the GUI must never show a safe state it has not been told is real. Masked today by FW-07 (a fixture change cannot be received mid-run), so **fixing FW-07 unmasks this** — do them together. Also in the same path: the arm is dropped with no `!STATE idle`, and `!SAFE` is emitted twice (once inline, once when the queued force-safe runs). | 2026-08-05 |
+| FW-09 | **An abort in the first moments of a run is silently lost.** `proto_post_run` clears `s_abort` and posts; the sequencer then calls `Proto_ClearAbort()` *again* at run entry (`tasks.c` 281 / 348 / 396). An `>ABORT` processed in the window between the post and that second clear is wiped, the GUI has already had its `<OK`, and the run continues to completion — up to 64 s at 500 V for insulation. **The FW-07 fix made this more reachable, not less:** `tComms` now sits above the sequencer, so it can preempt and set the flag exactly in that window. Fix is to delete the three entry-side clears — `proto_post_run` is the only path that starts a run and it already clears the flag at the one point where clearing is correct, before the command is queued. Raised verbally on 2026-08-05 and not logged at the time; logged now. | 2026-08-05 |
 | DOC-01 | `fw_status.txt` still describes the 2-wire path, 10 mA excitation, and Matrix U33 as the resistance ADC. Sync it with v1.4. | 2026-07-27 |
+| DOC-02 | **`HT_ENABLE_ADS1232` defaults to 1, but README.md says "default off".** `Core/Inc/drivers/ads1232.h` has `#ifndef HT_ENABLE_ADS1232 / #define HT_ENABLE_ADS1232 1`, so every Debug build compiles the bench driver in — which is why the current image carries it. One of the two is wrong. The bench validation is finished (CL-10 / the 2026-08-01 write-up), so the header default should probably become 0 and the rig be enabled explicitly with `-DHT_ENABLE_ADS1232=1`. Noticed while hand-linking on 2026-08-05. | 2026-08-05 |
+
+### Awaiting the GUI side
+
+Raised in `Doc/GUI_development_brief.md` §8.4 against the task 1 + 2 deliverables in `gui/`.
+Their code is theirs to change — these are tracked here so the outstanding set is visible from
+one place, not only from inside the brief.
+
+| ID | Item | Raised |
+|---|---|---|
+| GUI-01 | **Blocker — a send failure deadlocks the connection manager.** `_execute` calls `_link_lost()` while holding `_io_lock`; `_link_lost` → `_fail_all_pending` re-takes the same non-reentrant lock. Reproduced: `execute()` never returns and the lock is never released, so every later command hangs too — a frozen GUI with HV possibly live. This is the ordinary link-dropped-mid-run path that brief §6 says gets tested by pulling the plug; their failure tests only cover receive-side failures. Must be fixed before task 3. | 2026-08-05 |
+| GUI-02 | **Signed wire fields are parsed as unsigned.** `!RES <milliohms>`, `!INSUL <leak_mohm>`, `<STATUS hv_mv=` and the `<LIMITS` values are printed `%ld` from `int32_t`; the codec's `_uint` rejects a leading `-`, so a valid reading is reported as a protocol violation. Masked today because `RES RUN` always reports `0`/`fail_high` — **it bites the moment FW-02 lands**, since a near-zero 4-wire resistance reads negative once system offset is subtracted (BU-10), and `fail_low` exists as a verdict for exactly that case. | 2026-08-05 |
+| GUI-03 | **Three minors.** A single non-ASCII byte kills the reader thread and turns into a misleading 5 s "link lost" (`UnicodeDecodeError` is caught outside the read loop); `_link_lost` nulls `_transport` under a live reader/sender, so `AttributeError` escapes instead of `LinkLostError`; and `parse_line('')` raises, where ignoring empty lines would be safer. | 2026-08-05 |
 
 ### Verify at bring-up
 
@@ -101,6 +118,7 @@ window and nothing downstream can be finalised without it.
 
 | ID | Closed | Item | Resolution |
 |---|---|---|---|
+| CL-14 | 2026-08-05 | Boot banner not protocol-framed | Found while reviewing the GUI codec, which was correctly rejecting it. The five `console_puts` lines carried no `<`, `!` or `#` marker, and the banner led with a bare `\r\n` that framed as an empty line — two parse errors at the GUI end on every reset, per brief §3.1. All five are now `#`-prefixed with no leading newline, and `console_puts` documents the requirement for future callers. Protocol-visible, hence a closed item rather than only an activity-log line. |
 | CL-13 | 2026-08-05 | FW-08 premature `!SAFE` | `Proto_SetFixture` no longer announces safety it has not achieved. It drops the arm locally, posts `CMD_FORCE_SAFE` carrying the new fixture, and the **sequencer** emits `!HV 0` → `!SAFE` → `!FIXTURE` once the rail is really down — published ordering preserved. The duplicate `!SAFE` is gone with it. If the post fails the instrument latches a fault and emits `!STATE fault` rather than `!SAFE`. A fixture change now also sets the abort flag, so declaring a move stops a run in flight instead of letting 500 V continue for up to 64 s — newly reachable, and newly necessary, once FW-07 let the command through mid-run. `CMD_FORCE_SAFE` also emits `!HV 0` before `!SAFE` on every path now, so `>SAFE` no longer drops the rail silently. |
 | CL-12 | 2026-08-05 | FW-07 `>ABORT` could not stop a run | Three causes, all fixed. **RX is interrupt-driven** — `LPUART1_IRQHandler` defined in `log.c` (which owns the hand-rolled LPUART1 bring-up, so CubeMX generated no handler), NVIC priority 5 = `configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY`, bytes pushed to a queue from the ISR and re-armed there; an error callback clears overrun and re-arms, without which one overrun would deafen the instrument permanently. **`tComms` moved `osPriorityBelowNormal` → `osPriorityAboveNormal`** — it blocks on the RX queue so it costs nothing until a byte lands, and it must outrank the sequencer or it is never scheduled during a run. **Settle delays yield** — new `Board_SettleMs()` uses `osDelay` under the RTOS (`+1` tick, so a settle can never come out shorter than `HAL_Delay` gave) and `HAL_Delay` before the scheduler; `continuity.c`, `kelvin.c` and `insulation.c` use it. Raising the comms priority also forced a fourth fix: three threads write the console UART and `HAL_UART_Transmit` is not reentrant, so a preempted line was silently dropped — a lost `<` reply is a 2 s GUI timeout. All console output now goes through `Log_ConsoleWrite()` under a mutex, and `proto_emit` builds the CRLF into its buffer so a line leaves as **one** write. +5,888 bytes: the HAL's IT-receive path was previously discarded by `--gc-sections`. |
 | CL-11 | 2026-08-01 | FW-05 GUI protocol, instrument side | `app/proto.c` — line parser, one `<` reply per command on every path including errors, `!` event streaming from the sequencer, and `!STATE`/`!FIXTURE`/`!HV`/`!SAFE`. Replaces the single-keystroke console. Netlist upload/download, whole-run continuity (verify and discover) and insulation added to the sequencer as `CMD_CONT_RUN`/`CMD_RES_RUN`/`CMD_INSUL_RUN`. `>INSUL ARM` refuses unless the fixture is `hv`; `>MANUAL RELAY` refused outright. Log lines now `#`-prefixed so the GUI can separate them. |
@@ -118,6 +136,20 @@ window and nothing downstream can be finalised without it.
 ---
 
 ## Activity log
+
+### 2026-08-05 (tracker audit)
+- Checked the tracker against everything this session produced. Three things were being carried
+  in prose or in the brief but were not tracked items — now fixed:
+  - **FW-09** — the abort-clear race. I raised it verbally in the first exchange of the day,
+    offered to log it, and then never did; FW-07 took the number and the point got lost. It is a
+    real hole in the abort path and the FW-07 fix made it *more* reachable, so this is exactly
+    the kind of thing that must not live only in conversation.
+  - **GUI-01 … GUI-03** — the review findings existed only in brief §8.4. Added a `GUI-` prefix
+    and an "Awaiting the GUI side" section so the outstanding set is visible from one place.
+  - **DOC-02** — `HT_ENABLE_ADS1232` defaults to 1 while README says "default off". Noticed
+    during the hand-link and mentioned in passing; now an item.
+- Also promoted the boot-banner fix to **CL-14**. It changed protocol-visible behaviour, so it
+  should be findable in the closed table, not only in an activity-log bullet.
 
 ### 2026-08-05 (GUI tasks 1 and 2 reviewed)
 - Reviewed the `gui/` code against §6 of the brief — codec, messages, connection manager and
