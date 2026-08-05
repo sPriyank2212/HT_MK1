@@ -225,15 +225,39 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def serve(instrument_host: str, instrument_port: int,
-          http_host: str, http_port: int) -> None:
+          http_host: str, http_port: int, on_ready=None) -> None:
+    """Serve the GUI. Blocks until interrupted.
+
+    @p on_ready is called with the bound port only once the socket is listening.
+    Anything that opens a browser must go through it: opening one before the
+    bind is a race the browser usually wins, and it loses with
+    ERR_CONNECTION_REFUSED (Chromium error -102) on a page that is about to
+    exist.
+    """
     Handler.bridge = Bridge(instrument_host, instrument_port)
-    httpd = ThreadingHTTPServer((http_host, http_port), Handler)
-    print(f"HT_MK1 GUI on http://{http_host}:{http_port}/")
+    try:
+        # ThreadingHTTPServer binds and listens in its constructor, so once
+        # this returns a connection will be accepted even before serve_forever.
+        httpd = ThreadingHTTPServer((http_host, http_port), Handler)
+    except OSError as exc:
+        print(f"cannot serve on {http_host}:{http_port} — {exc}")
+        print("Another process is probably already using that port; "
+              "pass --http-port to pick a different one.")
+        return
+
+    print(f"HT_MK1 GUI on http://{http_host}:{httpd.server_address[1]}/")
     print(f"instrument at {instrument_host}:{instrument_port}")
+    if on_ready is not None:
+        # On a worker, not here: the socket is already listening so a connect
+        # will not be refused, but requests are only *answered* once
+        # serve_forever runs below. Calling on_ready inline would let a slow
+        # callback hold that up.
+        threading.Thread(target=on_ready, args=(httpd.server_address[1],),
+                         daemon=True).start()
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:
-        pass
+        print("\nstopping")
     finally:
         Handler.bridge.cm.disconnect()
         httpd.server_close()

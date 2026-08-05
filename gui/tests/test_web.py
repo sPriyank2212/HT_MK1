@@ -121,6 +121,69 @@ class WebBackend(unittest.TestCase):
         self.assertIn("Done", kinds, "no !DONE reached the browser")
 
 
+class LaunchOrdering(unittest.TestCase):
+    """The browser must never be launched before the page can be served.
+
+    Opening it first is a race the browser usually wins, and it loses with
+    ERR_CONNECTION_REFUSED — which Chromium reports as error -102 on a page
+    that is about to exist a millisecond later.
+    """
+
+    def test_on_ready_fires_only_once_the_page_is_fetchable(self):
+        from htweb.server import serve
+
+        got = {}
+
+        def ready(port):
+            try:
+                with urllib.request.urlopen(
+                        f"http://127.0.0.1:{port}/", timeout=5) as r:
+                    got["bytes"] = len(r.read())
+            except Exception as exc:              # noqa: BLE001
+                got["error"] = repr(exc)
+            got["stop"]()
+
+        def run():
+            serve("127.0.0.1", 46000, "127.0.0.1", 0, on_ready=ready)
+
+        # serve() owns its socket, so stop it by shutting the process's server
+        # down from inside the callback via the shutdown hook we stash below.
+        import htweb.server as srv
+        real_ctor = srv.ThreadingHTTPServer
+
+        holder = {}
+
+        def ctor(*a, **kw):
+            holder["httpd"] = real_ctor(*a, **kw)
+            got["stop"] = lambda: threading.Thread(
+                target=holder["httpd"].shutdown, daemon=True).start()
+            return holder["httpd"]
+
+        srv.ThreadingHTTPServer = ctor
+        try:
+            t = threading.Thread(target=run, daemon=True)
+            t.start()
+            t.join(timeout=15)
+        finally:
+            srv.ThreadingHTTPServer = real_ctor
+
+        self.assertNotIn("error", got, f"page was not servable: {got.get('error')}")
+        self.assertGreater(got.get("bytes", 0), 100_000)
+
+    def test_port_in_use_reports_instead_of_tracebacking(self):
+        import socket
+        from htweb.server import serve
+        s = socket.socket()
+        s.bind(("127.0.0.1", 0))
+        s.listen(1)
+        try:
+            # Must return, not raise: a traceback here is the other way an
+            # operator ends up staring at a dead browser tab.
+            serve("127.0.0.1", 46000, "127.0.0.1", s.getsockname()[1])
+        finally:
+            s.close()
+
+
 class PageOnDisk(unittest.TestCase):
     def test_index_matches_the_proposal_markup(self):
         """The served page must stay the approved design.

@@ -26,11 +26,15 @@ def main() -> int:
         print("WARNING: serving on all interfaces. This page can energise the "
               "harness at 500 V.")
 
-    if not args.no_browser:
-        webbrowser.open(f"http://127.0.0.1:{args.http_port}/")
+    # The browser is opened from on_ready, i.e. after the socket is listening.
+    # Opening it first is a race the browser usually wins, and it loses with
+    # ERR_CONNECTION_REFUSED (Chromium shows that as error -102).
+    def ready(port: int) -> None:
+        if not args.no_browser:
+            webbrowser.open(f"http://127.0.0.1:{port}/")
 
     from .server import serve
-    serve(args.host, args.port, http_host, args.http_port)
+    serve(args.host, args.port, http_host, args.http_port, on_ready=ready)
     return 0
 
 
