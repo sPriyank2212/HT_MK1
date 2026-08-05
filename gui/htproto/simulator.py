@@ -143,10 +143,7 @@ class InstrumentSim:
 
     def close(self) -> None:
         """Client went away: stop any run, disarm nothing (state is unknown to GUI)."""
-        self._run_stop.set()
-        t = self._run_thread
-        if t is not None and t is not threading.current_thread():
-            t.join(timeout=2)
+        self._stop_run()
 
     # -- emit helpers ---------------------------------------------------------
 
@@ -168,9 +165,11 @@ class InstrumentSim:
             self._st.hv_mv = mv
             self._emit_event(f"HV {mv}")
 
-    def _ramp_hv(self, target: int) -> None:
+    def _ramp_hv(self, target: int, force: bool = False) -> None:
+        # force=True is used on the discharge path: an abort must never
+        # leave the rail up because the stop flag is set.
         step = max(10, abs(target - self._st.hv_mv) // 20)
-        while self._st.hv_mv != target and not self._run_stop.is_set():
+        while self._st.hv_mv != target and (force or not self._run_stop.is_set()):
             cur = self._st.hv_mv
             nxt = target if abs(target - cur) <= step else cur + (step if target > cur else -step)
             self._set_hv(nxt)
@@ -194,9 +193,18 @@ class InstrumentSim:
             if head == "ABORT" and len(t) == 1:
                 self._force_safe()
                 return "OK"
+            if head == "FAULT" and len(t) == 2 and t[1] == "CLEAR":
+                # 3.2.1: forces safe FIRST, then clears the latch. Accepted
+                # while faulted, which nothing else is.
+                self._force_safe()
+                # Arming here is "state is HV_ARMED", so idling disarms.
+                if self._st.state is not State.IDLE:
+                    self._set_state(State.IDLE)
+                return "OK started"
             if head == "FIXTURE" and len(t) == 2 and t[1] in ("none", "mtx", "hv"):
-                self._st.fixture = Fixture(t[1])
-                self._emit_event(f"FIXTURE {t[1]}")
+                # 8.1 answer 6: a fixture change drops the arm and forces the
+                # hardware safe BEFORE the !FIXTURE event goes out.
+                self._change_fixture(Fixture(t[1]))
                 return "OK"
             if head == "NETLIST":
                 return self._netlist(t[1:])
@@ -211,7 +219,9 @@ class InstrumentSim:
             if head == "HV" and len(t) == 3 and t[1] == "SET":
                 return self._hv_set(t[2])
             if head == "MANUAL" and len(t) == 4 and t[1] == "PATH":
-                int(t[2]); int(t[3])
+                hi, lo = int(t[2]), int(t[3])
+                if not (1 <= hi <= 256 and 1 <= lo <= 256):
+                    return f"ERR ERANGE pin out of range"
                 return "OK"
             if head == "MANUAL" and len(t) == 5 and t[1] == "RELAY":
                 # Refused by design (brief section 0).
@@ -236,7 +246,10 @@ class InstrumentSim:
         if t[:1] == ["ADD"] and len(t) == 3:
             if self._st._netlist_staging is None:
                 return "ERR ESYNTAX NETLIST ADD without BEGIN"
-            self._st._netlist_staging.append((int(t[1]), int(t[2])))
+            hi, lo = int(t[1]), int(t[2])
+            if not (1 <= hi <= 256 and 1 <= lo <= 256):  # 8.1 answer 1
+                return "ERR ERANGE pin out of range"
+            self._st._netlist_staging.append((hi, lo))
             return "OK"
         if t[:1] == ["END"] and len(t) == 1:
             staging = self._st._netlist_staging or []
@@ -264,13 +277,16 @@ class InstrumentSim:
         mv = int(mv_tok)
         if mv > HV_MAX_MV:
             return f"ERR ERANGE hv setpoint {mv} mV exceeds {HV_MAX_MV} mV"
+        # 8.1 answer 2: only HV SET 0 is accepted while not armed.
+        if mv > 0 and self._st.state is not State.HV_ARMED:
+            return "ERR ENOTARMED hv set refused: not armed"
         # Reply goes out first; the ramp streams !HV events afterwards (3.4).
         self._deferred = lambda: self._ramp_hv(mv)
         return "OK"
 
     def _insul_arm(self) -> str:
         if self._st.state is State.RUNNING:
-            return "ERR EBUSY test in progress"
+            return "ERR EBUSY a run is already in progress"
         if self._st.fixture is not Fixture.HV:
             return f"ERR EFIXTURE harness is on the {self._st.fixture.value} fixture"
         self._set_state(State.HV_ARMED)
@@ -280,9 +296,13 @@ class InstrumentSim:
 
     def _start_run(self, kind: str, mode: str | None) -> str:
         if self._st.state is State.RUNNING:
-            return "ERR EBUSY test in progress"
+            # 8.1 answer 3: run-starting commands are refused, not queued.
+            return "ERR EBUSY a run is already in progress"
         if kind == "insul" and self._st.state is not State.HV_ARMED:
             return "ERR ENOTARMED insulation not armed"
+        if kind == "cont" and mode == "verify" and self._st.netlist is None:
+            # 8.1 answer 4: no golden-harness fallback, the firmware errors.
+            return "ERR ERANGE no netlist"
         self._run_stop.clear()
         self._st.state = State.RUNNING
         target = {"cont": self._run_cont, "res": self._run_res, "insul": self._run_insul}[kind]
@@ -296,7 +316,8 @@ class InstrumentSim:
         self._deferred = begin
         return "OK started"
 
-    def _force_safe(self) -> None:
+    def _stop_run(self) -> None:
+        """Signal the run thread and wait for its termination sequence."""
         self._run_stop.set()
         t = self._run_thread
         if t is not None and t is not threading.current_thread():
@@ -305,18 +326,44 @@ class InstrumentSim:
             except RuntimeError:
                 pass  # run thread created but not started yet (abort race)
         self._run_thread = None
-        self._ramp_hv(0)
-        self._st.hv_mv = 0
-        self._emit_event("SAFE")
-        self._set_state(State.IDLE)
 
-    def _finish_run(self, kind: str, passed: int, failed: int) -> None:
-        if kind == "insul":
-            # Rail back to 0 before the run is reported finished.
-            self._ramp_hv(0)
+    def _force_safe(self) -> None:
+        if self._st.state is State.RUNNING:
+            # The run thread emits !SAFE / !STATE idle / !DONE itself (8.1
+            # answer 7: !DONE is the last event of every run).
+            self._stop_run()
+            return
+        if self._st.hv_mv > 0:
+            self._ramp_hv(0, force=True)
             self._st.hv_mv = 0
-        self._emit_event(f"DONE {kind} {passed} {failed}")
+        self._emit_event("SAFE")
+        if self._st.state is not State.IDLE:
+            self._set_state(State.IDLE)
+
+    def _change_fixture(self, fixture: Fixture) -> None:
+        # 8.1 answer 6: any fixture change drops the arm and forces safe,
+        # emitting !HV 0 and !SAFE before !FIXTURE.
+        if self._st.state is State.RUNNING:
+            self._stop_run()
+        if self._st.state is State.HV_ARMED or self._st.hv_mv > 0:
+            if self._st.hv_mv > 0:
+                self._ramp_hv(0, force=True)
+                self._st.hv_mv = 0
+            self._emit_event("SAFE")
+            self._set_state(State.IDLE)
+        self._st.fixture = fixture
+        self._emit_event(f"FIXTURE {fixture.value}")
+
+    def _end_run(self, kind: str, passed: int, failed: int, aborted: bool) -> None:
+        """Run termination, 8.1 answer 7: discharge, !SAFE, !STATE idle, and
+        !DONE always last."""
+        if kind == "insul":
+            self._ramp_hv(0, force=True)
+            self._st.hv_mv = 0
+        if aborted or kind == "insul":
+            self._emit_event("SAFE")
         self._set_state(State.IDLE)
+        self._emit_event(f"DONE {kind} {passed} {failed}")
 
     def _maybe_disconnect(self, idx: int, total: int) -> bool:
         """disconnect scenario: hard-drop the transport part-way through a run."""
@@ -327,13 +374,17 @@ class InstrumentSim:
         return False
 
     def _run_cont(self, mode: str | None) -> None:
-        outcomes = { (n.hi, n.lo): n for n in self.scenario.nets }
+        outcomes = {(n.hi, n.lo): n for n in self.scenario.nets}
         if mode == "verify":
-            nets = self._st.netlist if self._st.netlist is not None else [ (n.hi, n.lo) for n in self.scenario.nets ]
+            # netlist presence is checked in _start_run (8.1 answer 4)
+            nets = self._st.netlist
             total = len(nets)
             passed = failed = 0
             for i, (hi, lo) in enumerate(nets):
-                if self._run_stop.is_set() or self._maybe_disconnect(i, total):
+                if self._maybe_disconnect(i, total):
+                    return  # transport gone: no !DONE, nothing
+                if self._run_stop.is_set():
+                    self._end_run("cont", passed, failed, aborted=True)
                     return
                 outcome = outcomes.get((hi, lo))
                 status = outcome.cont if outcome else ContStatus.OPEN
@@ -344,7 +395,7 @@ class InstrumentSim:
                 else:
                     failed += 1
                 time.sleep(self.interval)
-            self._finish_run("cont", passed, failed)
+            self._end_run("cont", passed, failed, aborted=False)
         else:  # discover: scan pins, report nets as found
             by_hi = {}
             for n in self.scenario.nets:
@@ -352,7 +403,12 @@ class InstrumentSim:
             total = DISCOVER_PINS
             passed = 0
             for pin in range(1, total + 1):
-                if self._run_stop.is_set() or self._maybe_disconnect(pin, total):
+                if self._maybe_disconnect(pin, total):
+                    return
+                if self._run_stop.is_set():
+                    failed = sum(1 for n in self.scenario.nets
+                                 if n.cont is not ContStatus.PASS)
+                    self._end_run("cont", passed, failed, aborted=True)
                     return
                 for n in by_hi.get(pin, []):
                     self._emit_event(f"CONT {n.hi} {n.lo} {n.cont.value}")
@@ -361,14 +417,17 @@ class InstrumentSim:
                 self._emit_event(f"PROGRESS {pin} {total}")
                 time.sleep(self.interval)
             failed = sum(1 for n in self.scenario.nets if n.cont is not ContStatus.PASS)
-            self._finish_run("cont", passed, failed)
+            self._end_run("cont", passed, failed, aborted=False)
 
     def _run_res(self, _mode: str | None) -> None:
         nets = self.scenario.nets
         total = len(nets)
         passed = failed = 0
         for i, n in enumerate(nets):
-            if self._run_stop.is_set() or self._maybe_disconnect(i, total):
+            if self._maybe_disconnect(i, total):
+                return
+            if self._run_stop.is_set():
+                self._end_run("res", passed, failed, aborted=True)
                 return
             self._emit_event(f"RES {n.hi} {n.lo} {n.res_mohm} {n.res_status.value}")
             self._emit_event(f"PROGRESS {i + 1} {total}")
@@ -377,7 +436,7 @@ class InstrumentSim:
             else:
                 failed += 1
             time.sleep(self.interval)
-        self._finish_run("res", passed, failed)
+        self._end_run("res", passed, failed, aborted=False)
 
     def _run_insul(self, _mode: str | None) -> None:
         self._ramp_hv(HV_MAX_MV)
@@ -385,7 +444,10 @@ class InstrumentSim:
         total = len(nets)
         passed = failed = 0
         for i, n in enumerate(nets):
-            if self._run_stop.is_set() or self._maybe_disconnect(i, total):
+            if self._maybe_disconnect(i, total):
+                return
+            if self._run_stop.is_set():
+                self._end_run("insul", passed, failed, aborted=True)
                 return
             self._emit_event(f"INSUL {i + 1} {n.insul_leak_mohm} {n.insul_status.value}")
             self._emit_event(f"PROGRESS {i + 1} {total}")
@@ -395,7 +457,7 @@ class InstrumentSim:
                 failed += 1
                 self._emit_event(f"FAULT F04 insulation low on net {i + 1}")
             time.sleep(self.interval)
-        self._finish_run("insul", passed, failed)
+        self._end_run("insul", passed, failed, aborted=False)
 
 
 class SimulatorServer:

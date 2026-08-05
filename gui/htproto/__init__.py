@@ -18,6 +18,13 @@ from .codec import (
     parse_line,
     LineFramer,
 )
+from .connection import (
+    CommandTimeoutError,
+    ConnectionManager,
+    LinkLostError,
+    LinkState,
+    NotConnectedError,
+)
 from .messages import (
     CalReply,
     ContResult,
@@ -44,6 +51,8 @@ from .messages import (
 __all__ = [
     "ContMode", "ContStatus", "Fixture", "InsulStatus", "ProtocolError",
     "ResStatus", "State", "TestKind", "commands", "parse_line", "LineFramer",
+    "CommandTimeoutError", "ConnectionManager", "LinkLostError", "LinkState",
+    "NotConnectedError",
     "CalReply", "ContResult", "Done", "ErrReply", "Fault", "FixtureEvent",
     "HvEvent", "IdReply", "InsulResult", "LimitsReply", "LogLine", "NetEntry",
     "NetlistReply", "Ok", "Pong", "Progress", "ResResult", "SafeEvent",

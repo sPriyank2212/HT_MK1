@@ -75,12 +75,22 @@ class TestKind(str, Enum):
 ERROR_CODES = frozenset({"EBUSY", "EFIXTURE", "ENOTARMED", "ERANGE", "EHW", "ESYNTAX"})
 
 _UINT_RE = re.compile(r"[0-9]+")
+_INT_RE = re.compile(r"-?[0-9]+")
 _SEMVER_RE = re.compile(r"[0-9]+\.[0-9]+\.[0-9]+")
 
 
 def _uint(token: str, what: str) -> int:
     if not _UINT_RE.fullmatch(token):
         raise ProtocolError(f"{what}: expected unsigned integer, got {token!r}")
+    return int(token)
+
+
+def _int(token: str, what: str) -> int:
+    # The firmware prints measurement values with %ld from int32_t, so a
+    # negative reading is a legal wire value for these fields (brief 8.4
+    # finding 2). Pins, counts and progress stay unsigned.
+    if not _INT_RE.fullmatch(token):
+        raise ProtocolError(f"{what}: expected integer, got {token!r}")
     return int(token)
 
 
@@ -100,6 +110,10 @@ def _kv(token: str, key: str, what: str) -> str:
 
 def _kv_uint(token: str, key: str, what: str) -> int:
     return _uint(_kv(token, key, what), what)
+
+
+def _kv_int(token: str, key: str, what: str) -> int:
+    return _int(_kv(token, key, what), what)
 
 
 # ---------------------------------------------------------------------------
@@ -135,12 +149,19 @@ class commands:
         return commands._line("ABORT")
 
     @staticmethod
+    def fault_clear() -> bytes:
+        # Forces safe, then clears the fault latch. Accepted while faulted,
+        # which nothing else is. Deliberate operator action only.
+        return commands._line("FAULT CLEAR")
+
+    @staticmethod
     def netlist_begin(n: int) -> bytes:
         return commands._line(f"NETLIST BEGIN {_check_uint(n, 'n')}")
 
     @staticmethod
     def netlist_add(hi: int, lo: int) -> bytes:
-        return commands._line(f"NETLIST ADD {_check_uint(hi, 'hi')} {_check_uint(lo, 'lo')}")
+        return commands._line(
+            f"NETLIST ADD {_check_pin(hi, 'hi')} {_check_pin(lo, 'lo')}")
 
     @staticmethod
     def netlist_end() -> bytes:
@@ -176,7 +197,8 @@ class commands:
 
     @staticmethod
     def manual_path(hi: int, lo: int) -> bytes:
-        return commands._line(f"MANUAL PATH {_check_uint(hi, 'hi')} {_check_uint(lo, 'lo')}")
+        return commands._line(
+            f"MANUAL PATH {_check_pin(hi, 'hi')} {_check_pin(lo, 'lo')}")
 
     @staticmethod
     def manual_relay(board: int, n: int, on: bool) -> bytes:
@@ -210,6 +232,15 @@ class commands:
 def _check_uint(value: int, what: str) -> int:
     if not isinstance(value, int) or isinstance(value, bool) or value < 0:
         raise ProtocolError(f"{what}: expected non-negative int, got {value!r}")
+    return value
+
+
+#: Pins are 1-based, valid range 1..256 (brief 8.1 answer 1). Out of range is
+#: ERR ERANGE on the wire; the codec refuses to send it at all.
+def _check_pin(value: int, what: str) -> int:
+    _check_uint(value, what)
+    if not 1 <= value <= 256:
+        raise ProtocolError(f"{what}: pin out of range 1..256: {value!r}")
     return value
 
 
@@ -289,7 +320,7 @@ def _parse_reply(tokens: list[str], line: str, m) -> object:
         return m.StatusReply(
             state=_enum(State, _kv(tokens[1], "state", "STATUS"), "STATUS"),
             fixture=_enum(Fixture, _kv(tokens[2], "fixture", "STATUS"), "STATUS"),
-            hv_mv=_kv_uint(tokens[3], "hv_mv", "STATUS"),
+            hv_mv=_kv_int(tokens[3], "hv_mv", "STATUS"),
         )
     if head == "OK":
         return m.Ok(detail=" ".join(tokens[1:]))
@@ -307,8 +338,8 @@ def _parse_reply(tokens: list[str], line: str, m) -> object:
         )
     if head == "LIMITS" and len(tokens) == 3:
         return m.LimitsReply(
-            r_max_mohm=_kv_uint(tokens[1], "r_max_mohm", "LIMITS"),
-            ins_min_mohm=_kv_uint(tokens[2], "ins_min_mohm", "LIMITS"),
+            r_max_mohm=_kv_int(tokens[1], "r_max_mohm", "LIMITS"),
+            ins_min_mohm=_kv_int(tokens[2], "ins_min_mohm", "LIMITS"),
         )
     raise ProtocolError(f"unrecognised reply: {line!r}")
 
@@ -328,13 +359,13 @@ def _parse_event(tokens: list[str], line: str, m) -> object:
         return m.ResResult(
             hi=_uint(tokens[1], "RES hi"),
             lo=_uint(tokens[2], "RES lo"),
-            milliohms=_uint(tokens[3], "RES milliohms"),
+            milliohms=_int(tokens[3], "RES milliohms"),
             status=_enum(ResStatus, tokens[4], "RES status"),
         )
     if head == "INSUL" and len(tokens) == 4:
         return m.InsulResult(
             net=_uint(tokens[1], "INSUL net"),
-            leak_mohm=_uint(tokens[2], "INSUL leak_mohm"),
+            leak_mohm=_int(tokens[2], "INSUL leak_mohm"),
             status=_enum(InsulStatus, tokens[3], "INSUL status"),
         )
     if head == "FAULT" and len(tokens) >= 3:
@@ -350,7 +381,7 @@ def _parse_event(tokens: list[str], line: str, m) -> object:
     if head == "FIXTURE" and len(tokens) == 2:
         return m.FixtureEvent(fixture=_enum(Fixture, tokens[1], "FIXTURE"))
     if head == "HV" and len(tokens) == 2:
-        return m.HvEvent(millivolts=_uint(tokens[1], "HV"))
+        return m.HvEvent(millivolts=_int(tokens[1], "HV"))
     if head == "SAFE" and len(tokens) == 1:
         return m.SafeEvent()
     raise ProtocolError(f"unrecognised event: {line!r}")

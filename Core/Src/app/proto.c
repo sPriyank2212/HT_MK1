@@ -548,6 +548,12 @@ static void proto_exec(char *line)
       proto_err("ESYNTAX", "MANUAL");
     }
   }
+  else if (strcmp(t[0], "FAULT") == 0 && n >= 2U && strcmp(t[1], "CLEAR") == 0)
+  {
+    /* Recovery from a latched fault. Forces safe first, so clearing the latch
+     * can never be a way to re-energise something by accident. */
+    proto_post(CMD_CLEAR_FAULT, 0U, 0U);
+  }
   else if (strcmp(t[0], "CAL") == 0 && n >= 2U && strcmp(t[1], "GET") == 0)
   {
     proto_emit('<', "CAL current_ua=3000 gain=32 rref_mohm=100000");

@@ -79,6 +79,19 @@ class SimFixture(unittest.TestCase):
     def tearDown(self):
         self.client.close()
 
+    def upload_netlist(self, nets):
+        self.assertEqual(self.client.exchange(
+            f">NETLIST BEGIN {len(nets)}\n".encode()), "<OK")
+        for hi, lo in nets:
+            self.assertEqual(self.client.exchange(f">NETLIST ADD {hi} {lo}\n".encode()),
+                             "<OK")
+        self.assertEqual(self.client.exchange(b">NETLIST END\n"),
+                         f"<OK loaded={len(nets)}")
+
+    def upload_default_netlist(self):
+        """The scenario harness as a netlist: (1,2), (3,4), ... """
+        self.upload_netlist([(2 * i + 1, 2 * i + 2) for i in range(NETS)])
+
 
 class TestCommandRoundTrips(SimFixture):
     """Each command in 3.2 produces its contract reply, byte-for-byte."""
@@ -135,7 +148,15 @@ class TestCommandRoundTrips(SimFixture):
         self.assertEqual(self.client.exchange(b">HV SET 600000\n").split(" ")[:2],
                          ["<ERR", "ERANGE"])
 
+    def test_hv_set_requires_armed(self):
+        # 8.1 answer 2: non-zero HV SET while not armed -> ENOTARMED; 0 is OK.
+        reply = self.client.exchange(b">HV SET 500000\n")
+        self.assertTrue(reply.startswith("<ERR ENOTARMED"), reply)
+        self.assertEqual(self.client.exchange(b">HV SET 0\n"), "<OK")
+
     def test_hv_set_ramps(self):
+        self.client.exchange(b">FIXTURE hv\n")
+        self.client.exchange(b">INSUL ARM\n")
         self.assertEqual(self.client.exchange(b">HV SET 500000\n"), "<OK")
         lines = self.client.readlines_until("!HV 500000")
         self.assertTrue(all(l.startswith("!HV ") for l in lines))
@@ -156,6 +177,48 @@ class TestCommandRoundTrips(SimFixture):
         reply = self.client.exchange(b">INSUL RUN\n")
         self.assertTrue(reply.startswith("<ERR ENOTARMED"), reply)
 
+    def test_pin_range(self):
+        # 8.1 answer 1: pins are 1..256; out of range -> ERR ERANGE.
+        self.assertEqual(self.client.exchange(b">NETLIST BEGIN 1\n"), "<OK")
+        self.assertEqual(self.client.exchange(b">NETLIST ADD 0 5\n"),
+                         "<ERR ERANGE pin out of range")
+        self.assertEqual(self.client.exchange(b">NETLIST ADD 1 257\n"),
+                         "<ERR ERANGE pin out of range")
+        self.assertEqual(self.client.exchange(b">NETLIST ADD 1 256\n"), "<OK")
+        self.assertEqual(self.client.exchange(b">MANUAL PATH 0 1\n"),
+                         "<ERR ERANGE pin out of range")
+        self.assertEqual(self.client.exchange(b">MANUAL PATH 1 256\n"), "<OK")
+
+    def test_verify_without_netlist_refused(self):
+        # 8.1 answer 4: no golden-harness fallback.
+        self.assertEqual(self.client.exchange(b">CONT RUN verify\n"),
+                         "<ERR ERANGE no netlist")
+
+    def test_fixture_change_drops_arm(self):
+        # 8.1 answer 6: fixture change forces safe; !HV 0 / !SAFE precede !FIXTURE.
+        self.client.exchange(b">FIXTURE hv\n")
+        self.assertEqual(self.client.exchange(b">INSUL ARM\n"), "<OK armed")
+        self.assertEqual(self.client.exchange(b">HV SET 100000\n"), "<OK")
+        self.client.readlines_until("!HV 100000")
+        # The force-safe events precede the <OK reply, so read raw lines.
+        self.client.send(b">FIXTURE mtx\n")
+        lines = []
+        while True:
+            line = self.client.readline()
+            self.assertIsNotNone(line)
+            if line == "<OK":
+                break
+            lines.append(line)
+        self.assertIn("!HV 0", lines)
+        self.assertIn("!SAFE", lines)
+        self.assertLess(lines.index("!HV 0"), lines.index("!SAFE"))
+        self.assertLess(lines.index("!SAFE"), lines.index("!FIXTURE mtx"))
+        # Arm is gone: insulation is locked again.
+        reply = self.client.exchange(b">INSUL RUN\n")
+        self.assertTrue(reply.startswith("<ERR ENOTARMED"), reply)
+        self.assertEqual(self.client.exchange(b">STATUS\n"),
+                         "<STATUS state=idle fixture=mtx hv_mv=0")
+
     def test_syntax_error(self):
         reply = self.client.exchange(b">FROBNICATE\n")
         self.assertTrue(reply.startswith("<ERR ESYNTAX"), reply)
@@ -165,8 +228,9 @@ class TestScenarioPass(SimFixture):
     scenario = "pass"
 
     def test_full_sequence(self):
-        # The operator flow end to end: fixture mtx -> verify -> resistance
-        # -> fixture hv -> arm -> insulation. Clean pass throughout.
+        # The operator flow end to end: upload netlist, fixture mtx -> verify
+        # -> resistance -> fixture hv -> arm -> insulation. Clean pass.
+        self.upload_default_netlist()
         self.client.exchange(b">FIXTURE mtx\n")
         self.assertEqual(self.client.exchange(b">CONT RUN verify\n"), "<OK started")
         lines = self.client.readlines_until("!DONE")
@@ -192,8 +256,11 @@ class TestScenarioPass(SimFixture):
         self.assertTrue(all(l.endswith(" pass") for l in insul))
         self.assertEqual(lines[-1], f"!DONE insul {NETS} 0")
         self.assertFalse(any(l.startswith("!FAULT") for l in lines))
-        # Rail returns to 0 before the run is reported done.
+        # 8.1 answer 7: discharge, !SAFE, !STATE idle, and !DONE always last.
         self.assertIn("!HV 0", lines)
+        self.assertIn("!SAFE", lines)
+        self.assertLess(lines.index("!HV 0"), lines.index("!SAFE"))
+        self.assertLess(lines.index("!SAFE"), lines.index("!STATE idle"))
         self.assertEqual(self.client.exchange(b">STATUS\n"),
                          "<STATUS state=idle fixture=hv hv_mv=0")
 
@@ -207,17 +274,13 @@ class TestScenarioPass(SimFixture):
 
     def test_abort_mid_run(self):
         self.assertEqual(self.client.exchange(b">CONT RUN discover\n"), "<OK started")
-        # !SAFE is an event and may arrive before the <OK reply.
-        self.client.send(b">ABORT\n")
-        saw_safe = False
-        while True:
-            line = self.client.readline()
-            self.assertIsNotNone(line)
-            if line == "!SAFE":
-                saw_safe = True
-            if line == "<OK":
-                break
-        self.assertTrue(saw_safe)
+        # 8.1 answer 3: ABORT replies immediately; the run then stops within
+        # ~one measurement point and ends !SAFE, !STATE idle, !DONE (last).
+        self.assertEqual(self.client.exchange(b">ABORT\n"), "<OK")
+        lines = self.client.readlines_until("!DONE")
+        self.assertIn("!SAFE", lines)
+        self.assertLess(lines.index("!SAFE"), lines.index("!STATE idle"))
+        self.assertTrue(lines[-1].startswith("!DONE cont "), lines[-1])
         status = self.client.exchange(b">STATUS\n")
         self.assertEqual(status, "<STATUS state=idle fixture=none hv_mv=0")
 
@@ -226,6 +289,7 @@ class TestScenarioOpensShorts(SimFixture):
     scenario = "opens_shorts"
 
     def test_two_opens_one_short(self):
+        self.upload_default_netlist()
         self.assertEqual(self.client.exchange(b">CONT RUN verify\n"), "<OK started")
         lines = self.client.readlines_until("!DONE")
         conts = [l for l in lines if l.startswith("!CONT ")]
@@ -272,6 +336,10 @@ class TestScenarioDisconnect(unittest.TestCase):
         try:
             client = Client(server.host, server.port)
             client.readline()  # banner
+            client.exchange(f">NETLIST BEGIN {NETS}\n".encode())
+            for i in range(NETS):
+                client.exchange(f">NETLIST ADD {2 * i + 1} {2 * i + 2}\n".encode())
+            client.exchange(b">NETLIST END\n")
             self.assertEqual(client.exchange(b">CONT RUN verify\n"), "<OK started")
             saw_cont = False
             while True:

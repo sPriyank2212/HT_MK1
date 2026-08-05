@@ -41,7 +41,11 @@ typedef enum
    * rather than returning a single result. */
   CMD_CONT_RUN    = 5,   /* a=0 verify against netlist, a=1 discover  */
   CMD_RES_RUN     = 6,
-  CMD_INSUL_RUN   = 7
+  CMD_INSUL_RUN   = 7,
+  /* Forces safe, then clears the fault latch. Handled BEFORE the sequencer's
+   * fault gate - it is the only recovery from a latched fault short of a power
+   * cycle, so it has to run while faulted. */
+  CMD_CLEAR_FAULT = 8
 } TestCmdType_t;
 
 /* CMD_FORCE_SAFE.b: ask the sequencer to emit !FIXTURE (value in .a) after the

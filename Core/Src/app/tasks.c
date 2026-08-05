@@ -194,9 +194,35 @@ static void run_insulation_all(void);
   */
 static void run_command(const TestCmd_t *c)
 {
+  /* Checked before the fault gate: clearing the latch is the one thing that has
+   * to work WHILE faulted, or the only recovery is a power cycle. */
+  if (c->type == CMD_CLEAR_FAULT)
+  {
+    (void)osMutexAcquire(s_hwmtx, osWaitForever);
+    force_safe_all();
+    Safety_ClearFault();
+    Proto_ClearArm();
+    Proto_EvtHv(0);
+    Proto_EvtSafe();
+    Proto_EvtState("idle");
+    osMutexRelease(s_hwmtx);
+    LOG_I("SEQ", "fault cleared");
+    return;
+  }
+
   if (s_fault)
   {
     LOG_W("SEQ", "skip (fault)");
+    /* A run command that never reports !DONE leaves the GUI waiting for ever,
+     * and s_busy stays latched so every later run is refused EBUSY. Say the run
+     * is over, and say why, before returning (FW-10). */
+    switch (c->type)
+    {
+      case CMD_CONT_RUN:  Proto_EvtState("fault"); Proto_EvtDone("cont",  0U, 0U); break;
+      case CMD_RES_RUN:   Proto_EvtState("fault"); Proto_EvtDone("res",   0U, 0U); break;
+      case CMD_INSUL_RUN: Proto_EvtState("fault"); Proto_EvtDone("insul", 0U, 0U); break;
+      default: break;
+    }
     return;
   }
 

@@ -52,6 +52,17 @@ class TestCommandEncoding(unittest.TestCase):
         with self.assertRaises(ProtocolError):
             commands.cont_run("Verify")  # not a ContMode
 
+    def test_pin_range(self):
+        # 8.1 answer 1: pins are 1-based, valid range 1..256.
+        self.assertEqual(commands.netlist_add(1, 256), b">NETLIST ADD 1 256\n")
+        self.assertEqual(commands.manual_path(256, 1), b">MANUAL PATH 256 1\n")
+        for bad in (0, 257, -1):
+            with self.subTest(bad=bad):
+                with self.assertRaises(ProtocolError):
+                    commands.netlist_add(bad, 5)
+                with self.assertRaises(ProtocolError):
+                    commands.manual_path(5, bad)
+
 
 class TestReplyParsing(unittest.TestCase):
     def test_pong(self):
@@ -123,6 +134,19 @@ class TestEventParsing(unittest.TestCase):
         self.assertEqual(parse_line("!HV 500000"), m.HvEvent(500000))
         self.assertEqual(parse_line("!SAFE"), m.SafeEvent())
 
+    def test_signed_measurement_values(self):
+        # Brief 8.4 finding 2 (GUI-02): the firmware prints these with %ld
+        # from int32_t; a negative reading is a legal wire value.
+        self.assertEqual(parse_line("!RES 12 34 -5 pass"),
+                         m.ResResult(12, 34, -5, ResStatus.PASS))
+        self.assertEqual(parse_line("!INSUL 3 -5 fail"),
+                         m.InsulResult(3, -5, InsulStatus.FAIL))
+        self.assertEqual(parse_line("!HV -1"), m.HvEvent(-1))
+        self.assertEqual(parse_line("<STATUS state=idle fixture=mtx hv_mv=-5"),
+                         m.StatusReply(State.IDLE, Fixture.MTX, -5))
+        self.assertEqual(parse_line("<LIMITS r_max_mohm=-1 ins_min_mohm=100"),
+                         m.LimitsReply(-1, 100))
+
     def test_log_line(self):
         self.assertEqual(parse_line("# boot ok, cards: mtx=1 hv=2"),
                          m.LogLine(" boot ok, cards: mtx=1 hv=2"))
@@ -144,15 +168,17 @@ class TestMalformed(unittest.TestCase):
             "<ID HT_MK1 fw=14 proto=1",      # not semver
             "<STATUS fixture=mtx state=idle hv_mv=0",  # reordered
             "<STATUS state=bogus fixture=mtx hv_mv=0",
-            "<STATUS state=idle fixture=mtx hv_mv=-5",
             "<STATUS state=idle fixture=mtx hv_mv=5 ",  # extra field
             "<NET 1",               # missing field
             "<NET 1 2 3",           # extra field
+            "<NET -1 2",            # pins stay unsigned
             "<CAL gain=16 current_ua=1000 rref_mohm=100000",  # reordered
             "<LIMITS r_max_mohm=abc ins_min_mohm=100",
             "<WAT 1 2 3",
             "!PROGRESS 1",          # missing total
             "!PROGRESS 1 2 3",      # extra field
+            "!PROGRESS -1 256",     # progress stays unsigned
+            "!CONT -1 2 pass",      # pins stay unsigned
             "!CONT 1 2 connected",  # status not in contract
             "!CONT 1 2 PASS",       # case-sensitive
             "!RES 1 2 48 fail",     # not a ResStatus

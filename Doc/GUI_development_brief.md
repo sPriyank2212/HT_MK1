@@ -127,6 +127,8 @@ in the protocol does this.
 >MANUAL RELAY <board> <n> <0|1>-> <ERR EHW      refused by design, see section 0
 >MANUAL OFF                    -> <OK started
 
+>FAULT CLEAR                   -> <OK started   forces safe, then clears the fault latch
+
 >CAL GET                       -> <CAL current_ua=<int> gain=<int> rref_mohm=<int>
 >LIMITS GET                    -> <LIMITS r_max_mohm=<int> ins_min_mohm=<int>
 >LIMITS SET r_max_mohm=<int> ins_min_mohm=<int>  -> <OK
@@ -232,6 +234,14 @@ and emits its `!DONE` as usual, and the `!HV 0` / `!SAFE` / `!FIXTURE` follow af
 this path the three events can be delayed by up to one measurement point, and an insulation run
 will emit its own `!HV 0` / `!SAFE` first — `!SAFE` is idempotent (§3.4), so treat the repeat as
 confirmation. The GUI must not block waiting for `!FIXTURE` before letting the operator continue.
+
+**A latched fault refuses runs, and says so.** Added 2026-08-05 with FW-10. While a fault is
+latched the sequencer will not execute a run; instead of going silent it emits `!STATE fault`
+followed immediately by `!DONE <kind> 0 0`, so the GUI is released rather than waiting for a
+`!DONE` that never comes. **`>FAULT CLEAR`** is the only recovery — it forces safe *first*, then
+clears the latch, and answers `<OK started`. It is accepted while faulted, which nothing else is.
+The GUI should offer it from the fault screen as a deliberate operator action, never
+automatically.
 
 **Malformed input.** Anything unknown or unparseable gives `<ERR ESYNTAX <what>`. A line longer
 than **72 characters** is discarded up to the next newline and answered once with
@@ -347,6 +357,13 @@ Each task is independently reviewable. Do them in order.
 
 **Stop after task 2 and hand back for review.** If the protocol layer is wrong, everything
 above it is wrong, and it is much cheaper to find that at task 2 than at task 10.
+
+> **Status 2026-08-05: all ten tasks are delivered.** Tasks 1–2 were built by the GUI side and
+> reviewed in §8.4; tasks 3–10 were built on the firmware side in `gui/htgui/` after that review,
+> to get the release out. The safety rules live in `htgui/model.py`, which imports no Tk so they
+> can be tested without a display, and the suite is 83 tests including a smoke test that drives
+> the real app against the real simulator. Remaining open item is GUI-03 — three minor
+> robustness points in `connection.py`, listed in §8.4 item 3.
 
 ---
 
