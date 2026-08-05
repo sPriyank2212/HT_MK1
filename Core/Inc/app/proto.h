@@ -136,10 +136,11 @@ uint8_t Proto_Busy(void);
   */
 uint8_t Proto_AbortRequested(void);
 
-/**
-  * @brief  Clear the abort flag. Called at the start of every run.
-  */
-void Proto_ClearAbort(void);
+/* Proto_ClearAbort() deliberately no longer exists. The flag is cleared in
+ * exactly two places - before a run command is queued, and when the run
+ * reports !DONE. Clearing it at run START swallowed any abort that arrived
+ * between the two, which is a silent loss of an operator stop command (FW-09).
+ * If you find yourself wanting it back, you are reintroducing that bug. */
 
 /**
   * @brief  Configured resistance limit, milliohms.

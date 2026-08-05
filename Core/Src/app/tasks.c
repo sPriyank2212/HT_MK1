@@ -278,7 +278,11 @@ static void run_continuity_all(uint8_t discover)
   uint16_t i, n, hi, lo;
   uint16_t pass = 0U, fail = 0U;
 
-  Proto_ClearAbort();
+  /* Do NOT clear the abort flag here. proto_post_run() clears it before the
+   * command is queued, which is the only point where clearing is correct; a
+   * second clear at run start silently swallows an abort that arrived in
+   * between - and comms runs above the sequencer, so it lands there easily
+   * (FW-09). Proto_EvtDone() clears it again on the way out. */
   Proto_EvtState("running");
 
   if (discover != 0U)
@@ -345,7 +349,11 @@ static void run_resistance_all(void)
   uint16_t pass = 0U, fail = 0U;
   int32_t  limit = Proto_LimitRMaxMohm();
 
-  Proto_ClearAbort();
+  /* Do NOT clear the abort flag here. proto_post_run() clears it before the
+   * command is queued, which is the only point where clearing is correct; a
+   * second clear at run start silently swallows an abort that arrived in
+   * between - and comms runs above the sequencer, so it lands there easily
+   * (FW-09). Proto_EvtDone() clears it again on the way out. */
   Proto_EvtState("running");
   n = Proto_NetlistCount();
 
@@ -393,7 +401,11 @@ static void run_insulation_all(void)
     return;
   }
 
-  Proto_ClearAbort();
+  /* Do NOT clear the abort flag here. proto_post_run() clears it before the
+   * command is queued, which is the only point where clearing is correct; a
+   * second clear at run start silently swallows an abort that arrived in
+   * between - and comms runs above the sequencer, so it lands there easily
+   * (FW-09). Proto_EvtDone() clears it again on the way out. */
   Proto_EvtState("running");
   n = Proto_NetlistCount();
 

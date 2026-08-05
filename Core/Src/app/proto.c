@@ -180,7 +180,6 @@ void Proto_EvtSafe(void)
 uint16_t Proto_NetlistCount(void) { return s_net_count; }
 uint8_t  Proto_Busy(void)           { return s_busy; }
 uint8_t  Proto_AbortRequested(void) { return s_abort; }
-void     Proto_ClearAbort(void)     { s_abort = 0U; }
 uint8_t  Proto_HvArmed(void)      { return s_armed; }
 void     Proto_ClearArm(void)     { s_armed = 0U; }
 int32_t  Proto_LimitRMaxMohm(void)   { return s_lim_r_mohm; }

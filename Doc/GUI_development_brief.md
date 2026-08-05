@@ -175,13 +175,12 @@ or suspend the timeout during a run.
 > the next measurement point, as §3.2.1 has always said. Nothing for the GUI to change — the
 > contract did not move.
 >
-> ⚠ **One hole is still open — `FW-09`.** An `ABORT` arriving in the first moments of a run can
-> still be lost: the sequencer clears the abort flag a second time as the run starts, and an
-> abort landing in that window is wiped after the GUI has already had its `<OK`. Three lines to
-> fix, not yet done. **No GUI change required** — the contract is unchanged and your behaviour
-> should be unchanged. It matters only in that an abort pressed the instant a run starts may do
-> nothing on the current firmware, so do not treat a missing stop as a GUI bug until FW-09 and
-> BU-12 are closed.
+> ✅ **`FW-09` is fixed too** (2026-08-05). An `ABORT` arriving in the first moments of a run
+> used to be wiped by a redundant second clear at run start. The flag is now cleared in exactly
+> two places — before the run is queued, and when it reports `!DONE` — so there is no window.
+> `ABORT` is now correct by inspection at every point in a run; **BU-12 still has to prove it on
+> real hardware**, because this was a scheduling bug and a clean build proves nothing about
+> scheduling.
 
 > Side effect to expect: `CONT RUN` and `RES RUN` assert the matrix fixture *before* the busy
 > check, so a refused run is still preceded by `!FIXTURE mtx` — and, if HV was armed, by
@@ -467,7 +466,17 @@ The protocol layer was verified against this brief: codec byte-for-byte, connect
 safety behaviour, and live wire captures against the simulator. Codec and connection manager
 are **conformant to the brief as written** — but see §8.4: the firmware-side review found a
 send-path deadlock in `connection.py` (BLOCKER) and signed wire values the codec rejects,
-both confirmed by re-running the probes on the GUI side. What remains open:
+both confirmed by re-running the probes on the GUI side.
+
+**§8.4 findings 1 and 2 are fixed (GUI side, 2026-08-05).** `_link_lost` is now called after
+`_io_lock` is released, and `!RES` milliohms, `!INSUL` leak_mohm, `<STATUS hv_mv`, `<LIMITS`
+and `!HV` parse as signed int32 (pins, counts and progress stay unsigned). Each has a
+regression test — the send-failure test runs `execute()` in a thread so a regression fails
+the test instead of hanging the suite — and the original probes now pass. Suite: 59 tests.
+Finding 3 (decode `errors="replace"`, the `AttributeError` race, empty-line tolerance) is
+acknowledged, not yet done.
+
+What remains open:
 
 **Questions for the firmware side**
 
