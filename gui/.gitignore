@@ -1,0 +1,9 @@
+# Byte-compiled files: platform- and version-specific, and stale copies get
+# imported by mistake.
+__pycache__/
+*.py[cod]
+
+# Session logs are per-run diagnostic output (brief 3.5 rule 5). They are
+# written next to the code for convenience, but they are evidence from one
+# run, not source.
+sessions/
