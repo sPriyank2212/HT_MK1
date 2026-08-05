@@ -22,7 +22,7 @@ static void insulation_safe(HvCard_t *hv)
   (void)HvCard_HvEnable(hv, 0U);
   (void)HvCard_SetVoltageCode(hv, 0U);
   (void)HvCard_Discharge(hv, 1U);
-  HAL_Delay(INSULATION_DISCHARGE_MS);
+  Board_SettleMs(INSULATION_DISCHARGE_MS);
   (void)HvCard_Discharge(hv, 0U);
   (void)HvCard_OpenAllRelays(hv);
 }
@@ -84,7 +84,7 @@ HAL_StatusTypeDef Insulation_TestPair(uint8_t board, uint8_t inject_pin,
   {
     goto safe_exit;
   }
-  HAL_Delay(INSULATION_RAMP_MS);
+  Board_SettleMs(INSULATION_RAMP_MS);
 
   /* The insulation reading is the LEAKAGE node (HV_RET, U302), NOT the rail. */
   st = HvCard_ReadLeakageRaw(hv, &res->sense_code);

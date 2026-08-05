@@ -44,28 +44,29 @@ static volatile uint8_t s_abort;   /* operator asked the run to stop    */
 /* -------------------------------------------------------------------------- */
 
 /**
-  * @brief  Send one already-formatted line, appending CRLF.
-  * @note   Blocking with a short timeout. Lines are emitted whole so the GUI
-  *         never has to reassemble a split frame; the logger writes through the
-  *         same UART, and because both write complete lines the two streams
-  *         interleave cleanly rather than corrupting each other.
-  * @param  s : [in] line body, without terminator.
+  * @brief  Send one complete line, terminator included, as a single write.
+  * @note   Must be ONE transmit. Three threads write this UART - the logger, the
+  *         sequencer streaming results, and comms answering commands - so a line
+  *         split across two calls can have another thread's line spliced into
+  *         the middle of it. Log_ConsoleWrite() holds the console mutex for the
+  *         whole line.
+  * @param  s   : [in] line bytes, CRLF included.
+  * @param  len : [in] byte count.
   * @retval None
   */
-static void proto_line(const char *s)
+static void proto_line(const char *s, uint16_t len)
 {
-  static const char crlf[2] = {'\r', '\n'};
-
   if (s_uart == NULL || s == NULL)
   {
     return;
   }
-  (void)HAL_UART_Transmit(s_uart, (uint8_t *)s, (uint16_t)strlen(s), PROTO_TX_TIMEOUT);
-  (void)HAL_UART_Transmit(s_uart, (uint8_t *)crlf, 2U, PROTO_TX_TIMEOUT);
+  (void)Log_ConsoleWrite((const uint8_t *)s, len, PROTO_TX_TIMEOUT);
 }
 
 /**
   * @brief  Format and send a line with a leading marker character.
+  * @note   Reserves three bytes of the buffer: one for the marker and two for
+  *         the CRLF appended here, so the line leaves as one frame.
   * @param  mark : [in] '<' reply, '!' event.
   * @param  fmt  : [in] printf-style format for the body.
   * @retval None
@@ -74,18 +75,28 @@ static void proto_emit(char mark, const char *fmt, ...)
 {
   char buf[PROTO_TX_MAX];
   va_list ap;
+  size_t len;
   int n;
 
   buf[0] = mark;
   va_start(ap, fmt);
-  n = vsnprintf(&buf[1], sizeof(buf) - 2U, fmt, ap);
+  n = vsnprintf(&buf[1], sizeof(buf) - 3U, fmt, ap);
   va_end(ap);
   if (n < 0)
   {
     return;
   }
-  buf[sizeof(buf) - 1U] = '\0';
-  proto_line(buf);
+
+  /* vsnprintf reports what it WOULD have written; clamp to what it did. */
+  len = (size_t)n;
+  if (len > (sizeof(buf) - 4U))
+  {
+    len = sizeof(buf) - 4U;
+  }
+  len += 1U;                     /* marker */
+  buf[len++] = '\r';
+  buf[len++] = '\n';
+  proto_line(buf, (uint16_t)len);
 }
 
 /**
@@ -208,12 +219,37 @@ void Proto_SetFixture(ProtoFixture_t fx)
 {
   if (fx != s_fixture && (s_armed != 0U || s_hv_mv != 0))
   {
-    TestCmd_t c = { CMD_FORCE_SAFE, 0U, 0U, 0U, 0.0f };
-    (void)Tasks_PostCommand(&c);
-    s_armed = 0U;
-    s_hv_mv = 0;
-    proto_emit('!', "HV 0");
-    proto_emit('!', "SAFE");
+    TestCmd_t c = { CMD_FORCE_SAFE, (uint16_t)fx, CMD_SAFE_ANNOUNCE_FIXTURE,
+                    0U, 0.0f };
+
+    /* Drop the arm here - it is our own state and must not survive the call
+     * even for a moment - but let the SEQUENCER announce !HV 0 / !SAFE /
+     * !FIXTURE once the rail is really down. Announcing them here said "safe
+     * to handle" while the hardware had not been touched yet (FW-08). */
+    s_armed   = 0U;
+    s_fixture = fx;
+
+    /* Stop any run in flight. The operator is telling us the harness has moved;
+     * continuing to drive the old one - at 500 V, in the insulation case - is
+     * not an option, and the queued force-safe alone would not execute until
+     * the run finished. Harmless when nothing is running: every run clears the
+     * flag on entry. */
+    s_abort = 1U;
+
+    if (Tasks_PostCommand(&c) == 0)
+    {
+      return;
+    }
+
+    /* Could not queue it: we cannot claim safety we have not achieved, so latch
+     * a fault - the safety task forces safe on its own 10 ms tick - and tell the
+     * GUI the truth, which is "fault", not !SAFE. No F-code: the numbered faults
+     * are measurement outcomes from the operation document, and this is an
+     * internal one. */
+    Safety_SignalFault("fixture change could not be queued");
+    Proto_EvtState("fault");
+    Proto_EvtFixture(fx);
+    return;
   }
   s_fixture = fx;
   Proto_EvtFixture(fx);

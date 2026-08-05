@@ -34,7 +34,8 @@ typedef enum
   CMD_CONTINUITY  = 1,   /* a=hi pin, b=lo pin                       */
   CMD_KELVIN      = 2,   /* a=hi pin, b=lo pin                       */
   CMD_INSULATION  = 3,   /* board, a=inject, b=return, vfrac         */
-  CMD_FORCE_SAFE  = 4,   /* drop everything to safe                  */
+  CMD_FORCE_SAFE  = 4,   /* drop everything to safe; b=1 also announces
+                          * the new fixture carried in a (see below)  */
   /* Whole-run commands driven by the GUI protocol. These iterate the netlist
    * (or the full 256x256 grid for discovery) and stream '!' events as they go,
    * rather than returning a single result. */
@@ -42,6 +43,11 @@ typedef enum
   CMD_RES_RUN     = 6,
   CMD_INSUL_RUN   = 7
 } TestCmdType_t;
+
+/* CMD_FORCE_SAFE.b: ask the sequencer to emit !FIXTURE (value in .a) after the
+ * hardware is safe. A fixture change that invalidates arming must not announce
+ * itself before the rail is actually down - see Proto_SetFixture(). */
+#define CMD_SAFE_ANNOUNCE_FIXTURE  1U
 
 typedef struct
 {

@@ -19,13 +19,15 @@ ID prefixes: `HW-` schematic/hardware · `FW-` firmware · `BU-` bring-up/verify
 | Blocking — firmware cannot proceed | **0** |
 | Agreed, awaiting schematic edit | 3 |
 | Awaiting a decision | 2 |
-| Firmware work queued | 6 |
-| Verify at bring-up | 9 |
-| Closed to date | 11 |
+| Firmware work queued | 4 |
+| Verify at bring-up | 10 |
+| Closed to date | 13 |
 
-**FW-07 is the one to look at first.** `>ABORT` does not stop a run — the comms thread is
-starved for the entire run, so the abort never reaches the flag the run loops poll. Found by
-the GUI-side review, confirmed in the source. FW-08 sits behind it and is unmasked by the fix.
+**`>ABORT` works again.** FW-07 and FW-08 are closed (CL-12, CL-13) — the comms thread was
+starved for the whole of every run, so the abort flag could never be set, and the fixture path
+announced `!SAFE` before the hardware had been touched. Both were found by the GUI-side review.
+**Add to the bring-up list: prove abort on real hardware** — press it during a discover scan and
+during an insulation run, and confirm the run stops within one measurement point.
 
 **The 4-wire method is now proven on real hardware**, not just on paper: the ADS1232 bench rig
 measured a 0.033 Ω resistor to **0.4 %** with no current calibration at all, because the
@@ -72,8 +74,8 @@ window and nothing downstream can be finalised without it.
 | FW-04 | Mux address lines come from MCP23017 U21 on I2C3, not MCU GPIO. Update `bsp/board.c`, add OLAT shadow registers, and consider 400 kHz — a 256 × 256 scan is roughly 70 s of pure bus time at 100 kHz versus 18 s at 400 kHz. | 2026-07-27 |
 | ~~FW-05~~ | **DONE 2026-08-01** — `app/proto.c`, see CL-11. Original scope: implement the instrument side of the GUI protocol defined in `Doc/GUI_development_brief.md` §3 — line-based ASCII over the VCP at 115200. Replaces the current single-keystroke bring-up console (`c`/`k`/`i`/`s`/`f`/`r`). Needs: command parser, `<` replies with 2 s worst-case latency, `!` result streaming during a run, and `!STATE`/`!FIXTURE`/`!HV`/`!SAFE` events. The GUI is being built against this contract, so changes to it must be agreed, not made. | 2026-08-01 |
 | FW-06 | **`>STATUS` never reports `running` or `fault`.** `proto_exec` builds the reply from `s_armed` alone, so a GUI that reconnects mid-run and re-issues `>STATUS` — which the brief §3.5 rule 4 requires it to do — is told `idle` while a run is executing. `!STATE` does carry `running`, so the information exists; only the polled path is missing it. Documented as-is in the brief for now (§3.2, Appendix B) rather than changed silently: the reply is protocol-visible and the GUI is being built against it, so agree it first. Fix is to report from `s_busy` and `Safety_InFault()` as well. | 2026-08-05 |
-| FW-07 | **`>ABORT` cannot stop a run — the comms thread is starved for the whole run.** `tSequencer` is `osPriorityNormal`, `tComms` is `osPriorityBelowNormal`, and the sequencer never yields during a run: the settle delays are `HAL_Delay` (the stock `__weak` one — a busy-spin on `HAL_GetTick`, TIM1 timebase, nothing overrides it) and the I2C/SPI calls are polled. With `configUSE_PREEMPTION=1` a lower-priority task never runs while a higher-priority one is runnable, so `Proto_RxByte` is never called during a run: **the abort flag the run loops poll can never be set, and the polling in `tasks.c` is unreachable in practice.** Worse, RX is single-byte polled with no interrupt or DMA, so mid-run bytes are lost to overrun rather than buffered. Scale: insulation is 256 × ~250 ms ≈ 64 s, discover 65,536 × ~2 ms ≈ 131 s — an operator pressing Abort during a 500 V run has no effect for that long. Physical E-stop and the safety task (`osPriorityHigh`, blocks on `osDelay`) are unaffected. Found by the GUI-side task-2 review. Two candidate fixes, neither started: interrupt/DMA RX into a ring buffer with `tComms` blocking on it, or `osDelay` instead of `HAL_Delay` in the test settle paths so the sequencer yields. | 2026-08-05 |
-| FW-08 | **`Proto_SetFixture` announces `!SAFE` before the hardware is safe.** It posts `CMD_FORCE_SAFE` to the queue and then immediately emits `!HV 0` and `!SAFE`, without waiting for execution — so the instrument tells the GUI it is safe while the rail may still be up. Directly contradicts the brief's central rule that the GUI must never show a safe state it has not been told is real. Masked today by FW-07 (a fixture change cannot be received mid-run), so **fixing FW-07 unmasks this** — do them together. Also in the same path: the arm is dropped with no `!STATE idle`, and `!SAFE` is emitted twice (once inline, once when the queued force-safe runs). | 2026-08-05 |
+| ~~FW-07~~ | **DONE 2026-08-05** — see CL-12. Original scope: **`>ABORT` cannot stop a run — the comms thread is starved for the whole run.** `tSequencer` is `osPriorityNormal`, `tComms` is `osPriorityBelowNormal`, and the sequencer never yields during a run: the settle delays are `HAL_Delay` (the stock `__weak` one — a busy-spin on `HAL_GetTick`, TIM1 timebase, nothing overrides it) and the I2C/SPI calls are polled. With `configUSE_PREEMPTION=1` a lower-priority task never runs while a higher-priority one is runnable, so `Proto_RxByte` is never called during a run: **the abort flag the run loops poll can never be set, and the polling in `tasks.c` is unreachable in practice.** Worse, RX is single-byte polled with no interrupt or DMA, so mid-run bytes are lost to overrun rather than buffered. Scale: insulation is 256 × ~250 ms ≈ 64 s, discover 65,536 × ~2 ms ≈ 131 s — an operator pressing Abort during a 500 V run has no effect for that long. Physical E-stop and the safety task (`osPriorityHigh`, blocks on `osDelay`) are unaffected. Found by the GUI-side task-2 review. Two candidate fixes, neither started: interrupt/DMA RX into a ring buffer with `tComms` blocking on it, or `osDelay` instead of `HAL_Delay` in the test settle paths so the sequencer yields. | 2026-08-05 |
+| ~~FW-08~~ | **DONE 2026-08-05** — see CL-13. Original scope: **`Proto_SetFixture` announces `!SAFE` before the hardware is safe.** It posts `CMD_FORCE_SAFE` to the queue and then immediately emits `!HV 0` and `!SAFE`, without waiting for execution — so the instrument tells the GUI it is safe while the rail may still be up. Directly contradicts the brief's central rule that the GUI must never show a safe state it has not been told is real. Masked today by FW-07 (a fixture change cannot be received mid-run), so **fixing FW-07 unmasks this** — do them together. Also in the same path: the arm is dropped with no `!STATE idle`, and `!SAFE` is emitted twice (once inline, once when the queued force-safe runs). | 2026-08-05 |
 | DOC-01 | `fw_status.txt` still describes the 2-wire path, 10 mA excitation, and Matrix U33 as the resistance ADC. Sync it with v1.4. | 2026-07-27 |
 
 ### Verify at bring-up
@@ -91,6 +93,7 @@ window and nothing downstream can be finalised without it.
 | BU-11 | **Measure sense-path leakage.** `HI_SENSE` is the common node of 32 CD74HC4051s with 31 disabled; summed off-channel leakage into the 4.99 kΩ series resistor could be a large offset (1 µA → 5 mV). Should largely cancel between HI and LO legs, but unverified. Cheap test: enable a sense bank with no excitation and check the differential reads near zero. Rises sharply with temperature. See §7.4. | 2026-08-01 |
 | BU-08 | **Do not copy the bench resistance formula.** ADS1232 full scale is ±0.5·VREF/Gain, ADS124S08 is ±VREF/Gain. The bench divides by `2 × gain × 2²³`; the product must divide by `gain × 2²³`. Copy-pasting gives a silent 2× error. | 2026-08-01 |
 | BU-06 | Harness build must encode `ISO_HV_CARD_ENx` per card slot (card 1 → EN1 … card 4 → EN4). HV_Card-1 sheet 1 states this is done in the cable, not the schematic. | 2026-07-27 |
+| BU-12 | **Prove `>ABORT` on real hardware.** The FW-07 fix (CL-12) is verified only by inspection and a clean link — the failure was a scheduling one, and scheduling bugs do not show up in a build. Press abort during a 256-pin discover scan and again during an insulation run; the run must stop within roughly one measurement point and still emit its `!DONE`. Check at the same time that a mid-run `>PING` is answered inside 2 s, and that a `>FIXTURE` change during a run stops it. | 2026-08-05 |
 
 ---
 
@@ -98,6 +101,8 @@ window and nothing downstream can be finalised without it.
 
 | ID | Closed | Item | Resolution |
 |---|---|---|---|
+| CL-13 | 2026-08-05 | FW-08 premature `!SAFE` | `Proto_SetFixture` no longer announces safety it has not achieved. It drops the arm locally, posts `CMD_FORCE_SAFE` carrying the new fixture, and the **sequencer** emits `!HV 0` → `!SAFE` → `!FIXTURE` once the rail is really down — published ordering preserved. The duplicate `!SAFE` is gone with it. If the post fails the instrument latches a fault and emits `!STATE fault` rather than `!SAFE`. A fixture change now also sets the abort flag, so declaring a move stops a run in flight instead of letting 500 V continue for up to 64 s — newly reachable, and newly necessary, once FW-07 let the command through mid-run. `CMD_FORCE_SAFE` also emits `!HV 0` before `!SAFE` on every path now, so `>SAFE` no longer drops the rail silently. |
+| CL-12 | 2026-08-05 | FW-07 `>ABORT` could not stop a run | Three causes, all fixed. **RX is interrupt-driven** — `LPUART1_IRQHandler` defined in `log.c` (which owns the hand-rolled LPUART1 bring-up, so CubeMX generated no handler), NVIC priority 5 = `configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY`, bytes pushed to a queue from the ISR and re-armed there; an error callback clears overrun and re-arms, without which one overrun would deafen the instrument permanently. **`tComms` moved `osPriorityBelowNormal` → `osPriorityAboveNormal`** — it blocks on the RX queue so it costs nothing until a byte lands, and it must outrank the sequencer or it is never scheduled during a run. **Settle delays yield** — new `Board_SettleMs()` uses `osDelay` under the RTOS (`+1` tick, so a settle can never come out shorter than `HAL_Delay` gave) and `HAL_Delay` before the scheduler; `continuity.c`, `kelvin.c` and `insulation.c` use it. Raising the comms priority also forced a fourth fix: three threads write the console UART and `HAL_UART_Transmit` is not reentrant, so a preempted line was silently dropped — a lost `<` reply is a 2 s GUI timeout. All console output now goes through `Log_ConsoleWrite()` under a mutex, and `proto_emit` builds the CRLF into its buffer so a line leaves as **one** write. +5,888 bytes: the HAL's IT-receive path was previously discarded by `--gc-sections`. |
 | CL-11 | 2026-08-01 | FW-05 GUI protocol, instrument side | `app/proto.c` — line parser, one `<` reply per command on every path including errors, `!` event streaming from the sequencer, and `!STATE`/`!FIXTURE`/`!HV`/`!SAFE`. Replaces the single-keystroke console. Netlist upload/download, whole-run continuity (verify and discover) and insulation added to the sequencer as `CMD_CONT_RUN`/`CMD_RES_RUN`/`CMD_INSUL_RUN`. `>INSUL ARM` refuses unless the fixture is `hv`; `>MANUAL RELAY` refused outright. Log lines now `#`-prefixed so the GUI can separate them. |
 | CL-10 | 2026-08-01 | FW-01 ADS124S08 driver | Written. io vtable for CS/RESET/START/DRDY (all on expander U69, not GPIO), SPI mode 1, internal 2.5 V reference explicitly switched ON (REFCON is 00 at reset — selecting the reference is not enough), device-ID check, SFOCAL, RDATA-based reads, timed conversion waits because polling DRDY costs an I2C round-trip. Compiles clean under -Wall -Wextra. |
 | CL-09 | 2026-08-01 | HW-06 one clock net | **Done in Matrix_Card 2** — `SPI1_SCLK` throughout including J101; `SPI1_SCK` no longer exists on the Matrix card. |
@@ -113,6 +118,31 @@ window and nothing downstream can be finalised without it.
 ---
 
 ## Activity log
+
+### 2026-08-05 (FW-07 and FW-08 fixed)
+- **`>ABORT` works.** The abort flag the run loops poll could never be set, because `tComms` sat
+  below `tSequencer` and the sequencer never yielded — its settle delays were the stock
+  busy-spin `HAL_Delay`. Fixed on three fronts: interrupt-driven console RX, `tComms` raised
+  above the sequencer, and `Board_SettleMs()` yielding instead of spinning. CL-12.
+- **A fourth fix fell out of the third.** Raising the comms priority meant it could preempt the
+  sequencer mid-line, and `HAL_UART_Transmit` is not reentrant — three threads write that UART,
+  so a preempted line would have been silently dropped. A dropped `<` reply is a 2 s GUI
+  timeout and a "link lost". All console output now goes through `Log_ConsoleWrite()` under a
+  mutex, and each protocol line leaves as a single write with its CRLF built in. **This one was
+  a regression I introduced and caught in review, not a pre-existing bug** — worth remembering
+  that raising a task's priority is a change to every shared resource it touches.
+- **FW-08 fixed** — the fixture path posts the force-safe and lets the *sequencer* emit
+  `!HV 0` → `!SAFE` → `!FIXTURE` once the rail is down, in the published order. CL-13.
+- **New hazard closed while in there:** fixing FW-07 made "operator declares a fixture change
+  during a live run" reachable for the first time. It now aborts the run rather than letting an
+  insulation run continue at 500 V for up to 64 s.
+- Also: every force-safe now emits `!HV 0` before `!SAFE`, so `>SAFE` no longer drops the rail
+  without telling the GUI. Brief updated for all of it — the contract itself did not move.
+- Links clean at **64,920 bytes**, up 5,888 from 58,932. The increase is the HAL's IT-receive
+  path (`HAL_UART_IRQHandler`, `UART_RxISR_*`, `UART_Start_Receive_IT` ≈ 4.9 kB), which
+  `--gc-sections` used to discard when the console was transmit-only. 12.4 % of flash.
+- Raised **BU-12** — this was a scheduling bug, and a clean build proves nothing about
+  scheduling. Abort must be exercised on real hardware.
 
 ### 2026-08-05 (later still — GUI side folded in the answers)
 - The GUI side struck both §8.2 questions as answered, folded the §8.3 refinements into

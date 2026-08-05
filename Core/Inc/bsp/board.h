@@ -57,6 +57,18 @@ extern HvCard_t          g_hv[BOARD_HV_COUNT];
   */
 HAL_StatusTypeDef Board_Init(void);
 
+/**
+  * @brief  Wait for hardware to settle, yielding the CPU if the RTOS is running.
+  * @note   Use this instead of HAL_Delay() anywhere inside a test. HAL_Delay
+  *         busy-spins, so a settle inside a run held the CPU at sequencer
+  *         priority and starved everything below it - the protocol parser
+  *         included, which is what stopped >ABORT working (FW-07). Never waits
+  *         less than HAL_Delay() would.
+  * @param  ms : [in] settle time, milliseconds.
+  * @retval None
+  */
+void Board_SettleMs(uint32_t ms);
+
 #ifdef __cplusplus
 }
 #endif

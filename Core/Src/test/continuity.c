@@ -50,7 +50,7 @@ HAL_StatusTypeDef Continuity_TestPair(uint16_t hi_pin, uint16_t lo_pin,
     return st;
   }
 
-  HAL_Delay(CONTINUITY_SETTLE_MS);
+  Board_SettleMs(CONTINUITY_SETTLE_MS);
 
   st = Frontend_ReadRaw(&g_frontend, &res->code);
   if (st == HAL_OK)

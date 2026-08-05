@@ -21,6 +21,7 @@ typedef struct
 
 static osMessageQueueId_t s_logq;
 static UART_HandleTypeDef *s_uart;
+static osMutexId_t        s_txmtx;   /* serialises every console writer */
 
 /**
   * @brief  Map a log level to its single-character prefix.
@@ -49,9 +50,36 @@ static char log_level_char(LogLevel_t lvl)
   */
 HAL_StatusTypeDef Log_Init(UART_HandleTypeDef *huart)
 {
-  s_uart = huart;
-  s_logq = osMessageQueueNew(LOG_QUEUE_DEPTH, sizeof(LogMsg_t), NULL);
-  return (s_logq != NULL && s_uart != NULL) ? HAL_OK : HAL_ERROR;
+  s_uart  = huart;
+  s_logq  = osMessageQueueNew(LOG_QUEUE_DEPTH, sizeof(LogMsg_t), NULL);
+  s_txmtx = osMutexNew(NULL);
+  return (s_logq != NULL && s_uart != NULL && s_txmtx != NULL) ? HAL_OK : HAL_ERROR;
+}
+
+HAL_StatusTypeDef Log_ConsoleWrite(const uint8_t *data, uint16_t len, uint32_t timeout)
+{
+  HAL_StatusTypeDef st;
+
+  if (s_uart == NULL || data == NULL || len == 0U)
+  {
+    return HAL_ERROR;
+  }
+
+  /* Before the scheduler runs there is no mutex and no one to race with. */
+  if (s_txmtx == NULL || osKernelGetState() != osKernelRunning)
+  {
+    return HAL_UART_Transmit(s_uart, (uint8_t *)data, len, timeout);
+  }
+
+  /* Wait long enough to outlast a full line in flight at 115200 rather than
+   * dropping ours: a dropped protocol reply costs the GUI a 2 s timeout. */
+  if (osMutexAcquire(s_txmtx, timeout) != osOK)
+  {
+    return HAL_ERROR;
+  }
+  st = HAL_UART_Transmit(s_uart, (uint8_t *)data, len, timeout);
+  (void)osMutexRelease(s_txmtx);
+  return st;
 }
 
 /**
@@ -130,10 +158,7 @@ void Log_Task(void *argument)
   {
     if (osMessageQueueGet(s_logq, &m, NULL, osWaitForever) == osOK)
     {
-      if (s_uart != NULL)
-      {
-        (void)HAL_UART_Transmit(s_uart, (uint8_t *)m.buf, m.len, 100U);
-      }
+      (void)Log_ConsoleWrite((uint8_t *)m.buf, m.len, 100U);
     }
   }
 }
@@ -190,5 +215,31 @@ UART_HandleTypeDef *Log_HwInit_LPUART1(void)
   {
     return NULL;
   }
+
+  /* RX is interrupt-driven (see CommsTask): the receiver must not depend on a
+   * task being scheduled to catch a byte, or commands sent while the sequencer
+   * is mid-run are lost to overrun - which is what made >ABORT useless (FW-07).
+   *
+   * Priority 5 == configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY, the most urgent
+   * level still permitted to call the FreeRTOS *FromISR* API. Anything more
+   * urgent would trip the configASSERT in the kernel.
+   */
+  HAL_NVIC_SetPriority(LPUART1_IRQn, 5U, 0U);
+  HAL_NVIC_EnableIRQ(LPUART1_IRQn);
+
   return &s_hlpuart1;
+}
+
+/**
+  * @brief  LPUART1 interrupt entry point.
+  * @note   Defined here rather than in stm32g4xx_it.c because this file owns
+  *         the peripheral: LPUART1 is brought up by hand above, not by CubeMX,
+  *         so no generated handler exists. The startup file's symbol is weak,
+  *         so this definition wins. HAL dispatches to HAL_UART_RxCpltCallback /
+  *         HAL_UART_ErrorCallback, both implemented in app/tasks.c.
+  * @retval None
+  */
+void LPUART1_IRQHandler(void)
+{
+  HAL_UART_IRQHandler(&s_hlpuart1);
 }

@@ -22,17 +22,23 @@
 
 /* ---- shared state -------------------------------------------------------- */
 static osMessageQueueId_t s_cmdq;
+static osMessageQueueId_t s_rxq;        /* console RX bytes, ISR -> tComms     */
 static osMutexId_t        s_hwmtx;      /* serialises I2C/SPI bus access      */
-static UART_HandleTypeDef *s_console;   /* VCP for the bring-up command input */
+static UART_HandleTypeDef *s_console;   /* VCP carrying the GUI protocol      */
+static uint8_t            s_rx_byte;    /* landing slot for HAL_UART_Receive_IT */
 static volatile uint8_t   s_fault;
 static volatile uint8_t   s_hv_active;
 
 /* ---- thread handles + attributes ----------------------------------------- */
 static osThreadId_t s_safety, s_seq, s_comms, s_logger;
 
+/* tComms sits ABOVE tSequencer deliberately (FW-07). It spends its life blocked
+ * on the RX queue, so it costs nothing until a byte arrives; below the sequencer
+ * it was never scheduled during a run, and >ABORT - which works by setting a
+ * flag the run loops poll - could not be received at all. */
 static const osThreadAttr_t s_attr_safety = { .name = "tSafety",    .priority = osPriorityHigh,        .stack_size = 256 * 4 };
 static const osThreadAttr_t s_attr_seq    = { .name = "tSequencer", .priority = osPriorityNormal,      .stack_size = 512 * 4 };
-static const osThreadAttr_t s_attr_comms  = { .name = "tComms",     .priority = osPriorityBelowNormal, .stack_size = 256 * 4 };
+static const osThreadAttr_t s_attr_comms  = { .name = "tComms",     .priority = osPriorityAboveNormal, .stack_size = 256 * 4 };
 static const osThreadAttr_t s_attr_logger = { .name = "tLogger",    .priority = osPriorityLow,         .stack_size = 256 * 4 };
 
 #if (HT_ENABLE_ADS1232 != 0)
@@ -230,7 +236,17 @@ static void run_command(const TestCmd_t *c)
     case CMD_FORCE_SAFE:
       force_safe_all();
       Proto_ClearArm();
+      /* Announce only now, with the rail actually down. Emitting !SAFE at the
+       * point the command was *posted* told the GUI it was safe to handle the
+       * harness while the hardware had not been touched yet (FW-08). */
+      Proto_EvtHv(0);
       Proto_EvtSafe();
+      if (c->b == CMD_SAFE_ANNOUNCE_FIXTURE)
+      {
+        /* Ordering !HV 0 -> !SAFE -> !FIXTURE is the published contract
+         * (GUI_development_brief.md 3.2.1); keep it. */
+        Proto_EvtFixture((ProtoFixture_t)c->a);
+      }
       LOG_I("SEQ", "forced safe");
       break;
     case CMD_CONT_RUN:
@@ -450,11 +466,51 @@ static void SequencerTask(void *arg)
  * builds and posts commands itself (see Core/Src/app/proto.c). */
 
 /**
-  * @brief  Bring-up console thread: turn single VCP keystrokes into commands.
-  * @note   Best-effort single-byte RX (shares the UART with the logger, so
-  *         HAL_BUSY just retries next loop). Key map: c/k/i = continuity/kelvin/
-  *         insulation, s = force-safe, f = signal fault, r = clear fault. Runs
-  *         forever.
+  * @brief  Console RX complete: hand the byte to tComms and re-arm.
+  * @note   Runs in the LPUART1 ISR at priority 5, the most urgent level allowed
+  *         to call the FreeRTOS FromISR API. Re-arming here is what keeps the
+  *         receiver alive; miss it once and the link goes deaf.
+  * @param  huart : [in] UART reporting the completion.
+  * @retval None
+  */
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
+{
+  if (huart == s_console)
+  {
+    /* Drop-if-full rather than block: an ISR must not wait, and a full queue
+     * means tComms is wedged, which losing one byte will not make worse. */
+    (void)osMessageQueuePut(s_rxq, &s_rx_byte, 0U, 0U);
+    (void)HAL_UART_Receive_IT(huart, &s_rx_byte, 1U);
+  }
+}
+
+/**
+  * @brief  Console UART error: clear the condition and re-arm RX.
+  * @note   Overrun is the expected one - the GUI can send while the line is
+  *         busy. HAL aborts the pending receive on any error, so without this
+  *         re-arm a single overrun would silently deafen the instrument for
+  *         good.
+  * @param  huart : [in] UART reporting the error.
+  * @retval None
+  */
+void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
+{
+  if (huart == s_console)
+  {
+    __HAL_UART_CLEAR_OREFLAG(huart);
+    __HAL_UART_CLEAR_NEFLAG(huart);
+    __HAL_UART_CLEAR_FEFLAG(huart);
+    __HAL_UART_CLEAR_PEFLAG(huart);
+    (void)HAL_UART_Receive_IT(huart, &s_rx_byte, 1U);
+  }
+}
+
+/**
+  * @brief  Comms thread: feed received bytes to the protocol parser.
+  * @note   Blocks on the RX queue, so it consumes nothing until a byte arrives -
+  *         which is why it can afford to sit above the sequencer in priority.
+  *         That placement is the point: a command must be parsed and answered
+  *         while a run is executing, not after it (FW-07). Runs forever.
   * @param  arg : [in] unused FreeRTOS thread argument.
   * @retval None (does not return).
   */
@@ -464,22 +520,21 @@ static void CommsTask(void *arg)
   (void)arg;
 
   Proto_Init(s_console);
+
+  if (s_console != NULL)
+  {
+    (void)HAL_UART_Receive_IT(s_console, &s_rx_byte, 1U);
+  }
+
   LOG_I("COM", "proto ready (see GUI_development_brief.md)");
   Proto_EvtState("idle");
   Proto_EvtFixture(PROTO_FIXTURE_NONE);
 
   for (;;)
   {
-    /* Best-effort single-byte RX. Shares the UART with the logger, so HAL_BUSY
-     * simply retries on the next pass. */
-    if (s_console != NULL &&
-        HAL_UART_Receive(s_console, &ch, 1U, 100U) == HAL_OK)
+    if (osMessageQueueGet(s_rxq, &ch, NULL, osWaitForever) == osOK)
     {
       Proto_RxByte(ch);
-    }
-    else
-    {
-      osDelay(2U);
     }
   }
 }
@@ -538,9 +593,12 @@ void Tasks_Init(void)
 
   s_hwmtx = osMutexNew(NULL);
   s_cmdq  = osMessageQueueNew(8U, sizeof(TestCmd_t), NULL);
-  if (s_cmdq == NULL)
+  /* One command line's worth of headroom, so a burst arriving while tComms is
+   * mid-reply is buffered rather than dropped. */
+  s_rxq   = osMessageQueueNew(PROTO_RX_MAX + 8U, sizeof(uint8_t), NULL);
+  if (s_cmdq == NULL || s_rxq == NULL)
   {
-    console_puts("[boot] cmd queue alloc FAILED (heap?)\r\n");
+    console_puts("[boot] queue alloc FAILED (heap?)\r\n");
   }
 
   s_logger = osThreadNew(Log_Task,      NULL, &s_attr_logger);

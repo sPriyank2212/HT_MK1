@@ -57,7 +57,7 @@ HAL_StatusTypeDef Kelvin_MeasurePair(uint16_t hi_pin, uint16_t lo_pin,
     goto release;
   }
 
-  HAL_Delay(KELVIN_SETTLE_MS);
+  Board_SettleMs(KELVIN_SETTLE_MS);
 
   /* NOT IMPLEMENTED - awaiting FW-01 (drivers/ads124s08).
    *

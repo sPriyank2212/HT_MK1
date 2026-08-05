@@ -10,6 +10,27 @@
 /* USER CODE END Header */
 
 #include "bsp/board.h"
+#include "cmsis_os2.h"
+
+/**
+  * @brief  Wait for hardware to settle, yielding the CPU if the RTOS is running.
+  * @note   See board.h. The +1 mirrors what HAL_Delay() does internally: the
+  *         first tick may be about to fire, so without it a request for 2 ms
+  *         could return after barely 1. Settle times must never shrink.
+  * @param  ms : [in] settle time, milliseconds.
+  * @retval None
+  */
+void Board_SettleMs(uint32_t ms)
+{
+  if (osKernelGetState() == osKernelRunning)
+  {
+    (void)osDelay(ms + 1U);
+  }
+  else
+  {
+    HAL_Delay(ms);
+  }
+}
 
 MatrixCard_t      g_matrix;
 ControlFrontend_t g_frontend;

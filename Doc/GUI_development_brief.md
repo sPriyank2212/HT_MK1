@@ -168,13 +168,12 @@ onto the sequencer queue, and those are answered `<OK started` the moment they a
 not when they run. **Every command is answered well inside the 2 s timeout.** Do not lengthen
 or suspend the timeout during a run.
 
-> ⚠ **Known firmware defect — `FW-07`, being fixed. Do not build around it, and do not model it
-> in the simulator.** On the instrument as it stands the comms thread is starved for the whole
-> duration of a run, so a command sent mid-run is not answered until the run ends — and
-> `ABORT` therefore does not currently stop a run. The contract above is what the firmware is
-> being fixed to meet; it is the simulator's job to model the contract, not the bug. What the
-> GUI *should* do meanwhile is unchanged: send `ABORT`, wait for `<OK`, and keep showing the
-> run as in progress until `!DONE` arrives. Never show a run as stopped because you asked.
+> ✅ **`FW-07` is fixed** (2026-08-05). The comms thread used to be starved for the whole
+> duration of a run, so mid-run commands went unanswered and `ABORT` did nothing. Console RX is
+> now interrupt-driven, the comms thread runs above the sequencer, and the settle delays inside
+> a run yield instead of busy-spinning. Commands are answered mid-run and `ABORT` stops a run at
+> the next measurement point, as §3.2.1 has always said. Nothing for the GUI to change — the
+> contract did not move.
 
 > Side effect to expect: `CONT RUN` and `RES RUN` assert the matrix fixture *before* the busy
 > check, so a refused run is still preceded by `!FIXTURE mtx` — and, if HV was armed, by
@@ -216,8 +215,16 @@ arm on the HV fixture, declare a move back to the matrix, then energise.
 
 Three details, all confirmed in the firmware (§8.3 Q2): **`!HV 0` is emitted even when the rail
 was already at 0** — an armed-but-idle change still produces it; **no `!STATE idle` accompanies
-the arm drop**, so do not wait for one; and **`!SAFE` may arrive twice** for a single change,
-once inline and once when the force-safe executes.
+the arm drop**, so do not wait for one; and **the three events arrive only once the hardware is
+actually safe**, not when the command was accepted. The `<OK` comes back immediately; the events
+follow.
+
+**A fixture change also stops a run in progress.** Changed 2026-08-05 with the FW-08 fix. If the
+operator declares a move while a run is executing, the run aborts at the next measurement point
+and emits its `!DONE` as usual, and the `!HV 0` / `!SAFE` / `!FIXTURE` follow after that. So on
+this path the three events can be delayed by up to one measurement point, and an insulation run
+will emit its own `!HV 0` / `!SAFE` first — `!SAFE` is idempotent (§3.4), so treat the repeat as
+confirmation. The GUI must not block waiting for `!FIXTURE` before letting the operator continue.
 
 **Malformed input.** Anything unknown or unparseable gives `<ERR ESYNTAX <what>`. A line longer
 than **72 characters** is discarded up to the next newline and answered once with
@@ -265,15 +272,20 @@ the handling prompt off `!SAFE` and nothing else, and never off event ordering.
 - **`!SAFE` is emitted when the hardware is forced safe**: at the end of an insulation run, on
   `>SAFE`, on `>ABORT` while idle, and on a fixture change that invalidates arming (§3.2.1). It
   is *not* emitted at the end of a continuity or resistance run.
-- **`!SAFE` is idempotent and may repeat** — a fixture change emits it twice (§8.3 Q2). Treat a
+- **`!SAFE` is idempotent and may repeat.** One force-safe emits it once, but a run aborted by a
+  fixture change produces the run's own `!SAFE` and then the fixture change's (§3.2.1). Treat a
   repeat as confirmation, not as a new event to reconcile.
+- **Every force-safe emits `!HV 0` immediately before its `!SAFE`** — on `>SAFE`, on `>ABORT`
+  while idle, and on a fixture change. Changed 2026-08-05; previously `>SAFE` dropped the rail
+  without saying so, leaving the GUI's rail reading stale.
 - **`!FIXTURE` can arrive unsolicited.** `CONT RUN` and `RES RUN` assert `mtx` themselves, so
   the GUI will see `!FIXTURE mtx` it did not ask for. Treat any `!FIXTURE` as authoritative and
   drop any armed state you are showing.
 - **`!HV` is emitted on every change the firmware makes**, and by `HV SET` ahead of its `<OK`.
   `>= 50000` mV is live (§3.5 rule 2).
-- `!STATE fault` is defined but not emitted by the current firmware — faults arrive as
-  `!FAULT`. Handle it anyway.
+- `!STATE fault` is emitted only in one internal case — a force-safe that could not be queued,
+  where the instrument refuses to claim safety it has not achieved. Measurement faults arrive as
+  `!FAULT` instead. Handle both.
 - **At boot the instrument emits `!STATE idle` then `!FIXTURE none`**, unprompted. If the GUI
   is already attached it will see these; if it connects later it will not, which is why
   reconnect re-issues `>STATUS` (§3.5 rule 4).
@@ -507,14 +519,20 @@ hardware-touching commands is queued, and those are answered `<OK started` at en
 "accepted and queued behind the run" wording in §3.2.1 was wrong and is now corrected. **Keep
 the 2 s timeout as it is** — do not lengthen or suspend it during a run.
 
-*But you were right that something is broken.* On the instrument today the comms thread runs
-below the sequencer in priority, and the sequencer never yields during a run — its settle
-delays busy-spin rather than blocking. So the comms thread is starved for the entire run:
-mid-run commands are not answered until it ends, and **`ABORT` does not currently stop a run**.
-Raised as **FW-07**, with a second defect it hides (below). The contract is what the firmware
-is being fixed to meet — **build to the contract, and do not model the defect in the
-simulator**. Deviation 9 in your list is therefore backwards: your simulator's
-answer-immediately behaviour is correct and should stay.
+*But you were right that something was broken.* The comms thread ran below the sequencer in
+priority, and the sequencer never yielded during a run — its settle delays busy-spun rather than
+blocking. So the comms thread was starved for the entire run: mid-run commands went unanswered
+and **`ABORT` did not stop a run at all**. Raised as **FW-07**, with a second defect it hid
+(below). Deviation 9 in your list is therefore backwards: your simulator's answer-immediately
+behaviour is correct and should stay.
+
+> **Both are now fixed** (2026-08-05, same day). RX is interrupt-driven, comms runs above the
+> sequencer, settle delays yield, `!SAFE` is emitted where the hardware is actually made safe,
+> and a fixture change now stops a run in flight. The contract did not move — §3.2.1 already
+> described the intended behaviour, and the firmware now meets it. Two knock-on details worth
+> picking up in the simulator: every force-safe now emits `!HV 0` immediately before `!SAFE`
+> (including plain `>SAFE`), and a fixture change during a run aborts it, so the run's `!DONE`
+> arrives before the fixture change's `!HV 0` / `!SAFE` / `!FIXTURE`.
 
 **Q2 — fixture-change force-safe. Both gaps confirmed, and there is a third.**
 
@@ -580,12 +598,14 @@ Implemented in `Core/Src/app/proto.c`, on hardware now.
 | **Refused by design** | `MANUAL RELAY` → `ERR EHW` |
 | **Runs but always fails** | `RES RUN` — every net reports `fail_high` with `!FAULT F08`. The resistance measurement path is mid-rewrite for a new ADC (firmware task FW-02); reporting a plausible number from a measurement path that no longer exists would be worse than reporting a failure. **Build the resistance screen anyway** — the event format is final, and your simulator should exercise it properly |
 | **Accepted, not yet driven** | `HV SET` — the arm check and the range check are real, and the value is echoed as `!HV <mv>`, but it does not yet move the rail. The rail is raised by the insulation run itself, at a fixed fraction. Build to the contract; the command's behaviour will not change, only what it drives |
-| **Not emitted yet** | `!STATE fault` (faults arrive as `!FAULT`), and `!RES` verdict `fail_low`. `>STATUS` never reports `running` or `fault` either — see §3.2. Handle all three, they are part of the contract |
-| **Broken, being fixed (FW-07)** | **`ABORT` does not stop a run**, and no command sent mid-run is answered until the run ends — the comms thread is starved for the whole run. Found by the GUI-side task-2 review; see §8.3 Q1. **Build to §3.2.1 regardless** and do not model this in the simulator |
+| **Not emitted yet** | `!RES` verdict `fail_low`, and `>STATUS` still never reports `running` or `fault` (FW-06, see §3.2). `!STATE fault` is now emitted, but only in the one internal case in §3.4. Handle all of them; they are part of the contract |
+| **Fixed 2026-08-05** | **FW-07** — `ABORT` now stops a run, and commands sent mid-run are answered mid-run. Console RX became interrupt-driven, comms moved above the sequencer, and settle delays yield instead of busy-spinning. **FW-08** — `!SAFE` is now emitted where the hardware is actually made safe, not where the request was posted. Both found by the GUI-side task-2 review |
 
 Two conveniences for hand-testing over a terminal:
 
 - the leading `>` on commands is **optional**, so you can type `PING` and press enter
 - log lines are prefixed `#`, so anything not starting `<` or `!` is display-only
 
-Firmware build note: the last clean hand-link came to **58,932 bytes**.
+Firmware build note: the last clean hand-link came to **64,920 bytes** (text 64,816 + data 104),
+up from 58,932 — the FW-07 fix pulls in the HAL's interrupt-driven UART receive path, which
+`--gc-sections` used to discard when the console was transmit-only. 12.4 % of the 512 kB flash.
