@@ -555,6 +555,7 @@ void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
 static void CommsTask(void *arg)
 {
   uint8_t ch;
+  uint32_t last_beat;
   (void)arg;
 
   Proto_Init(s_console);
@@ -568,11 +569,26 @@ static void CommsTask(void *arg)
   Proto_EvtState("idle");
   Proto_EvtFixture(PROTO_FIXTURE_NONE);
 
+  last_beat = osKernelGetTickCount();
+
   for (;;)
   {
-    if (osMessageQueueGet(s_rxq, &ch, NULL, osWaitForever) == osOK)
+    /* Timed wait rather than osWaitForever: this task also has to emit the
+     * liveness heartbeat, and it cannot do that while parked on the queue. A
+     * byte still wakes it immediately, so command latency is unchanged. */
+    if (osMessageQueueGet(s_rxq, &ch, NULL, PROTO_HEARTBEAT_MS) == osOK)
     {
       Proto_RxByte(ch);
+    }
+
+    /* Measured against the clock, not against queue timeouts: a steady trickle
+     * of received bytes would otherwise keep resetting the wait and starve the
+     * heartbeat - which is precisely when the GUI is still waiting to hear
+     * something back. configTICK_RATE_HZ is 1000, so ticks are milliseconds. */
+    if ((osKernelGetTickCount() - last_beat) >= PROTO_HEARTBEAT_MS)
+    {
+      last_beat = osKernelGetTickCount();
+      Proto_EvtHeartbeat();
     }
   }
 }

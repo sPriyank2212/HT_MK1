@@ -56,7 +56,7 @@ extern "C" {
  * OFF by default: nothing has to be remembered at release time, because
  * shipping it requires someone to have actively opted in. */
 #ifndef HT_ENABLE_ADS1232
-#define HT_ENABLE_ADS1232   1
+#define HT_ENABLE_ADS1232   0
 #endif
 
 /* Belt and braces. The Debug configuration defines DEBUG; a Release build does

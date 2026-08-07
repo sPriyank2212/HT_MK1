@@ -156,6 +156,41 @@ void Proto_EvtState(const char *state)
 }
 
 /**
+  * @brief  Name the state this instrument is in right now.
+  * @note   Deliberately NOT shared with the >STATUS reply. STATUS has always
+  *         answered hv_armed-or-idle and the GUI is written against that; the
+  *         heartbeat needs the more precise answer, because announcing "idle"
+  *         part-way through a run would be a lie the GUI would act on.
+  * @retval const char* one of "running" / "hv_armed" / "idle".
+  */
+static const char *proto_state_name(void)
+{
+  if (s_busy != 0U)
+  {
+    return "running";
+  }
+  return (s_armed != 0U) ? "hv_armed" : "idle";
+}
+
+/**
+  * @brief  Re-announce the current state as a liveness heartbeat.
+  * @note   The GUI treats five seconds without traffic as link loss and shows
+  *         "state unknown" (brief 3.5.3). A healthy idle instrument otherwise
+  *         says nothing at all, so that rule used to fire on a perfectly good
+  *         link about five seconds after the operator connected.
+  *
+  *         !STATE is the right carrier: the GUI already folds a repeat into the
+  *         state it holds, so this costs nothing beyond the traffic it exists
+  *         to provide, and it stays off the operator's log - which a periodic
+  *         '#' line would have filled.
+  * @retval None
+  */
+void Proto_EvtHeartbeat(void)
+{
+  proto_emit('!', "STATE %s", proto_state_name());
+}
+
+/**
   * @brief  Report the rail voltage to the GUI.
   * @note   Emitted on every change; the GUI treats >= PROTO_HV_LIVE_MV as live
   *         and must show the HV indicator from that point.

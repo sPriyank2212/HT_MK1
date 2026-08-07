@@ -83,6 +83,15 @@ void Proto_EvtFixture(ProtoFixture_t fx);
 void Proto_EvtHv(int32_t millivolts);
 void Proto_EvtSafe(void);
 
+/* Liveness heartbeat. The GUI calls five seconds of silence a lost link
+ * (brief 3.5.3); an idle instrument is otherwise mute. Call periodically,
+ * comfortably inside that window - see PROTO_HEARTBEAT_MS. */
+void Proto_EvtHeartbeat(void);
+
+/** Heartbeat cadence, ms. Two beats fit inside the GUI's 5 s link timeout, so
+ *  a single dropped line does not cost the link. */
+#define PROTO_HEARTBEAT_MS 2000U
+
 /* -------------------------------------------------------------------------- */
 /* State shared with the sequencer                                            */
 /* -------------------------------------------------------------------------- */
