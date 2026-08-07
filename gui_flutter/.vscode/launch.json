@@ -1,0 +1,67 @@
+{
+  // Run configurations for the HT_MK1 console. Pick one from the dropdown next
+  // to the Run button, or press F5 for whichever is selected.
+  //
+  //   "args"     -> passed to the app  (what --dart-entrypoint-args does on the
+  //                 command line, so no comma-joining needed here)
+  //   "toolArgs" -> passed to `flutter run` itself
+  "version": "0.2.0",
+  "configurations": [
+    {
+      // Start here. Proves the GUI renders and drives a full run with no
+      // hardware attached, so a failure is a GUI bug and nothing else.
+      "name": "HT_MK1 · simulator (start here)",
+      "request": "launch",
+      "type": "dart",
+      "program": "lib/main.dart",
+      "deviceId": "windows",
+      "args": ["--sim"]
+    },
+    {
+      // Simulator with a failing harness, to see faults, the fault list and
+      // the gate holding shut.
+      "name": "HT_MK1 · simulator, faults",
+      "request": "launch",
+      "type": "dart",
+      "program": "lib/main.dart",
+      "deviceId": "windows",
+      "args": ["--sim", "--scenario", "opens_shorts", "--nets", "24"]
+    },
+    {
+      // Simulator that drops the link mid-run — exercises "link lost, state
+      // unknown" without unplugging anything.
+      "name": "HT_MK1 · simulator, link drop",
+      "request": "launch",
+      "type": "dart",
+      "program": "lib/main.dart",
+      "deviceId": "windows",
+      "args": ["--sim", "--scenario", "disconnect", "--nets", "24"]
+    },
+    {
+      // The Nucleo. "auto" picks the ST-LINK VCP when it is the only one
+      // attached; swap for an explicit port if you have more than one.
+      "name": "HT_MK1 · Nucleo (serial auto)",
+      "request": "launch",
+      "type": "dart",
+      "program": "lib/main.dart",
+      "deviceId": "windows",
+      "args": ["--serial", "auto"]
+    },
+    {
+      "name": "HT_MK1 · Nucleo (COM7)",
+      "request": "launch",
+      "type": "dart",
+      "program": "lib/main.dart",
+      "deviceId": "windows",
+      "args": ["--serial", "COM7"]
+    },
+    {
+      "name": "HT_MK1 · list serial ports",
+      "request": "launch",
+      "type": "dart",
+      "program": "lib/main.dart",
+      "deviceId": "windows",
+      "args": ["--list-ports"]
+    }
+  ]
+}

@@ -1,0 +1,31 @@
+name: ht_mk1_gui
+description: HT_MK1 harness tester operator console — Flutter Windows desktop app.
+publish_to: "none"
+version: 1.0.0
+
+environment:
+  sdk: ">=3.0.0 <4.0.0"
+
+# Dependencies are kept to the bone. The Python GUI this replaces depends on
+# nothing outside the standard library, and the same rule is worth keeping: an
+# instrument console that can arm 500 V should not pull a dependency tree it
+# cannot audit.
+#
+# The one exception is the serial port. Dart has no serial API in dart:io, and
+# the instrument's link is a UART (LPUART1 -> ST-LINK VCP, 115200 8N1), so
+# talking to real hardware needs an FFI binding to libserialport. It is used by
+# exactly one file, lib/htproto/serial_transport.dart, which nothing else
+# imports - so the protocol layer, the UI and the whole test suite stay free of
+# it.
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_libserialport: ^0.4.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+
+flutter:
+  uses-material-design: false
