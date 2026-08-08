@@ -139,14 +139,19 @@ class Netbar extends StatelessWidget {
               child: Text(uses, style: t.netbarUses),
             ),
           const FlexSpacer(),
-          if (loaded) ...[
-            Btn('Change…', onTap: () {}),
-            if (dom != 'fix')
+          // The fixture file is a property of the hardware, not something an
+          // operator loads or swaps — no Change…/Select… for it.
+          if (dom != 'fix')
+            if (loaded) ...[
+              Btn('Change…',
+                  onTap:
+                      dom == 'hv' ? s.openNlPicker : s.openMtxNlExplainer),
               Btn('Unload', onTap: () => s.unloadNetlist(dom)),
-          ] else
-            Btn('Select…',
-                variant: BtnVariant.primary,
-                onTap: dom == 'hv' ? s.openNlPicker : () {}),
+            ] else
+              Btn('Select…',
+                  variant: BtnVariant.primary,
+                  onTap:
+                      dom == 'hv' ? s.openNlPicker : s.openMtxNlExplainer),
         ],
       ),
     );

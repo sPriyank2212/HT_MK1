@@ -36,6 +36,7 @@ import '../design/widgets.dart' show PillVariant;
 import '../htproto/codec.dart' as proto;
 import '../htproto/connection.dart';
 import '../htproto/messages.dart' as msg;
+import '../htproto/netlist_file.dart';
 
 /// matches PROTO_HV_LIVE_MV in the firmware
 const int kHvLiveMv = 50000;
@@ -46,6 +47,16 @@ class LogEntry {
   final String src;
   final String message;
   const LogEntry(this.t, this.lvl, this.src, this.message);
+}
+
+/// One line of raw wire traffic — the exact text `SessionLogger` writes to
+/// the session file's `[tx]`/`[rx]` lines, surfaced live instead of read back
+/// off disk. `dir` is `'tx'` or `'rx'`.
+class WireLogEntry {
+  final DateTime t;
+  final String dir;
+  final String text;
+  const WireLogEntry(this.t, this.dir, this.text);
 }
 
 class PillState {
@@ -120,6 +131,19 @@ class AppState extends ChangeNotifier {
   String logLineText =
       '[   0.000] INFO  bsp   Board_Init complete — idle state safe';
 
+  /// 'ops' (the human-readable log above) | 'wire' (raw tx/rx traffic).
+  /// Independent of [logOpen] — switching tabs while collapsed just changes
+  /// what the next expand shows.
+  String logView = 'ops';
+
+  /// Raw wire traffic — exactly what `SessionLogger` writes to the session
+  /// file, surfaced live. Capped: a heartbeat every 2 s plus every streamed
+  /// run event adds up over a full shift, and this is operator-visible
+  /// scrollback, not the audit trail — the session file on disk is already
+  /// complete and unbounded; this doesn't need to be too.
+  static const int wireLogCap = 2000;
+  final List<WireLogEntry> wireLog = <WireLogEntry>[];
+
   final math.Random _rand = math.Random();
 
   // -- verdict panel --
@@ -192,6 +216,7 @@ class AppState extends ChangeNotifier {
   // -- modals --
   bool mdNlOpen = false;
   bool mdVerifyOpen = false;
+  bool mdMtxOpen = false;
   bool ackChecked = false;
 
   // -------------------------------------------------------------------------
@@ -208,6 +233,10 @@ class AppState extends ChangeNotifier {
   /// unknown | safe | live — never inferred
   String handling = 'unknown';
 
+  /// A latched fault. The only recovery is `>FAULT CLEAR` (brief §3.2.1,
+  /// FW-10) — never automatic, always a deliberate operator action.
+  bool get inFault => instState == proto.State.fault;
+
   String? runKind;
   int doneCount = 0;
   int totalCount = 0;
@@ -219,7 +248,16 @@ class AppState extends ChangeNotifier {
   /// where [connect] aims — the COM port name on a serial link, mutable so
   /// the port selector can re-aim it
   String host;
+
+  /// The second half of the target: a TCP port on [TcpTransport], a baud rate
+  /// on a serial link. `main.dart` resolves which via `linkPortFor`.
   final int port;
+
+  /// Whether the link is a COM port. False under `--sim` and `--host`, where
+  /// the transport is a socket and a port picker would be meaningless — the
+  /// status bar hides the dropdown and refresh rather than let the operator
+  /// aim a socket at "COM7".
+  final bool serialLink;
 
   /// Enumerates the serial ports for the selector. Injected from `main.dart`,
   /// which adapts `availableSerialPorts()`; the default is "no ports".
@@ -228,9 +266,26 @@ class AppState extends ChangeNotifier {
   /// the ports the last [refreshPorts] found
   List<PortEntry> ports = const [];
 
-  /// the selector's pending choice, preselected from `--serial` or the first
-  /// enumerated port; becomes [host] when [selectPort] connects
+  /// Opens the native "pick a file" dialog and reads it. Injected from
+  /// `main.dart`, which adapts `netlist_picker_io.dart`'s `pickNetlistFile()`
+  /// — the same isolation `listPorts` uses to keep the native serial library
+  /// out of this file and its tests; here it is `file_picker`'s platform
+  /// channel instead. Returns null if the operator cancelled. The default is
+  /// "nothing ever picked", for tests that never inject one.
+  final Future<(String name, Uint8List bytes)?> Function() pickNetlistFile;
+
+  static Future<(String, Uint8List)?> _noPick() async => null;
+
+  /// the selector's pending choice, set by [choosePort] and preselected from
+  /// `--serial` or the first enumerated port; becomes [host] when [connectTo]
+  /// opens the link
   String? selPort;
+
+  /// A connect is in flight. The button reads "Connecting…" and stops
+  /// accepting clicks: a second [connect] tears the first one's half-open link
+  /// down inside `cm.connect`, so an impatient double-click used to guarantee
+  /// the failure it was reacting to.
+  bool connecting = false;
 
   static List<PortEntry> _noPorts() => const [];
 
@@ -238,8 +293,11 @@ class AppState extends ChangeNotifier {
     required this.cm,
     required this.host,
     required this.port,
+    this.serialLink = true,
     List<PortEntry> Function()? listPorts,
-  }) : listPorts = listPorts ?? _noPorts {
+    Future<(String, Uint8List)?> Function()? pickNetlistFile,
+  })  : listPorts = listPorts ?? _noPorts,
+        pickNetlistFile = pickNetlistFile ?? _noPick {
     nlMtx = MtxNetlist(
       loaded: true,
       name: 'AV-880_RevC.hnl',
@@ -294,6 +352,24 @@ class AppState extends ChangeNotifier {
 
   void toggleLog() {
     logOpen = !logOpen;
+    notifyListeners();
+  }
+
+  void setLogView(String v) {
+    logView = v;
+    notifyListeners();
+  }
+
+  /// `ConnectionManager`'s `onWire` — every line sent and every line
+  /// received, exactly as the session file records it (brief 3.5.5: every
+  /// byte, both directions). This is the operator-visible twin of that file;
+  /// it never filters or reformats a line, so what's on screen is provably
+  /// what went over the wire.
+  void onWire(String direction, String text) {
+    wireLog.add(WireLogEntry(DateTime.now(), direction, text));
+    if (wireLog.length > wireLogCap) {
+      wireLog.removeRange(0, wireLog.length - wireLogCap);
+    }
     notifyListeners();
   }
 
@@ -563,6 +639,55 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// The MTX netbar's "Select…"/"Change…". Opens [MtxNetlistModal], which
+  /// offers both ways to give the instrument an MTX netlist: browse a real
+  /// file ([browseMtxNetlist]), or build one from the harness itself with
+  /// cross-continuity + "Save as MTX netlist" (`confirmGoToBuildMtxNetlist`
+  /// routes there).
+  ///
+  /// Used to jump straight to cross mode with only a log-panel line
+  /// explaining why (`AppState.log`, collapsed by default) — from the
+  /// operator's side that read as "I clicked Select… and nothing happened."
+  /// The modal fixes that by explaining the two options up front instead of
+  /// silently navigating.
+  void openMtxNlExplainer() {
+    mdMtxOpen = true;
+    notifyListeners();
+  }
+
+  void confirmGoToBuildMtxNetlist() {
+    mdMtxOpen = false;
+    setMode('cross', quiet: true);
+    go('cont');
+    log('info', 'nl',
+        'switched to cross continuity — run it, then Save as MTX netlist');
+  }
+
+  /// [MtxNetlistModal]'s "Browse for a netlist file…" — reads real (hi, lo)
+  /// pin pairs from an Excel netlist and uploads them exactly the way
+  /// [saveDiscoveredNetlist] does for a cross-continuity scan, just sourced
+  /// from a file instead of a 256-pin sweep. Operators who already have a
+  /// netlist spreadsheet from the harness design should not have to run
+  /// discovery to get the instrument one.
+  Future<void> browseMtxNetlist() async {
+    final picked = await pickNetlistFile();
+    if (picked == null) return; // operator cancelled
+    final (name, bytes) = picked;
+    final ParsedNetlist parsed;
+    try {
+      parsed = parseNetlistWorkbook(bytes, fileName: name);
+    } on NetlistFileFormatException catch (exc) {
+      log('fail', 'nl', 'could not read $name — $exc');
+      return;
+    }
+    mdMtxOpen = false;
+    await _uploadNetlistPairs(
+      [for (final p in parsed.pairs) (p.hi, p.lo)],
+      name: name,
+      origin: 'file',
+    );
+  }
+
   void setFilter(String f) {
     filter = f;
     notifyListeners();
@@ -677,6 +802,7 @@ class AppState extends ChangeNotifier {
     hvLive = false;
     mdNlOpen = false;
     mdVerifyOpen = false;
+    mdMtxOpen = false;
     ackChecked = false;
 
     sb1S = 'active';
@@ -703,6 +829,7 @@ class AppState extends ChangeNotifier {
     mSense = '0.000';
     mLeakBad = false;
     saveNlEnabled = false;
+    _discovered.clear();
     crossNote =
         'Run cross continuity to build a netlist from the harness itself.';
 
@@ -817,6 +944,29 @@ class AppState extends ChangeNotifier {
     openVerify();
   }
 
+  /// The HV netlist modal's "Browse the file system…" — a real file, parsed
+  /// for real, instead of only ever picking from [hvFilesFor]'s three canned
+  /// entries. There is no wire command for "load an HV netlist" (unlike MTX,
+  /// nothing here is uploaded to the instrument — see [MtxNetlistModal] and
+  /// `_uploadNetlistPairs`); this only ever sets the same name/cards/nets
+  /// metadata [pickHvFile] does, sourced from the file instead of a canned
+  /// list.
+  Future<void> browseHvNetlist() async {
+    final picked = await pickNetlistFile();
+    if (picked == null) return; // operator cancelled
+    final (name, bytes) = picked;
+    final ParsedNetlist parsed;
+    try {
+      parsed = parseNetlistWorkbook(bytes, fileName: name);
+    } on NetlistFileFormatException catch (exc) {
+      log('fail', 'nl', 'could not read $name — $exc');
+      return;
+    }
+    loadHv(name, parsed.cards ?? stack, parsed.pairs.length);
+    mdNlOpen = false;
+    openVerify();
+  }
+
   /// `function openVerify()`
   void openVerify() {
     ackChecked = false;
@@ -885,6 +1035,11 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  void closeMtxNlExplainer() {
+    mdMtxOpen = false;
+    notifyListeners();
+  }
+
   // -------------------------------------------------------------------------
   // LIVE LAYER — transport
   // -------------------------------------------------------------------------
@@ -944,7 +1099,13 @@ class AppState extends ChangeNotifier {
 
     final lbl = runKind ?? (instState?.wire ?? 'idle');
     statePill = PillState(
-      runKind != null ? PillVariant.acc : PillVariant.idle,
+      // A latched fault must never read as a neutral "Idle" grey — it is the
+      // one state that blocks every run until the operator clears it.
+      inFault
+          ? PillVariant.bad
+          : runKind != null
+              ? PillVariant.acc
+              : PillVariant.idle,
       lbl[0].toUpperCase() + lbl.substring(1),
     );
     stFix = instFixture == proto.Fixture.hv
@@ -1007,6 +1168,13 @@ class AppState extends ChangeNotifier {
   /// `function runCont()`
   Future<void> runCont() async {
     final cross = cmode == 'cross';
+    if (cross) {
+      // A fresh scan replaces whatever the last one found; the operator must
+      // re-save before a new discovery counts as "the" netlist.
+      _discovered.clear();
+      saveNlEnabled = false;
+      auNets = auNodes = auMulti = auCols = '0';
+    }
     await _startRun(
       'cont',
       proto.commands
@@ -1053,6 +1221,27 @@ class AppState extends ChangeNotifier {
   int _countPass = 0;
   int _countFail = 0;
 
+  /// Pairs found by the current (or last completed) cross-continuity scan —
+  /// only ever the passing ones. The real firmware's discover loop already
+  /// only emits `!CONT ... pass` (it does not walk 65,536 points to report
+  /// what ISN'T there), but the simulator's is more literal and also emits
+  /// `open`/`short` for its scripted-fault scenarios, so the filter is
+  /// enforced here rather than assumed from the source.
+  final List<(int hi, int lo)> _discovered = [];
+
+  void _updateDiscoveryTallies() {
+    auNets = '${_discovered.length}';
+    final nodes = <int>{};
+    final byHi = <int, int>{};
+    for (final p in _discovered) {
+      nodes.add(p.$1);
+      nodes.add(p.$2);
+      byHi[p.$1] = (byHi[p.$1] ?? 0) + 1;
+    }
+    auNodes = '${nodes.length}';
+    auMulti = '${byHi.values.where((c) => c > 1).length}';
+  }
+
   /// `function netByPins(hi, lo)`
   Net? _netByPins(int hi, int lo) {
     for (final n in nets) {
@@ -1073,6 +1262,12 @@ class AppState extends ChangeNotifier {
     ctFound = '$_countPass';
     ctMiss = '$_countFail';
     if (_countFail > 0) faultsOn['f06'] = true;
+    if (runKind == 'cont' &&
+        cmode == 'cross' &&
+        m.status == proto.ContStatus.pass) {
+      _discovered.add((m.hi, m.lo));
+      _updateDiscoveryTallies();
+    }
     notifyListeners();
   }
 
@@ -1114,6 +1309,10 @@ class AppState extends ChangeNotifier {
       default:
         dhBar = pct;
     }
+    // Discovery reports progress in HS columns swept (0..256), not pairs.
+    if (runKind == 'cont' && cmode == 'cross') {
+      auCols = '${m.done}';
+    }
     vElapsed = '${m.done} / ${m.total}';
     notifyListeners();
   }
@@ -1121,6 +1320,19 @@ class AppState extends ChangeNotifier {
   void _onDone(msg.Done m) {
     final kind = m.kind.wire; // cont | res | insul
     final key = kind == 'insul' ? 'hv' : kind;
+    if (inFault) {
+      // FW-10: a latched fault refuses the run outright — !STATE fault, then
+      // !DONE <kind> 0 0. Zero failed must never read as a pass; R[key] stays
+      // whatever _beginRun left it (null — not run), not "pass".
+      running = null;
+      runKind = null;
+      _countPass = _countFail = 0;
+      log('fail', kind,
+          '$kind refused — fault latched; clear the fault and retry');
+      updateControls();
+      paintLink();
+      return;
+    }
     final pass = m.failed == 0;
     R[key] = pass ? 'pass' : 'fail';
     _setDom(
@@ -1139,6 +1351,13 @@ class AppState extends ChangeNotifier {
       '$kind ${pass ? "PASS" : "FAIL"} — ${m.passed} passed, ${m.failed} failed',
     );
     _countPass = _countFail = 0;
+    if (kind == 'cont' && cmode == 'cross') {
+      saveNlEnabled = _discovered.isNotEmpty;
+      crossNote = _discovered.isEmpty
+          ? 'No nets found. Check the harness is seated on J-MTX and run again.'
+          : '${_discovered.length} nets found across $auNodes pins. '
+              'Save to load them as the working MTX netlist.';
+    }
     updateControls();
     paintLink();
     if (key == 'cont' || key == 'res') finishStage1();
@@ -1239,18 +1458,46 @@ class AppState extends ChangeNotifier {
   /// The refresh button: re-enumerate the serial ports. The pending choice
   /// survives if its port is still there, otherwise the first port is
   /// preselected.
-  void refreshPorts() {
+  ///
+  /// Says what it found. Re-enumerating and landing on the same list is the
+  /// common case — with no log line the button looked broken precisely when it
+  /// was working, and an operator whose board is not enumerating needs to be
+  /// told that, not left guessing whether the click registered.
+  void refreshPorts({bool quiet = false}) {
+    final before = selPort;
     ports = listPorts();
     if (ports.isEmpty) {
       selPort = null;
     } else if (selPort == null || !ports.any((p) => p.name == selPort)) {
       selPort = ports.first.name;
     }
+    if (!quiet) {
+      if (ports.isEmpty) {
+        log('warn', 'link',
+            'port scan found no serial ports — is the board plugged in?');
+      } else {
+        log('info', 'link',
+            'port scan: ${ports.map((p) => p.name).join(", ")}');
+        if (before != null && selPort != before) {
+          log('warn', 'link', '$before is gone — selection moved to $selPort');
+        }
+      }
+    }
+    notifyListeners();
+  }
+
+  /// The dropdown: choose a port without opening it. Connecting is the Connect
+  /// button's job — picking used to dial immediately, which left no way to
+  /// retry a failed connect without reopening the menu and re-picking the port
+  /// that was already selected.
+  void choosePort(String name) {
+    if (selPort == name) return;
+    selPort = name;
     notifyListeners();
   }
 
   /// The selector's Connect: aim at the chosen port and open the link.
-  void selectPort(String name) {
+  void connectTo(String name) {
     selPort = name;
     host = name;
     unawaited(connect());
@@ -1266,6 +1513,18 @@ class AppState extends ChangeNotifier {
 
   /// `function connect()`
   Future<void> connect() async {
+    if (connecting) return;
+    connecting = true;
+    updateControls();
+    try {
+      await _connect();
+    } finally {
+      connecting = false;
+      updateControls();
+    }
+  }
+
+  Future<void> _connect() async {
     msg.StatusReply st;
     try {
       st = await cm.connect(host: host, port: port);
@@ -1300,6 +1559,22 @@ class AppState extends ChangeNotifier {
         rebuildNets(entries);
         log('ok', 'nl',
             'netlist read from instrument — ${entries.length} nets');
+      } else {
+        // The instrument's netlist is empty — every boot starts that way; it
+        // is RAM-only and nothing re-populates it. The pre-connection
+        // placeholder (a demo harness, not measured data — see buildNets())
+        // must not keep claiming "MTX netlist loaded" once we know better:
+        // that reads as "Run S1 will work" when the instrument would refuse
+        // CONT RUN verify / RES RUN outright with ERR ERANGE no netlist.
+        // Geometry stays as-is — only the loaded flag the gating reads on
+        // (can()) changes — same as the operator unloading it by hand.
+        nlMtx.loaded = false;
+        log(
+          'warn',
+          'nl',
+          'no netlist on the instrument — run cross continuity and save it '
+          'before netlist-mode continuity or resistance will run',
+        );
       }
     } on Object {
       // A missing netlist is not an error the operator needs to see here;
@@ -1370,6 +1645,35 @@ class AppState extends ChangeNotifier {
     resetAll();
   }
 
+  /// `>FAULT CLEAR` — the only recovery from a latched fault (brief §3.2.1,
+  /// FW-10): forces safe first, then clears the latch. A deliberate operator
+  /// action only, offered from the status pill — never automatic.
+  Future<void> clearFault() async {
+    final res = await _cmd(proto.commands.faultClear());
+    if (_reportRefusal('fault clear', res)) return;
+    log('ok', 'seq', 'fault cleared — instrument returning to idle');
+    paintLink();
+  }
+
+  /// Diagnostics — "Close path": `MANUAL PATH`, energising exactly the one
+  /// HS/LS pair the operator picked. Diagnostics only (brief §3.2); nothing
+  /// else about the harness or a run is implied.
+  /// `hiPin`/`loPin` are wire pins, 1..256.
+  Future<void> manualClosePath(int hiPin, int loPin) async {
+    final res = await _cmd(proto.commands.manualPath(hiPin, loPin));
+    if (_reportRefusal('manual path', res)) return;
+    log('info', 'diag',
+        'manual path closed: HS ${pad(hiPin, 3)} -> LS ${pad(loPin, 3)}');
+  }
+
+  /// Diagnostics — "Discharge": `MANUAL OFF`, opens the manually driven path
+  /// and forces the rail safe.
+  Future<void> manualOff() async {
+    final res = await _cmd(proto.commands.manualOff());
+    if (_reportRefusal('manual off', res)) return;
+    log('info', 'diag', 'manual off — path opened, rail forced safe');
+  }
+
   /// `$("#actBtn")` click.
   void actButtonPressed() {
     if (running != null) {
@@ -1399,17 +1703,63 @@ class AppState extends ChangeNotifier {
     if (t == 'hv') requestHv();
   }
 
-  /// `$("#saveNl")`
-  void saveDiscoveredNetlist() {
+  /// `$("#saveNl")` — push what cross-continuity found to the instrument as
+  /// the working MTX netlist.
+  ///
+  /// Until this has run once, the instrument's netlist is empty and it
+  /// refuses `CONT RUN verify` / `RES RUN` outright with `ERR ERANGE no
+  /// netlist` (3.2) — discovery finds what is really there, but finding it
+  /// is not the same as the instrument knowing it.
+  Future<void> saveDiscoveredNetlist() async {
+    if (_discovered.isEmpty) return;
     final stamp = DateTime.now().millisecondsSinceEpoch.toString();
-    loadMtx('AV-880_cross_${stamp.substring(stamp.length - 4)}.hnl', 'cross');
+    final ok = await _uploadNetlistPairs(
+      List<(int, int)>.from(_discovered),
+      name: 'AV-880_cross_${stamp.substring(stamp.length - 4)}.hnl',
+      origin: 'cross',
+    );
+    if (ok) saveNlEnabled = false;
+  }
+
+  /// Pushes `pairs` to the instrument via `NETLIST BEGIN/ADD/END` — the only
+  /// place that ever sends it — then rebuilds the GUI's own net model from
+  /// the same pairs so both sides agree. Shared by cross-continuity's "Save
+  /// as MTX netlist" ([saveDiscoveredNetlist]) and a real netlist file's
+  /// "Browse the file system…" ([browseMtxNetlist]): the wire sequence and
+  /// the rebuild are identical, only where the pairs came from differs.
+  /// Returns whether the instrument accepted it.
+  Future<bool> _uploadNetlistPairs(
+    List<(int, int)> pairs, {
+    required String name,
+    required String origin,
+  }) async {
+    final begin = await _cmd(proto.commands.netlistBegin(pairs.length));
+    if (_reportRefusal('netlist upload', begin)) return false;
+    for (final p in pairs) {
+      final add = await _cmd(proto.commands.netlistAdd(p.$1, p.$2));
+      if (_reportRefusal('netlist upload', add)) return false;
+    }
+    final end = await _cmd(proto.commands.netlistEnd());
+    if (_reportRefusal('netlist upload', end)) return false;
+
+    rebuildNets([for (final p in pairs) msg.NetEntry(hi: p.$1, lo: p.$2)]);
+    loadMtx(name, origin);
+    log(
+      'ok',
+      'nl',
+      'netlist uploaded to the instrument — ${pairs.length} nets. '
+      'Verify-mode continuity and resistance are now available.',
+    );
+    updateControls();
+    return true;
   }
 
   /// Escape key.
   void escape() {
-    if (mdNlOpen || mdVerifyOpen) {
+    if (mdNlOpen || mdVerifyOpen || mdMtxOpen) {
       mdNlOpen = false;
       mdVerifyOpen = false;
+      mdMtxOpen = false;
       notifyListeners();
       return;
     }

@@ -103,6 +103,13 @@ class StatusBar extends StatelessWidget {
       Pill(s.hvPill.variant, s.hvPill.text),
       const SizedBox(width: 18),
       Pill(s.statePill.variant, s.statePill.text),
+      // FAULT CLEAR is the only recovery from a latched fault (brief §3.2.1,
+      // FW-10) — offered here as a deliberate operator action, never
+      // triggered automatically.
+      if (s.inFault) ...[
+        const SizedBox(width: 8),
+        Btn('Clear Fault', variant: BtnVariant.primary, onTap: s.clearFault),
+      ],
     ];
 
     return Container(
@@ -169,25 +176,45 @@ class _PortSelector extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // A connect in flight is neither state: saying "Connect" while one is
+    // running invites the second click that kills the first attempt.
+    final String label = s.connecting
+        ? 'Connecting'
+        : s.link
+            ? 'Disconnect'
+            : 'Connect';
+    final VoidCallback? onTap = s.connecting
+        ? null
+        : s.link
+            ? () => unawaited(s.disconnect())
+            : s.selPort == null
+                ? null
+                : () => s.connectTo(s.selPort!);
+
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        _PortDropdown(s: s),
-        const SizedBox(width: 6),
-        _RefreshBtn(onTap: s.refreshPorts),
-        const SizedBox(width: 6),
-        Btn(
-          s.link ? 'Disconnect' : 'Connect',
-          onTap: s.link
-              ? () => unawaited(s.disconnect())
-              : s.selPort == null
-                  ? null
-                  : () => s.selectPort(s.selPort!),
-        ),
+        // Under --sim or --host the transport is a socket; there is no COM
+        // port to pick and the picker would only mislead.
+        if (s.serialLink) ...[
+          _PortDropdown(s: s),
+          const SizedBox(width: 6),
+          _RefreshBtn(onTap: s.refreshPorts),
+          const SizedBox(width: 6),
+        ],
+        Btn(label, onTap: onTap),
         const SizedBox(width: 6),
         Pill(
-          s.link ? PillVariant.ok : PillVariant.warn,
-          s.link ? 'Link ${s.host}' : 'No link',
+          s.link
+              ? PillVariant.ok
+              : s.connecting
+                  ? PillVariant.acc
+                  : PillVariant.warn,
+          s.link
+              ? 'Link ${s.host}'
+              : s.connecting
+                  ? 'Opening ${s.selPort ?? s.host}'
+                  : 'No link',
         ),
       ],
     );
@@ -195,8 +222,8 @@ class _PortSelector extends StatelessWidget {
 }
 
 /// The port dropdown: rows of `name — description` from [AppState.ports].
-/// Picking a port connects to it; while linked the dropdown is disabled and
-/// shows the port the link is on.
+/// Picking a port selects it and closes the menu — Connect is what opens it.
+/// While linked the dropdown is disabled and shows the port the link is on.
 class _PortDropdown extends StatefulWidget {
   final AppState s;
   const _PortDropdown({required this.s});
@@ -217,8 +244,11 @@ class _PortDropdownState extends State<_PortDropdown> {
   }
 
   void _close() {
-    _menu?.remove();
+    final menu = _menu;
     _menu = null;
+    // Nulling first makes a second _close a no-op; `mounted` covers the case
+    // where the Overlay itself was torn down before this widget's dispose.
+    if (menu != null && menu.mounted) menu.remove();
   }
 
   void _toggle() {
@@ -227,72 +257,99 @@ class _PortDropdownState extends State<_PortDropdown> {
       return;
     }
     final s = widget.s;
-    if (s.link || s.ports.isEmpty) return;
+    if (!_enabled(s)) return;
+    // Without a Navigator there was no Overlay at all and this threw on every
+    // click. There is one now (see HtHome), but a dead dropdown beats a
+    // crashed console if some future harness leaves it out.
+    final overlay = Overlay.maybeOf(context);
+    if (overlay == null) return;
+
     final entry = OverlayEntry(builder: (context) {
-      final c = context.colors;
-      final t = context.type;
-      return Stack(
-        children: [
-          // tap-away dismiss
-          Positioned.fill(
-            child: GestureDetector(
-              onTap: _close,
-              behavior: HitTestBehavior.translucent,
-            ),
-          ),
-          CompositedTransformFollower(
-            link: _link,
-            targetAnchor: Alignment.bottomLeft,
-            followerAnchor: Alignment.topLeft,
-            offset: const Offset(0, 4),
-            child: Container(
-              constraints: const BoxConstraints(maxWidth: 340),
-              decoration: BoxDecoration(
-                color: c.panel,
-                border: Border.all(color: c.line),
-                borderRadius: BorderRadius.circular(kRadius),
-                boxShadow: c.shadow,
+      // The menu is a sibling of the app in the overlay, so it does not get
+      // rebuilt by the AnimatedBuilder around HtHome. It listens itself:
+      // otherwise Refresh behind an open menu changed AppState.ports and the
+      // menu carried on showing the ports that had gone away.
+      return AnimatedBuilder(
+        animation: s,
+        builder: (context, _) {
+          final c = context.colors;
+          final t = context.type;
+          if (!_enabled(s)) {
+            // The link came up, or the last port vanished, while the menu was
+            // open. Fold it away rather than leave a live-looking list over a
+            // selector that is no longer taking input.
+            WidgetsBinding.instance.addPostFrameCallback((_) => _close());
+          }
+          return Stack(
+            children: [
+              // tap-away dismiss
+              Positioned.fill(
+                child: GestureDetector(
+                  onTap: _close,
+                  behavior: HitTestBehavior.translucent,
+                ),
               ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  for (final p in s.ports)
-                    HoverRow(
-                      pressed: p.name == s.selPort,
-                      onTap: () {
-                        _close();
-                        s.selectPort(p.name);
-                      },
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 12, vertical: 8),
-                        child: Text(
-                          '${p.name} — ${p.description}',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          softWrap: false,
-                          style: t.mono(size: 12, color: c.ink),
+              CompositedTransformFollower(
+                link: _link,
+                targetAnchor: Alignment.bottomLeft,
+                followerAnchor: Alignment.topLeft,
+                offset: const Offset(0, 4),
+                child: Container(
+                  constraints: const BoxConstraints(maxWidth: 340),
+                  decoration: BoxDecoration(
+                    color: c.panel,
+                    border: Border.all(color: c.line),
+                    borderRadius: BorderRadius.circular(kRadius),
+                    boxShadow: c.shadow,
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      for (final p in s.ports)
+                        HoverRow(
+                          pressed: p.name == s.selPort,
+                          onTap: () {
+                            _close();
+                            // Choose only — Connect opens it.
+                            s.choosePort(p.name);
+                          },
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 12, vertical: 8),
+                            child: Text(
+                              '${p.name} — ${p.description}',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              softWrap: false,
+                              style: t.mono(size: 12, color: c.ink),
+                            ),
+                          ),
                         ),
-                      ),
-                    ),
-                ],
+                    ],
+                  ),
+                ),
               ),
-            ),
-          ),
-        ],
+            ],
+          );
+        },
       );
     });
-    Overlay.of(context).insert(entry);
+    overlay.insert(entry);
     _menu = entry;
   }
+
+  /// The selector takes input only when there is something to pick and no link
+  /// (or connect) already using the port.
+  static bool _enabled(AppState s) =>
+      !s.link && !s.connecting && s.ports.isNotEmpty;
 
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
     final t = context.type;
     final s = widget.s;
-    final enabled = !s.link && s.ports.isNotEmpty;
+    final enabled = _enabled(s);
     final label = s.link
         ? s.host
         : s.selPort ?? (s.ports.isEmpty ? 'No ports' : 'Select port');
@@ -747,7 +804,9 @@ class LogBar extends StatefulWidget {
 class _LogBarState extends State<LogBar> {
   final ScrollController _scroll = ScrollController();
   bool _hoverToggle = false;
-  int _seen = 0;
+  String? _hoverTab;
+  int _seenOps = 0;
+  int _seenWire = 0;
 
   @override
   void dispose() {
@@ -755,10 +814,10 @@ class _LogBarState extends State<LogBar> {
     super.dispose();
   }
 
-  void _autoScroll() {
+  void _autoScroll(int count, int seen, void Function(int) setSeen) {
     // logBody.scrollTop=logBody.scrollHeight
-    if (widget.s.logs.length == _seen) return;
-    _seen = widget.s.logs.length;
+    if (count == seen) return;
+    setSeen(count);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_scroll.hasClients) {
         _scroll.jumpTo(_scroll.position.maxScrollExtent);
@@ -766,12 +825,46 @@ class _LogBarState extends State<LogBar> {
     });
   }
 
+  Widget _tab(BuildContext context, AppState s, String view, String label) {
+    final c = context.colors;
+    final t = context.type;
+    final active = s.logView == view;
+    final hover = _hoverTab == view;
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => setState(() => _hoverTab = view),
+      onExit: (_) => setState(() => _hoverTab = null),
+      child: GestureDetector(
+        onTap: () => s.setLogView(view),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 2),
+          child: Text(
+            label,
+            style: t
+                .logButton(active
+                    ? c.accent
+                    : hover
+                        ? c.ink2
+                        : c.ink3)
+                .copyWith(fontWeight: active ? FontWeight.w700 : null),
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
     final t = context.type;
     final s = widget.s;
-    if (s.logOpen) _autoScroll();
+    if (s.logOpen) {
+      if (s.logView == 'wire') {
+        _autoScroll(s.wireLog.length, _seenWire, (n) => _seenWire = n);
+      } else {
+        _autoScroll(s.logs.length, _seenOps, (n) => _seenOps = n);
+      }
+    }
 
     Color levelColor(String lvl) => switch (lvl) {
           'ok' => c.pass,
@@ -797,11 +890,20 @@ class _LogBarState extends State<LogBar> {
               padding: const EdgeInsets.symmetric(horizontal: 14),
               child: Row(
                 children: [
-                  const Lbl('Log'),
+                  // Every line here is exactly what the session file's
+                  // [tx]/[rx] lines record — see ConnectionManager.onWire —
+                  // so "Console" is the live, on-screen twin of that file.
+                  _tab(context, s, 'ops', 'Log'),
+                  Text(' / ', style: t.logButton(c.ink3)),
+                  _tab(context, s, 'wire', 'Console'),
                   const SizedBox(width: 10),
                   Expanded(
                     child: Text(
-                      s.logLineText,
+                      s.logView == 'wire'
+                          ? (s.wireLog.isEmpty
+                              ? 'no wire traffic yet'
+                              : '${s.wireLog.last.dir}: ${s.wireLog.last.text}')
+                          : s.logLineText,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       softWrap: false,
@@ -835,43 +937,79 @@ class _LogBarState extends State<LogBar> {
                     left: 14, right: 14, top: 2, bottom: 10),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    for (final e in s.logs)
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 0),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            // <time>
-                            Text('[${e.t.toStringAsFixed(3).padLeft(8)}]',
-                                style: t.logBody(c.ink3)),
-                            const SizedBox(width: 10),
-                            // <b class="lv-*">, width:38px
-                            SizedBox(
-                              width: 38,
-                              child: Text(
-                                e.lvl.toUpperCase(),
-                                style: t
-                                    .logBody(levelColor(e.lvl))
-                                    .copyWith(fontWeight: FontWeight.w600),
+                  children: s.logView == 'wire'
+                      ? [
+                          for (final e in s.wireLog)
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 0),
+                              child: Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    '[${_stampTime(e.t)}]',
+                                    style: t.logBody(c.ink3),
+                                  ),
+                                  const SizedBox(width: 10),
+                                  SizedBox(
+                                    width: 24,
+                                    child: Text(
+                                      e.dir.toUpperCase(),
+                                      style: t
+                                          .logBody(e.dir == 'tx'
+                                              ? c.accent
+                                              : c.pass)
+                                          .copyWith(
+                                              fontWeight: FontWeight.w600),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: Text(e.text,
+                                        style: t.logBody(c.ink2)),
+                                  ),
+                                ],
                               ),
                             ),
-                            const SizedBox(width: 10),
-                            // <span class="src">, width:34px
-                            SizedBox(
-                              width: 34,
-                              child:
-                                  Text(e.src, style: t.logBody(c.ink3)),
+                        ]
+                      : [
+                          for (final e in s.logs)
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 0),
+                              child: Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  // <time>
+                                  Text(
+                                      '[${e.t.toStringAsFixed(3).padLeft(8)}]',
+                                      style: t.logBody(c.ink3)),
+                                  const SizedBox(width: 10),
+                                  // <b class="lv-*">, width:38px
+                                  SizedBox(
+                                    width: 38,
+                                    child: Text(
+                                      e.lvl.toUpperCase(),
+                                      style: t
+                                          .logBody(levelColor(e.lvl))
+                                          .copyWith(
+                                              fontWeight: FontWeight.w600),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 10),
+                                  // <span class="src">, width:34px
+                                  SizedBox(
+                                    width: 34,
+                                    child: Text(e.src,
+                                        style: t.logBody(c.ink3)),
+                                  ),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: Text(e.message,
+                                        style: t.logBody(c.ink2)),
+                                  ),
+                                ],
+                              ),
                             ),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: Text(e.message,
-                                  style: t.logBody(c.ink2)),
-                            ),
-                          ],
-                        ),
-                      ),
-                  ],
+                        ],
                 ),
               ),
             ),
@@ -879,4 +1017,10 @@ class _LogBarState extends State<LogBar> {
       ),
     );
   }
+}
+
+String _stampTime(DateTime t) {
+  String two(int n) => n.toString().padLeft(2, '0');
+  String three(int n) => n.toString().padLeft(3, '0');
+  return '${two(t.hour)}:${two(t.minute)}:${two(t.second)}.${three(t.millisecond)}';
 }

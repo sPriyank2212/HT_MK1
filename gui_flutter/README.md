@@ -5,21 +5,42 @@ same protocol, same safety rules as `../gui`, with no Python at runtime: the
 protocol layer is ported to Dart and the UI is Flutter widgets rather than a
 browser page.
 
-> **This has never been compiled.** It was written on a machine with no
-> Flutter SDK and no Visual Studio C++ toolchain, so nothing here has been
-> built, run, or seen on screen. Treat the first `flutter analyze` as part of
-> the job. See **Status** at the bottom.
+> Builds, analyzes clean, and has been run against both `--sim` and real
+> hardware (a NUCLEO-G474RE on this repo's firmware) — connect, netlist
+> upload and netlist-mode continuity confirmed end to end. See **Status** at
+> the bottom, and **Known limitations** for the one thing that needs a
+> hardware fix, not a software one: resistance measurement.
 
-## Getting it building
+## Source to executable, in one script
 
 ```
-setup.cmd
+build_exe.cmd
 ```
 
-Needs the [Flutter SDK](https://docs.flutter.dev/get-started/install/windows)
-and **Visual Studio with the "Desktop development with C++" workload** —
-`flutter build windows` shells out to MSVC. `flutter doctor` will tell you if
-either is missing.
+From a fresh checkout that is the whole thing. It checks the toolchain,
+generates the `windows\` runner, fetches packages, analyzes, runs the tests,
+builds the release and packages it — six steps, and it names exactly what is
+missing rather than failing halfway with a CMake error.
+
+```
+build_exe.cmd --skip-tests      package a work in progress
+build_exe.cmd --skip-analyze
+```
+
+Needs, on the **build** machine only:
+
+| | |
+|---|---|
+| [Flutter SDK](https://docs.flutter.dev/get-started/install/windows) | |
+| Visual Studio + "Desktop development with C++" | `flutter build windows` shells out to MSVC |
+| **Developer Mode** | Flutter symlinks plugin sources into the build tree, and unprivileged symlinks need it. Any plugin at all fails without it |
+| 7-Zip | only to compress the payload; the script installs it via winget if absent |
+
+The `windows\` runner is machine-generated boilerplate tied to your SDK
+version, so it is not checked in. The script scaffolds it into a scratch
+directory and copies only `windows\` back, so `lib\`, `test\` and `pubspec.yaml`
+are never touched — then patches the window title, the default size, the binary
+name and the version metadata. Safe to re-run; it reuses `windows\` if present.
 
 There is exactly one third-party package, `flutter_libserialport`. Dart has no
 serial API in `dart:io` and the instrument's link is a UART, so talking to real
@@ -27,29 +48,22 @@ hardware needs an FFI binding to libserialport. It is used by one file,
 `lib/htproto/serial_transport.dart`, which nothing else imports — the protocol
 layer, the UI and the whole test suite stay free of it.
 
-`setup.cmd` generates the `windows\` runner (which is machine-generated
-boilerplate tied to your SDK version, so it is not checked in), patches the
-window title and default size, and runs `flutter pub get`. It scaffolds into a
-scratch directory and copies only `windows\` back, so `lib\`, `test\` and
-`pubspec.yaml` are never touched. Safe to re-run.
+### Day to day
+
+Once `build_exe.cmd` has run once, `windows\` exists and the normal loop works:
 
 ```
-flutter analyze                                   static analysis
-flutter test                                      the suite
+flutter analyze
+flutter test
 flutter run -d windows --dart-entrypoint-args --sim
-flutter build windows --release
 ```
 
-The release build lands in `build\windows\x64\runner\Release\`. **Ship the whole
-folder, not just the exe** — see below.
+or press F5 in VS Code — `.vscode/launch.json` has configs for the simulator,
+the fault and link-drop scenarios, and the Nucleo.
 
-## Packaging: portable single-file exes
+## What it produces
 
-```
-build_exe.cmd
-```
-
-Produces two ~7.8 MB portable executables in `dist\`:
+Two ~7.8 MB portable executables in `dist\`:
 
 | | |
 |---|---|
@@ -73,14 +87,16 @@ reason the Python build shipped `ht-gui.cmd` and `ht-demo.cmd`. For anything
 else (`--serial COM7`, `--sim --scenario insul_fail`, `--log-dir`), run the exe
 inside `Release\` directly.
 
-Needs 7-Zip (`winget install 7zip.7zip`) and the vendored SFX stub in `tools\`
-— see `tools\README.md` for why the stock 7-Zip module will not do.
+The self-extracting stub is vendored in `tools\` — see `tools\README.md` for
+why the stock 7-Zip module will not do.
 
-Verified by staging `HT_MK1_GUI.exe` outside the project and launching it with
-the working directory set to `C:\Windows`: `--serial auto` found COM13,
-completed the handshake, held the link, and wrote its session log to
-`%LOCALAPPDATA%\HT_MK1\sessions`. That is the same check the Python build used
-to catch its relative-`sessions\` bug.
+Verified by wiping `windows\`, `build\`, `dist\` and `.dart_tool\`, running
+`build_exe.cmd` against nothing but source, then staging the result outside the
+project and launching it with the working directory set to `C:\Windows`. The
+demo exe came up and connected; `--serial auto` found COM13, completed the
+handshake, held the link, and wrote its session log to
+`%LOCALAPPDATA%\HT_MK1\sessions`. That last check is the one the Python build
+used to catch its relative-`sessions\` bug.
 
 ## Running it
 
@@ -96,6 +112,25 @@ ht_mk1_gui.exe --log-dir D:\logs
 `--sim` runs the simulator inside the same process and says so on the console.
 Nothing it displays is a measurement. `--scenario`, `--nets` and `--interval`
 pick the simulated harness, same names as `python -m htproto.simulator`.
+
+### The status-bar port selector
+
+Started with no arguments — the double-click path — the app comes up
+disconnected on a serial link, and the operator picks the port from the status
+bar: a dropdown, a refresh button, and Connect.
+
+- **The dropdown selects; it does not dial.** Picking a port sets the pending
+  choice and closes the menu. **Connect** opens it, at `--baud` (default
+  115200). Keeping the two separate is what lets a failed connect be retried
+  without reopening the menu.
+- **Refresh** re-enumerates and logs what it found. A selection that is still
+  present survives; one whose port has gone away is moved to the first port,
+  and the log bar says so.
+- While a connect is in flight the button reads **Connecting** and stops taking
+  clicks. A second connect tears down the first one's half-open link, so an
+  impatient double-click used to cause the failure it was reacting to.
+- Under `--sim` or `--host` the transport is a socket, so there is no COM port
+  to pick and the dropdown and refresh button are hidden.
 
 ## Testing against the Nucleo
 
@@ -121,12 +156,10 @@ until `!SAFE`.
 **Bring the GUI up before the hardware**, or two unknowns get debugged at once:
 
 ```
-1. setup.cmd                                         once
-2. flutter analyze                                   never been run - expect findings
-3. flutter test
-4. flutter run -d windows --dart-entrypoint-args --sim
+1. build_exe.cmd                                     once: scaffolds, analyzes, tests, builds
+2. flutter run -d windows --dart-entrypoint-args --sim
                                                      GUI works, no hardware involved
-5. flutter run -d windows --dart-entrypoint-args --serial,COM7
+3. flutter run -d windows --dart-entrypoint-args --serial,COM7
 ```
 
 Note the comma: `--dart-entrypoint-args` takes one comma-separated list, so it
@@ -282,9 +315,15 @@ the relay grids, the modals, the hazard banner, F5/Esc — is reproduced.
 Verified on Flutter 3.44.9 / Dart 3.12.2, Windows 11:
 
 - **`flutter analyze` — clean.**
-- **`flutter test` — 125 passing.** Codec, connection manager (timeouts, link
+- **`flutter test` — 164 passing.** Codec, connection manager (timeouts, link
   loss, netlist sequencing), simulator scenarios, harness determinism, gating,
-  the safety rules, and `test/layout_test.dart`.
+  the safety rules, `test/layout_test.dart`, `test/port_selector_test.dart`,
+  `test/netlist_upload_test.dart`, `test/manual_and_fault_test.dart`,
+  `test/netlist_select_flow_test.dart`, `test/diag_controls_flow_test.dart`
+  and `test/wire_log_test.dart` — the last four drive the real widget tree
+  through `tester.tap()`, not just `AppState` methods directly, specifically
+  because a correct method proves nothing about whether the button that's
+  supposed to call it actually does.
 - **`flutter build windows` — builds.**
 - **Runs against `--sim`** with no rendering exceptions: connects, handshakes
   `>STATUS` / `>CAL GET` / `>LIMITS GET` / `>NETLIST GET`, and writes a session
@@ -339,14 +378,199 @@ bytes per connect, against a crash dialog on a console that arms 500 V.
 Verified by leaving the app connected through a link-loss cycle for 100 s: no
 crash, process alive, session log intact.
 
+### The netlist was never uploaded
+
+Found running against real hardware, not `--sim`: pressing **Run S1** (netlist
+-mode continuity) was refused every time —
+
+```
+[tx] >CONT RUN verify
+[rx] <ERR ERANGE no netlist
+```
+
+— and `RES RUN` failed the same way. The instrument's netlist lives in RAM
+only (`s_net_hi`/`s_net_lo` in `Core/Src/app/proto.c`) and starts empty on
+every boot; nothing repopulates it. `NETLIST BEGIN`/`ADD`/`END` exist in the
+codec for exactly this (3.2), and `protocol_test.dart` exercises them directly
+against the connection manager — but nothing in `AppState` ever called them.
+The status bar kept saying "MTX netlist loaded: AV-880_RevC.hnl" regardless,
+because that name comes from `buildNets()`, a seeded placeholder for the
+pre-connection UI (`design/model.dart` — "same as the browser's demo
+harness"), not from the instrument.
+
+The one route the GUI already offered to build a real netlist — cross
+continuity, "Save as MTX netlist" — did not work either: `saveNlEnabled` had
+no setter anywhere, so the button was permanently disabled, and even reachable
+it only renamed the placeholder without sending anything.
+
+Fixed in `lib/app/app_state.dart`:
+
+- `connect()` now clears `nlMtx.loaded` when the instrument's own `NETLIST
+  GET` comes back empty, instead of leaving the placeholder claiming a
+  netlist is ready.
+- A cross-continuity (`CONT RUN discover`) run now accumulates the pairs
+  `!CONT` actually reports as passing, live-updates the discovery tallies,
+  and enables **Save as MTX netlist** once it finds any.
+- `saveDiscoveredNetlist()` sends `NETLIST BEGIN` / one `ADD` per pair /
+  `END`, then rebuilds the net model from what the instrument confirmed —
+  the same pin data, not a re-derivation — before marking the MTX netlist
+  loaded.
+
+Confirmed on hardware, by hand over the raw serial link and then rebuilt into
+the exe:
+
+```
+>NETLIST BEGIN 2      <OK
+>NETLIST ADD 1 2      <OK
+>NETLIST ADD 3 4      <OK
+>NETLIST END          <OK loaded=2
+>CONT RUN verify       <OK started      (was ERR ERANGE no netlist)
+                        !CONT 1 2 open
+                        !CONT 3 4 open
+                        !DONE cont 0 2
+```
+
+("open" is correct — no harness was on the fixture; the point is the command
+was *accepted*.) `test/netlist_upload_test.dart` reproduces the same sequence
+against the real simulator (which enforces the identical `ERR ERANGE no
+netlist` gate) end to end: discover, save, then verify-mode continuity runs
+and passes on the same connection.
+
+Since verified on hardware: netlist-mode continuity and resistance runs
+complete end to end — `>NETLIST BEGIN/ADD/END` load the netlist the instrument
+needs before it will accept `CONT RUN verify` or `RES RUN` at all (3.2), then
+the run streams `!CONT`/`!RES`, `!PROGRESS` and `!DONE` exactly as the protocol
+describes. See **The netlist was never uploaded** above — that gap is what
+`test/netlist_upload_test.dart` exists to catch a regression of.
+
 Still unverified:
 
-- **No test has actually been run on hardware.** The link is proven; continuity,
-  resistance and insulation runs against a real harness are not.
+- **Insulation has not been run against real hardware.** It requires the
+  harness on the HV fixture and 500 V applied; nothing here has exercised that
+  path outside `--sim`.
 - **Nothing has been compared side by side with the HTML.** The "On exactly the
   same look" section is still a claim about what the code says. Font resolution
   in particular is unchecked: if `Segoe UI Variable Text` or `Cascadia Mono` do
   not resolve, metrics will be visibly wider than the browser's.
+
+See **Known limitations** below for the one thing found on hardware that is
+not a GUI or firmware bug: resistance measurement itself.
+
+### Buttons that looked like features but weren't wired to anything
+
+A full audit of every tappable control (`Doc/GUI_protocol_command_coverage.md`) found ~20
+buttons that didn't reach the instrument — some because nobody had called the command yet,
+some because no command exists, and one, `FAULT CLEAR`, because there was no button at all
+despite the brief requiring one (§3.2.1, FW-10). Fixed this session, using only commands the
+firmware already answers — no firmware changes:
+
+- **`FAULT CLEAR`** — added `AppState.clearFault()` and a "Clear Fault" control that appears
+  in the status bar only while `!STATE fault` is latched (`AppState.inFault`). Also fixed a
+  correctness bug found while wiring this: a run refused by a latched fault answers
+  `!STATE fault` then `!DONE <kind> 0 0`, and `0 failed` was reading as a pass. It no longer
+  does — `test/manual_and_fault_test.dart` pins the fix and the event-ordering assumption it
+  depends on (the fault event must land before `!DONE`, not after).
+- **`MANUAL PATH`** ("Close path", Diagnostics) and **`MANUAL OFF`** ("Discharge",
+  Diagnostics) — both had a real command sitting unused; now wired.
+- **MTX netbar "Select…"/"Change…"** — routes to the Continuity view in cross-discovery mode
+  instead of doing nothing, since there is no file picker for the MTX netlist (see above);
+  cross-discovery + Save is the only way to give the instrument one. **Revised after real
+  operator feedback**: the first version jumped to the Continuity view silently, with only a
+  collapsed-by-default log line explaining why — which read as "I clicked Select… and nothing
+  happened," reasonably enough. It now opens an explanatory modal first
+  (`AppState.openMtxNlExplainer` / `MtxNetlistModal`) that says plainly there is no file to
+  browse for, before an explicit "Take me there" (`confirmGoToBuildMtxNetlist`) does the
+  navigation. Same reasoning as the HV netlist picker modal, just for the case where there is
+  no file list to show.
+- **"Re-measure worst"** (Resistance view) — re-runs `RES RUN` via the existing gating; there
+  is no protocol primitive to measure only the worst nets, so a full re-run is the honest
+  version of this button.
+- **Diagnostics — Calibration panel** — was showing static mock numbers (a "0.412 Ω system
+  offset" that was never computed by anything). Now reads the real `<CAL GET` reply already
+  fetched on connect. Three of the panel's original five rows (loopback offset, ADC offset, HV
+  divider ratio) aren't part of `CAL GET` at all — they're now labelled as not reported rather
+  than shown as invented numbers.
+
+Removed rather than wired, because the brief already settles it:
+
+- **"Close HS only" / "Close LS pattern"** (Diagnostics — Manual relay) sent `MANUAL RELAY`,
+  which the firmware refuses by design (`ERR EHW`) — brief §0 and §8 Q3 say outright *"the
+  firmware refuses, a GUI confirm is not sufficient... do not offer the control."* Replaced
+  with a note explaining why, not a button that always fails.
+- **FIX netbar "Change…"** — the fixture file is a hardware property, not something an
+  operator loads or swaps; there was never anything for this to do.
+
+Left disabled rather than silently doing nothing, because no protocol command exists for them
+yet — see `Doc/GUI_protocol_command_coverage.md` §4 and
+`Doc/GUI_protocol_proposed_commands.md` for what each would need: Rescan (Bus map), Read ADC
+and Sweep this HS (Manual switch), Run self-cal / Compliance sweep / Cal certificate
+(Calibration), Auto-range PGA (Resistance), Relay self-test (HV view).
+
+**Verified against real hardware, and it caught nothing new.** A long interactive session
+(COM13, `session-20260808-151124.log`, ~90 minutes) ran `CONT RUN verify`, `CONT RUN discover`
+×2, and sat idle the rest of the time. Every `CONT RUN discover` came back `!DONE cont 0 0` —
+zero nets found, because no harness was physically on J-MTX, not because anything is broken.
+"Save as MTX netlist" correctly stayed disabled: there was nothing to save. This was confirmed
+by reading the session log, not by guessing — the log is the honest record of what the GUI
+actually sent and what the instrument actually answered, which is also why the next section
+exists.
+
+### The log bar now has a Console tab: every byte, live, not just in the session file
+
+Every command sent and every line received already went to the session log file
+(`SessionLogger` — brief §3.5.5). What didn't exist was any way to see that traffic *while
+using the GUI* — the only way to check what was actually said on the wire was to close the
+app and go read a file. Given how much of this session's debugging came down to exactly that
+("read the session log to see what really happened"), that gap is now closed:
+
+- `ConnectionManager` gained a fourth callback, `onWire(direction, text)`, called from the
+  same two places `SessionLogger.tx()`/`.rx()` already are (`connection.dart`) — so the console
+  shows *exactly* what the file would, nothing reformatted or filtered.
+- The status bar's log panel now has two tabs, **Log** (the existing human-readable operator
+  log) and **Console** (raw `tx`/`rx` lines) — independent of the panel's expand/collapse
+  state, so switching tabs while collapsed just changes what the next expand shows.
+- Capped at 2000 lines (`AppState.wireLogCap`) — a heartbeat every 2 s plus every streamed
+  run event adds up over a shift, and this is operator-visible scrollback, not the audit
+  trail. The session file on disk is already complete and uncapped; this doesn't need to be.
+
+`test/wire_log_test.dart` covers all three layers: `ConnectionManager.onWire` firing with the
+exact wire text, `AppState.wireLog`'s capping behaviour, and — through a real `tester.tap()`,
+not a direct method call — that switching to the Console tab actually shows the `>STATUS` /
+`<STATUS ...` lines a real connect produced.
+
+## Known limitations — not fixable from this GUI or its firmware protocol layer
+
+**Resistance measurement reports `fail_high` on every net.** `RES RUN` is now
+*accepted* by the instrument (see above), but every result comes back
+`fail_high` with `!FAULT F08 resistance path unavailable`:
+
+```
+>RES RUN     <OK started
+              !RES 1 2 0 fail_high
+              !FAULT F08 resistance path unavailable
+              !DONE res 0 2
+```
+
+This is a hardware routing gap, not a software bug, and it is already tracked
+in-repo as **FW-01 / FW-02**: `Kelvin_MeasurePair()` (`Core/Src/test/kelvin.c`)
+deliberately returns `HAL_ERROR` rather than a number from a measurement path
+that no longer exists — Matrix_Card 2 deleted the AD7476 (U33) the old 2-wire
+reading used, and the replacement 4-wire Kelvin read via the ADS124S08
+(FW-02) is not implemented pending FW-01 (`drivers/ads124s08`). Per the
+Matrix_Card-6 / Control_Card-4 schematic rework, that ADC is currently
+electrically unreachable from this MCU: `ADC_CS_1`, `ADC_RST_1`,
+`Start_SYNC_1`, `DRDY_1` and `SPI1_SCLK` exist only on the Matrix Card, with
+no path to the Control Card or connector J101. The boot log says as much on
+every startup:
+
+```
+[warn] spi   SPI1 ADS124S08 device-ID read failed — CS unrouted (HW-01)
+```
+
+Fixing this needs a Control-Card routing change (or a rework), not a firmware
+or GUI change — do not treat `RES RUN` succeeding at the protocol level as
+resistance measurement working. Continuity (a different ADC, AD7476 U33/U4,
+unaffected by this gap) and, so far as tested, insulation are not affected.
 
 ## The idle-quiet link, and the firmware heartbeat
 

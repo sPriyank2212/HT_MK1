@@ -149,9 +149,14 @@ class ResView extends StatelessWidget {
           HtPanel(
             header: const [PanelTitle('Actions')],
             child: PanelPad(RowWrap([
-              Btn('Re-measure worst', onTap: () {}),
-              Btn('Auto-range PGA', onTap: () {}),
-              Btn('Compliance sweep', onTap: () {}),
+              // Re-runs the same RES RUN the header button does — there is
+              // no protocol primitive to measure only the worst nets, so a
+              // full re-run is the honest version of "re-measure worst".
+              Btn('Re-measure worst',
+                  disabled: !canRun,
+                  onTap: canRun ? () => s.runTest('res') : null),
+              Btn('Auto-range PGA', disabled: true, onTap: null),
+              Btn('Compliance sweep', disabled: true, onTap: null),
             ])),
           ),
         ]),
@@ -403,7 +408,9 @@ class HvView extends StatelessWidget {
                 RowWrap([
                   Btn('Emergency discharge',
                       variant: BtnVariant.ghostHv, onTap: s.abort),
-                  Btn('Relay self-test', onTap: () {}),
+                  // No protocol command exists for a relay self-test yet —
+                  // see Doc/GUI_protocol_command_coverage.md §4.
+                  Btn('Relay self-test', disabled: true, onTap: null),
                 ]),
               ],
             )),

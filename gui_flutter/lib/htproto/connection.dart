@@ -220,10 +220,16 @@ typedef EventCallback = void Function(Message msg);
 typedef LinkStateCallback = void Function(LinkState state, String detail);
 typedef ProtocolErrorCallback = void Function(String raw, Object error);
 
+/// `direction` is `'tx'` or `'rx'`, matching [SessionLogger]'s tags — every
+/// line that reaches the log file also reaches this, so a live console can
+/// show the same wire traffic without reading the file back off disk.
+typedef WireCallback = void Function(String direction, String text);
+
 class ConnectionManager {
   final EventCallback _onEvent;
   final LinkStateCallback _onLinkState;
   final ProtocolErrorCallback _onProtocolError;
+  final WireCallback _onWire;
 
   final Duration commandTimeout;
   final Duration linkTimeout;
@@ -243,6 +249,7 @@ class ConnectionManager {
     EventCallback? onEvent,
     LinkStateCallback? onLinkState,
     ProtocolErrorCallback? onProtocolError,
+    WireCallback? onWire,
     this.commandTimeout = defaultCommandTimeout,
     this.linkTimeout = defaultLinkTimeout,
     Directory? logDir,
@@ -250,6 +257,7 @@ class ConnectionManager {
   })  : _onEvent = onEvent ?? _noEvent,
         _onLinkState = onLinkState ?? _noLink,
         _onProtocolError = onProtocolError ?? _noProto,
+        _onWire = onWire ?? _noWire,
         _transportFactory = transportFactory {
     logger = SessionLogger(logDir ?? Directory('sessions'));
   }
@@ -257,6 +265,7 @@ class ConnectionManager {
   static void _noEvent(Message _) {}
   static void _noLink(LinkState _, String __) {}
   static void _noProto(String _, Object __) {}
+  static void _noWire(String _, String __) {}
 
   // -- lifecycle -------------------------------------------------------------
 
@@ -426,11 +435,14 @@ class ConnectionManager {
 
   void _sendLine(Uint8List command) {
     _transport!.send(command);
-    logger.tx(ascii.decode(command).replaceAll(RegExp(r'\n+$'), ''));
+    final text = ascii.decode(command).replaceAll(RegExp(r'\n+$'), '');
+    logger.tx(text);
+    _onWire('tx', text);
   }
 
   void _handleIncoming(String line) {
     logger.rx(line);
+    _onWire('rx', line);
     Message msg;
     try {
       msg = parseLine(line);

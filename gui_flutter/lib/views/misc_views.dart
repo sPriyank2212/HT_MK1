@@ -326,9 +326,9 @@ class _DiagViewState extends State<DiagView> {
     final panels = <Widget>[
       _busMap(context, s),
       _cards(context, s),
-      _manualSwitch(context),
+      _manualSwitch(context, s),
       _manualRelay(context, s),
-      _calibration(context),
+      _calibration(context, s),
     ];
 
     return Cols([
@@ -408,7 +408,9 @@ class _DiagViewState extends State<DiagView> {
       header: [
         const PanelTitle('Bus map'),
         const FlexSpacer(),
-        Btn('Rescan', onTap: () {}),
+        // No bus-enumeration command exists in firmware at all (checked
+        // bsp/board.c directly) — see Doc/GUI_protocol_command_coverage.md §4.
+        Btn('Rescan', disabled: true, onTap: null),
       ],
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -489,7 +491,7 @@ class _DiagViewState extends State<DiagView> {
     );
   }
 
-  Widget _manualSwitch(BuildContext context) {
+  Widget _manualSwitch(BuildContext context, AppState s) {
     final t = context.type;
     String fmt(double v) {
       final i = v.round();
@@ -553,9 +555,19 @@ class _DiagViewState extends State<DiagView> {
           ),
           const SizedBox(height: 14),
           RowWrap([
-            Btn('Close path', variant: BtnVariant.primary, onTap: () {}),
-            Btn('Read ADC', onTap: () {}),
-            Btn('Sweep this HS', onTap: () {}),
+            // MANUAL PATH is 1-based wire pins (1..256); the sliders show a
+            // 0-based bank/channel index, same convention as Net.hs/ls
+            // elsewhere in this file.
+            Btn(
+              'Close path',
+              variant: BtnVariant.primary,
+              onTap: () =>
+                  s.manualClosePath(_hsPin.round() + 1, _lsPin.round() + 1),
+            ),
+            // No protocol command exists for either — see
+            // Doc/GUI_protocol_command_coverage.md §4.
+            Btn('Read ADC', disabled: true, onTap: null),
+            Btn('Sweep this HS', disabled: true, onTap: null),
           ]),
         ],
       )),
@@ -632,51 +644,79 @@ class _DiagViewState extends State<DiagView> {
             ]),
           ),
           const SizedBox(height: 14),
+          // MANUAL RELAY is refused by the firmware by design — driving one
+          // HV relay by hand over a serial link while the rail may be live is
+          // not something the instrument allows (brief §0, §8 Q3: "the
+          // firmware refuses, a GUI confirm is not sufficient... do not offer
+          // the control"). No Close HS only / Close LS pattern here.
+          Text(
+            'Manual relay closes are refused by the instrument by design — '
+            'a live HV card will not accept single-relay control over the '
+            'link. Discharge (MANUAL OFF) is the only manual action offered '
+            'here.',
+            style: t.mono(size: 11.5, color: c.ink3, height: 1.5),
+          ),
+          const SizedBox(height: 11),
           RowWrap([
-            Btn('Close HS only', onTap: () {}),
-            Btn('Close LS pattern', onTap: () {}),
-            Btn('Discharge', variant: BtnVariant.ghostHv, onTap: () {}),
+            Btn('Discharge', variant: BtnVariant.ghostHv, onTap: s.manualOff),
           ]),
         ],
       )),
     );
   }
 
-  Widget _calibration(BuildContext context) {
+  Widget _calibration(BuildContext context, AppState s) {
     final t = context.type;
+    final cal = s.cal;
     return HtPanel(
-      header: const [
-        PanelTitle('Calibration'),
-        FlexSpacer(),
-        Pill(PillVariant.ok, 'Valid 6 h'),
+      header: [
+        const PanelTitle('Calibration'),
+        const FlexSpacer(),
+        Pill(cal != null ? PillVariant.ok : PillVariant.idle,
+            cal != null ? 'Read from instrument' : 'Not connected'),
       ],
       child: PanelPad(Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          // Every row here is CAL GET's actual reply (fetched once on
+          // connect, in AppState.connect()) — no field is invented. CAL GET
+          // has exactly three fields; loopback offset, ADC offset and the HV
+          // divider ratio the earlier mock-up showed are not part of the
+          // protocol and are not displayed as if they were real.
           Kv([
             KvRow(
-              'Loopback 0 Ω',
-              KvInline([
-                Text('0.412 Ω system offset ', style: t.kvDd),
-                const Tag(TagVariant.ok, 'stored'),
-              ]),
+              'Reference resistor',
+              KvText(cal != null
+                  ? '${(cal.rrefMohm / 1000).toStringAsFixed(3)} Ω'
+                  : '— not connected'),
             ),
-            const KvRow('Reference', KvText('100.004 Ω vs R131 · 0.01 %')),
             KvRow(
-              'Excitation',
-              KvInline([
-                Text('1.84 mA measured · 2.00 mA set ', style: t.kvDd),
-                const Tag(TagVariant.warn, '−8 %'),
-              ]),
+              'Excitation (set)',
+              KvText(cal != null
+                  ? '${(cal.currentUa / 1000).toStringAsFixed(2)} mA'
+                  : '— not connected'),
             ),
-            const KvRow('ADC offset', KvText('−3.1 µV · ADS124S08 self-cal')),
-            const KvRow('HV divider', KvText('0.245 V @ 500 V · ratio 0.00049')),
+            KvRow(
+              'PGA gain',
+              KvText(cal != null ? '×${cal.gain}' : '— not connected'),
+            ),
           ]),
+          const SizedBox(height: 10),
+          Text(
+            'Loopback offset, ADC offset and HV divider ratio are not '
+            'reported by CAL GET in the current protocol — not shown rather '
+            'than shown as invented numbers.',
+            style: t.mono(size: 11, color: context.colors.ink3, height: 1.5),
+          ),
           const SizedBox(height: 14),
           RowWrap([
-            Btn('Run self-cal', variant: BtnVariant.primary, onTap: () {}),
-            Btn('Compliance sweep', onTap: () {}),
-            Btn('Cal certificate', onTap: () {}),
+            // No protocol command exists for any of these three — see
+            // Doc/GUI_protocol_command_coverage.md §4 (self-cal, compliance
+            // sweep) and §5 (certificate needs a PDF-export dependency).
+            Btn('Run self-cal',
+                variant: BtnVariant.primary, disabled: true, onTap: null),
+            Btn('Compliance sweep', disabled: true, onTap: null),
+            Btn('Cal certificate', disabled: true, onTap: null),
           ]),
         ],
       )),

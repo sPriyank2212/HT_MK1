@@ -439,7 +439,7 @@ void main() {
       expect(s.selPort, isNull);
     });
 
-    test('selectPort connects with the chosen host; disconnect drops the link',
+    test('connectTo connects with the chosen host; disconnect drops the link',
         () async {
       final t = _FakeTransport();
       late final AppState s;
@@ -451,7 +451,7 @@ void main() {
       s = AppState(cm: cm, host: '127.0.0.1', port: 115200);
       addTearDown(cm.disconnect);
 
-      s.selectPort('COM7');
+      s.connectTo('COM7');
       await Future<void>.delayed(const Duration(milliseconds: 50));
 
       expect(s.host, 'COM7');

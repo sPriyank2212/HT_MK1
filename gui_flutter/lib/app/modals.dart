@@ -4,6 +4,8 @@
 ///   2. verify this is the harness that passed on J-MTX — always
 library;
 
+import 'dart:async';
+
 import 'package:flutter/widgets.dart';
 
 import '../design/icons.dart';
@@ -205,7 +207,17 @@ class HvNetlistModal extends StatelessWidget {
           ),
           Align(
             alignment: Alignment.centerLeft,
-            child: Btn('Browse the file system…', onTap: () {}),
+            child: Btn('Browse the file system…',
+                onTap: () => unawaited(s.browseHvNetlist())),
+          ),
+          Text(
+            'Reads the same Excel (.xlsx) netlist format as the MTX side — a '
+            'header row with HI/HS and LO/LS pin columns, plus an optional '
+            'CARDS column declaring the stack size (defaults to the fitted '
+            'stack if left out). Only the row count and CARDS matter here — '
+            'the HV card/relay map itself still comes from the fitted stack, '
+            'not from the file.',
+            style: t.mono(size: 11.5, color: c.ink3, height: 1.55),
           ),
           Text(
             'The HV netlist maps each net to a card and HS relay, and declares '
@@ -268,6 +280,72 @@ class _FileRow extends StatelessWidget {
                 ok ? 'matches stack' : '${file.cards}-card ≠ $stack'),
           ],
         ),
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// MODAL · select the MTX netlist
+// ---------------------------------------------------------------------------
+
+/// The MTX netbar's Select…/Change…. Two ways to give the instrument an MTX
+/// netlist: browse a real Excel file ([AppState.browseMtxNetlist]), or build
+/// one from the harness itself with cross-continuity + "Save as MTX
+/// netlist" (`confirmGoToBuildMtxNetlist` routes there). Used to jump
+/// straight to cross mode with only a log-panel line (collapsed by default)
+/// explaining why — from the operator's side that read as "I clicked
+/// Select… and nothing happened." This says so up front instead.
+class MtxNetlistModal extends StatelessWidget {
+  final AppState s;
+  const MtxNetlistModal({super.key, required this.s});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    final t = context.type;
+
+    return ModalScrim(
+      onDismiss: s.closeMtxNlExplainer,
+      child: MBox(
+        icon: HtIcons.doc,
+        hot: false,
+        title: 'Select the MTX netlist',
+        subtitle: Text(
+          'Load it from a netlist file, or build one from the harness '
+          'itself with cross continuity.',
+          style: t.modalP,
+        ),
+        body: [
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Btn('Browse for a netlist file (.xlsx)…',
+                variant: BtnVariant.primary,
+                onTap: () => unawaited(s.browseMtxNetlist())),
+          ),
+          Text(
+            'Expects a header row with a HI/HS pin column and a LO/LS pin '
+            'column (a NET name column is optional) — pins are the '
+            "instrument's own 1..256 numbering, the same pairs NETLIST ADD "
+            'takes on the wire. Uploaded immediately on pick — CONT RUN '
+            'verify and RES RUN both need this before either will run.',
+            style: t.mono(size: 11.5, color: c.ink3, height: 1.55),
+          ),
+          Container(
+            height: 1,
+            margin: const EdgeInsets.symmetric(vertical: 2),
+            color: c.lineSoft,
+          ),
+          Text(
+            'No file yet? Run cross continuity to scan every HS pin against '
+            'every LS pin, then Save as MTX netlist once it finds something.',
+            style: t.mono(size: 11.5, color: c.ink3, height: 1.55),
+          ),
+        ],
+        footer: [
+          Btn('Cancel', onTap: s.closeMtxNlExplainer),
+          Btn('Take me there', onTap: s.confirmGoToBuildMtxNetlist),
+        ],
       ),
     );
   }

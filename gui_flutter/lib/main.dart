@@ -29,6 +29,7 @@ import 'app/modals.dart';
 import 'app/shell.dart';
 import 'design/tokens.dart';
 import 'htproto/connection.dart';
+import 'htproto/netlist_picker_io.dart' as netlist_picker;
 import 'htproto/paths.dart';
 import 'htproto/serial_transport.dart';
 import 'htproto/simulator.dart';
@@ -110,6 +111,18 @@ Options parseArgs(List<String> args) {
   return o;
 }
 
+/// What [AppState.port] must hold for the link the options describe.
+///
+/// `AppState` carries one "port" number that means different things on the two
+/// transports: a TCP port for [TcpTransport], a baud rate for
+/// [SerialTransport]. Only `--serial` used to set it to the baud rate, so the
+/// plain double-click launch — serial transport, port picked from the status
+/// bar — reached `SerialTransport.open` carrying the *TCP* default, and opened
+/// the COM port at 46000 baud against firmware talking at 115200. The link came
+/// up, the STATUS handshake timed out two seconds later, and Connect looked
+/// broken.
+int linkPortFor(Options o) => (o.tcp || o.sim) ? o.port : o.baud;
+
 const String _usage = '''
 HT_MK1 operator console
 
@@ -185,9 +198,10 @@ Future<void> main(List<String> args) async {
   }
 
   var host = o.host;
-  var port = o.port;
+  var port = linkPortFor(o);
   // No --serial and no explicit TCP target: the link is serial, and the
   // operator picks the port from the status-bar selector.
+  final bool serialLink = !o.tcp && !o.sim;
   Transport Function() transportFactory =
       o.tcp ? TcpTransport.new : SerialTransport.new;
 
@@ -208,9 +222,9 @@ Future<void> main(List<String> args) async {
       }
     }
     // SerialTransport reads the port name and baud out of these two, so the
-    // session log's "connected COM7:115200" line says something true.
+    // session log's "connected COM7:115200" line says something true. `port`
+    // already holds the baud rate — see linkPortFor.
     host = name;
-    port = o.baud;
     transportFactory = SerialTransport.new;
     stdout.writeln('instrument on $name at ${o.baud} 8N1');
   } else if (o.sim) {
@@ -239,6 +253,7 @@ Future<void> main(List<String> args) async {
     onEvent: (m) => state.onEvent(m),
     onLinkState: (s, d) => state.onLinkState(s, d),
     onProtocolError: (raw, e) => state.onProtocolError(raw, e),
+    onWire: (dir, text) => state.onWire(dir, text),
     logDir: logDir,
     transportFactory: transportFactory,
   );
@@ -246,12 +261,19 @@ Future<void> main(List<String> args) async {
     cm: cm,
     host: host,
     port: port,
+    // --sim and --host aim at a socket; a COM-port picker aimed at one would
+    // hand `Socket.connect` a port name. The selector hides itself instead.
+    serialLink: serialLink,
     // The one other place the native serial library is touched: the
     // status-bar selector's port list.
     listPorts: () => [
       for (final p in availableSerialPorts())
         PortEntry(p.name, p.description),
     ],
+    // The only place file_picker's platform channel is touched — see
+    // netlist_picker_io.dart's own comment for why this is injected rather
+    // than imported directly by AppState.
+    pickNetlistFile: netlist_picker.pickNetlistFile,
   );
   state.refreshPorts();
   // --serial preselects its port; the selector shows it even when the
@@ -363,6 +385,13 @@ class HtHome extends StatefulWidget {
 class _HtHomeState extends State<HtHome> {
   final FocusNode _focus = FocusNode();
 
+  /// The app itself, as the one permanent entry of [build]'s [Overlay].
+  ///
+  /// Built once and held, not rebuilt per frame: `Overlay` reads
+  /// `initialEntries` only in its own initState, so a fresh list each build
+  /// would allocate entries nothing ever mounts.
+  late final OverlayEntry _base = OverlayEntry(builder: _buildApp);
+
   @override
   void dispose() {
     _focus.dispose();
@@ -398,83 +427,94 @@ class _HtHomeState extends State<HtHome> {
 
   @override
   Widget build(BuildContext context) {
-    final c = context.colors;
-
     return Focus(
       focusNode: _focus,
       autofocus: true,
       onKeyEvent: _onKey,
-      child: AnimatedBuilder(
-        animation: widget.state,
-        builder: (context, _) {
-          final s = widget.state;
-          final narrow = MediaQuery.sizeOf(context).width <= kNarrow;
+      // HtApp builds WidgetsApp with `builder:` and no home/routes, so it gets
+      // no Navigator — and therefore no Overlay. The status bar's port
+      // dropdown floats its menu in one, and `Overlay.of` threw "No Overlay
+      // widget found" on every click, which is why the selector looked dead.
+      // The app is the overlay's base entry; menus stack above it.
+      child: Overlay(initialEntries: [_base]),
+    );
+  }
 
-          // body.hv-live swaps the status bar for the hazard banner.
-          final header =
-              s.hvLive ? HazardBar(s: s) : StatusBar(s: s, onToggleTheme: widget.onToggleTheme);
+  Widget _buildApp(BuildContext context) {
+    final c = context.colors;
 
-          final stage = SingleChildScrollView(
-            // .stage{overflow:auto;padding:18px}  12px under 860
-            padding: EdgeInsets.all(narrow ? 12 : 18),
-            child: AnimatedSwitcher(
-              // .view{animation:rise .22s ease-out}
-              duration: const Duration(milliseconds: 220),
-              switchInCurve: Curves.easeOut,
-              transitionBuilder: (child, anim) => FadeTransition(
-                opacity: anim,
-                child: SlideTransition(
-                  position: Tween<Offset>(
-                    begin: const Offset(0, .012),
-                    end: Offset.zero,
-                  ).animate(anim),
-                  child: child,
-                ),
-              ),
-              child: KeyedSubtree(
-                key: ValueKey<String>(s.view),
-                child: _view(s),
+    return AnimatedBuilder(
+      animation: widget.state,
+      builder: (context, _) {
+        final s = widget.state;
+        final narrow = MediaQuery.sizeOf(context).width <= kNarrow;
+
+        // body.hv-live swaps the status bar for the hazard banner.
+        final header = s.hvLive
+            ? HazardBar(s: s)
+            : StatusBar(s: s, onToggleTheme: widget.onToggleTheme);
+
+        final stage = SingleChildScrollView(
+          // .stage{overflow:auto;padding:18px}  12px under 860
+          padding: EdgeInsets.all(narrow ? 12 : 18),
+          child: AnimatedSwitcher(
+            // .view{animation:rise .22s ease-out}
+            duration: const Duration(milliseconds: 220),
+            switchInCurve: Curves.easeOut,
+            transitionBuilder: (child, anim) => FadeTransition(
+              opacity: anim,
+              child: SlideTransition(
+                position: Tween<Offset>(
+                  begin: const Offset(0, .012),
+                  end: Offset.zero,
+                ).animate(anim),
+                child: child,
               ),
             ),
-          );
+            child: KeyedSubtree(
+              key: ValueKey<String>(s.view),
+              child: _view(s),
+            ),
+          ),
+        );
 
-          final Widget body = narrow
-              ? Column(
-                  children: [
-                    header,
-                    Rail(s: s, horizontal: true),
-                    Expanded(child: stage),
-                    LogBar(s: s),
-                  ],
-                )
-              : Column(
-                  children: [
-                    header,
-                    Expanded(
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          Rail(s: s),
-                          Expanded(child: stage),
-                        ],
-                      ),
+        final Widget body = narrow
+            ? Column(
+                children: [
+                  header,
+                  Rail(s: s, horizontal: true),
+                  Expanded(child: stage),
+                  LogBar(s: s),
+                ],
+              )
+            : Column(
+                children: [
+                  header,
+                  Expanded(
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Rail(s: s),
+                        Expanded(child: stage),
+                      ],
                     ),
-                    LogBar(s: s),
-                  ],
-                );
+                  ),
+                  LogBar(s: s),
+                ],
+              );
 
-          return ColoredBox(
-            color: c.bg,
-            child: Stack(
-              children: [
-                Positioned.fill(child: body),
-                if (s.mdNlOpen) HvNetlistModal(s: s),
-                if (s.mdVerifyOpen) VerifyModal(s: s),
-              ],
-            ),
-          );
-        },
-      ),
+        return ColoredBox(
+          color: c.bg,
+          child: Stack(
+            children: [
+              Positioned.fill(child: body),
+              if (s.mdNlOpen) HvNetlistModal(s: s),
+              if (s.mdVerifyOpen) VerifyModal(s: s),
+              if (s.mdMtxOpen) MtxNetlistModal(s: s),
+            ],
+          ),
+        );
+      },
     );
   }
 }
