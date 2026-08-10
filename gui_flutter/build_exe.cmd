@@ -57,6 +57,7 @@ for %%d in (
   "%USERPROFILE%\flutter\bin"
   "%USERPROFILE%\dev\flutter\bin"
   "%USERPROFILE%\Documents\flutter\bin"
+  "%USERPROFILE%\OneDrive\Documents\AI_PLANNER\flutter\bin"
   "C:\flutter\bin"
   "C:\src\flutter\bin"
   "C:\tools\flutter\bin"
@@ -81,12 +82,17 @@ rem ---- Visual Studio C++ workload ------------------------------------------
 if not exist "%VSWHERE%" goto no_msvc
 set "VSPATH="
 for /f "usebackq delims=" %%i in (`"%VSWHERE%" -latest -products * -requires Microsoft.VisualStudio.Workload.NativeDesktop -property installationPath 2^>nul`) do set "VSPATH=%%i"
+rem BuildTools only exposes the smaller VCTools workload, which is still enough
+rem for flutter build windows. Flutter doctor accepts it, so accept it here too.
+if not defined VSPATH for /f "usebackq delims=" %%i in (`"%VSWHERE%" -latest -products * -requires Microsoft.VisualStudio.Workload.VCTools -property installationPath 2^>nul`) do set "VSPATH=%%i"
 if not defined VSPATH goto no_msvc
 echo   Visual Studio C++     found
 
 rem ---- 7-Zip (to compress the payload) -------------------------------------
 set "SEVENZIP=%ProgramFiles%\7-Zip\7z.exe"
 if not exist "%SEVENZIP%" set "SEVENZIP=%ProgramFiles(x86)%\7-Zip\7z.exe"
+if not exist "%SEVENZIP%" set "SEVENZIP=%ProgramData%\chocolatey\tools\7z.exe"
+if not exist "%SEVENZIP%" set "SEVENZIP=%LOCALAPPDATA%\scoop\apps\7zip\current\7z.exe"
 if exist "%SEVENZIP%" goto have_7zip
 echo   7-Zip                 missing - installing via winget...
 where winget >nul 2>&1
