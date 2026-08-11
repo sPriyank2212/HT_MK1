@@ -2,13 +2,17 @@
 /**
   ******************************************************************************
   * @file    kelvin.h
-  * @brief   Kelvin wire-impedance measurement. Forces a known current via the
-  *          IDAC and reads the resulting drop through the InAmp + ADC, then
-  *          R = (Vadc / InAmp_gain) / I_force.
+  * @brief   4-wire (Kelvin) resistance measurement. Forces a known current via
+  *          the Control-Card IDAC (DAC8775) and reads the drop directly across
+  *          HI_SENSE/LO_SENSE on the Matrix Card's ADS124S08 - a true 4-wire
+  *          measurement, since the sense taps carry no force current and so
+  *          exclude mux/contact resistance from the force path.
   *
-  *          NOTE: the matrix as drawn is 2-wire (HI/LO), not 4-wire, so this is
-  *          a 2-wire resistance until separate sense routing exists. Parasitic
-  *          mux/contact resistance is included in the result for now.
+  *          R = V / I_force, with V from the ADS124S08 at auto-ranged PGA gain
+  *          and I_force from KELVIN_FORCE_CURRENT_A (TUNE/VERIFY - see below).
+  *          Ratiometric measurement (R = R_ref * code / (gain * 2^23), which
+  *          would cancel DAC error entirely) needs HW-04 and is not available
+  *          yet - see ads124s08.h.
   ******************************************************************************
   */
 /* USER CODE END Header */
@@ -26,18 +30,13 @@ extern "C" {
 #define KELVIN_SETTLE_MS        2U
 #endif
 
-/* Force current setup. TUNE/VERIFY against the DAC8775 range + Vref. */
+/* Force current setup. TUNE/VERIFY against the DAC8775 range + Vref - the
+ * DAC8775 driver's register map is itself still placeholder (dac8775.h). */
 #ifndef KELVIN_FORCE_CODE
 #define KELVIN_FORCE_CODE       0x8000U     /* mid-scale IDAC code            */
 #endif
 #ifndef KELVIN_FORCE_CURRENT_A
 #define KELVIN_FORCE_CURRENT_A  0.010f       /* amps actually forced at CODE   */
-#endif
-#ifndef KELVIN_INAMP_GAIN
-/* No instrumentation amp in the path (schematic: DAC8775 I_OUT -> TS5A3159 SPDT
- * -> wire -> AD7476). ADC reads V_drop directly, so gain = 1. 100 ohm cal ->
- * 1.000 V at 10 mA per the Operation Document. */
-#define KELVIN_INAMP_GAIN       1.0f         /* V/V, direct (no InAmp)         */
 #endif
 
 /* Acceptance limits (ohms). TUNE per harness spec. */
@@ -45,11 +44,17 @@ extern "C" {
 #define KELVIN_R_MAX_OHM        5.0f
 #endif
 
+/* Reject a reading whose code saturates the PGA even at unity gain, rather
+ * than report a number computed from a clipped conversion. */
+#ifndef KELVIN_SATURATION_FRACTION
+#define KELVIN_SATURATION_FRACTION  0.90f
+#endif
+
 typedef struct
 {
-  uint16_t      code;
-  float         volts;          /* ADC volts (post-InAmp)          */
-  float         resistance_ohm; /* computed wire resistance        */
+  int32_t       code;           /* ADS124S08 code, excited minus zero-current */
+  float         volts;          /* corresponding volts at the ADC input       */
+  float         resistance_ohm; /* computed wire resistance                   */
   TestVerdict_t verdict;
 } KelvinResult_t;
 

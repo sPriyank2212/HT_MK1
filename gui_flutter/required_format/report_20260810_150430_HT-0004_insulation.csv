@@ -1,0 +1,16 @@
+# Harness Tester Results — HV Insulation
+# DUT ID,HT-0004
+# Operator,
+# Netlist,
+# HV Applied (V),500
+# Insulation Limit (MOhm),10
+# Verdict,FAIL
+# Date/Time,2026-08-10 15:04:30
+
+Test #,Net,HV Card,HS Pin,Leak V,Insulation (MOhm),Limit (MOhm),Status
+1,GND_RET,H1,HS-03,0.052,3.2,10,FAIL
+2,PWR_28V_A,H1,HS-01,0.021,11.4,10,PASS
+3,LAMP_RET,H2,HS-19,0.014,18.6,10,PASS
+4,ARINC_A_LO,H1,HS-15,0.006,46.2,10,PASS
+5,SENSE_RTD_1,H3,HS-11,0.004,72.1,10,PASS
+6,PWR_28V_B,H1,HS-02,0.003,98.4,10,PASS

@@ -52,11 +52,11 @@ class ParsedNetlist {
 // field accepts several common spellings rather than one exact string.
 const List<String> _hiHeaders = [
   'hi', 'hi pin', 'hs', 'hs pin', 'high', 'from', 'from pin', //
-  'pin a', 'pin1', 'pin 1',
+  'pin a', 'pin1', 'pin 1', 'src pin #', 'src pin', 'source pin',
 ];
 const List<String> _loHeaders = [
   'lo', 'lo pin', 'ls', 'ls pin', 'low', 'to', 'to pin', //
-  'pin b', 'pin2', 'pin 2',
+  'pin b', 'pin2', 'pin 2', 'dst pin #', 'dst pin', 'destination pin',
 ];
 const List<String> _nameHeaders = ['net', 'net name', 'name', 'signal'];
 const List<String> _cardHeaders = ['card', 'cards', 'hv card', 'stack'];

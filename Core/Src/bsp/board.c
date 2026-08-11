@@ -35,6 +35,7 @@ void Board_SettleMs(uint32_t ms)
 MatrixCard_t      g_matrix;
 ControlFrontend_t g_frontend;
 HvCard_t          g_hv[BOARD_HV_COUNT];
+ADS124S08_t       g_ads124s08;
 
 /* ---------------------------------------------------------------------------
  * Bus assignment - corrected against the Doc/ schematics (2026-07):
@@ -45,15 +46,31 @@ HvCard_t          g_hv[BOARD_HV_COUNT];
  *   devices - data size must be set per transaction, or run 8-bit with the
  *   drivers doing byte framing. See fw_status CONFIG TODO.
  * ------------------------------------------------------------------------- */
-#define BOARD_MATRIX_I2C      (&hi2c3)   /* TODO: confirm matrix vs HV I2C bus */
-#define BOARD_HV_I2C          (&hi2c2)   /* TODO: per-board bus when >1 board  */
+#define BOARD_MATRIX_I2C      (&hi2c3)   /* U21/U20 ONLY - local to the Control
+                                           * Card (Control_Card-5 sheet
+                                           * /GPIO_Expander/). The Matrix Card's
+                                           * OWN onboard expanders are NOT on
+                                           * this bus - see BOARD_HV_I2C. */
+#define BOARD_HV_I2C          (&hi2c2)   /* Isolated I2C2 (ISO_SDA2/ISO_SCL2) -
+                                           * confirmed shared by every HV slot
+                                           * AND the Matrix Card's own onboard
+                                           * expanders (confirmed against real
+                                           * hardware, same bus as HV Card 1 -
+                                           * see Doc/i2c_bus_sharing.md). Every
+                                           * card straps its expanders to the
+                                           * same 0x20..0x27, so HV_Card_EN1..4
+                                           * must gate exactly one card's
+                                           * segment onto this bus at a time -
+                                           * see hv_card.c and
+                                           * MatrixCard_BusClaim/Release. */
 #define BOARD_IDAC_SPI        (&hspi2)   /* DAC8775 (Kelvin)                   */
 #define BOARD_ADC_SPI         (&hspi3)   /* AD7476 (Control front end, U4)     */
 #define BOARD_HV_SPI          (&hspi2)   /* HV DAC8830 + both AD7476 (isolated)*/
-#define BOARD_MATRIX_ADC_SPI  (&hspi1)   /* AD7476 (Matrix U33, HI_COM)        */
-/* Matrix ADC CS = SPI1_CS (PB0). TODO(CubeMX): assign PB0 as a GPIO output. */
-#define BOARD_MATRIX_ADC_CS_PORT  GPIOB
-#define BOARD_MATRIX_ADC_CS_PIN   GPIO_PIN_0
+#define BOARD_MATRIX_ADC_SPI  (&hspi1)   /* ADS124S08 (Matrix U68) - the only  */
+                                          /* device left on SPI1 since         */
+                                          /* Matrix_Card 2 removed U33 (AD7476)*/
+/* ADS124S08 CS/RESET/START/DRDY are NOT MCU GPIOs - they are driven through
+ * U69 (MCP23017) on the matrix's own I2C segment. See board_init_ads124s08(). */
 
 /* ---------------------------------------------------------------------------
  * CS / control pins. Confirmed where the schematic is unambiguous; the isolated
@@ -84,9 +101,12 @@ HvCard_t          g_hv[BOARD_HV_COUNT];
   */
 static HAL_StatusTypeDef board_init_matrix(void)
 {
-  /* Five expanders on I2C3: U21 (channel address, Control-Card side of the
-   * isolator) plus the four Matrix-card enable expanders. */
-  HAL_StatusTypeDef st = MatrixCard_Init(&g_matrix, BOARD_MATRIX_I2C);
+  /* U21 is local (I2C3, BOARD_MATRIX_I2C). The Matrix Card's own eight
+   * expanders are on the shared bus (I2C2, BOARD_HV_I2C) behind HV_Card_EN1 -
+   * confirmed against real hardware, same bus HV Card 1 uses. See
+   * Doc/i2c_bus_sharing.md. */
+  HAL_StatusTypeDef st = MatrixCard_Init(&g_matrix, BOARD_MATRIX_I2C, BOARD_HV_I2C,
+                                         HV_CARD_EN1_GPIO_Port, HV_CARD_EN1_Pin);
   if (st != HAL_OK)
   {
     return st;
@@ -96,6 +116,141 @@ static HAL_StatusTypeDef board_init_matrix(void)
    * front end already owns. Resistance will be read by the ADS124S08 across
    * HI_SENSE/LO_SENSE once FW-01 lands. Nothing further to bind here. */
   return st;
+}
+
+/* -----------------------------------------------------------------------
+ * ADS124S08 (Matrix Card U68) control lines. All four live on U69
+ * (MCP23017 @ MATRIX_ADCCTL_STRAP), which sits behind the same BUFF2
+ * translator as the sense-enable expanders - see matrix_card.h HW-12 - AND
+ * on the same card-vs-card shared bus as every other Matrix expander (see
+ * Doc/i2c_bus_sharing.md), so every access claims g_matrix's bus enable
+ * before selecting the sense segment, and releases it after.
+ * -------------------------------------------------------------------- */
+static MCP23017_t s_adcctl;   /* U69 */
+
+/* U69 pin numbers in the mcp23017 driver's packing (0..7 = GPA, 8..15 = GPB).
+ * Matrix_Card-7.pdf sheet 9: GPB0 = ADC_RST_1, GPB1 = DRDY_1 (input),
+ * GPB2 = ADC_CS_1, GPB3 = Start_SYNC_1. */
+#define BOARD_ADS_PIN_RESET   8U
+#define BOARD_ADS_PIN_DRDY    9U
+#define BOARD_ADS_PIN_CS      10U
+#define BOARD_ADS_PIN_START   11U
+
+/**
+  * @brief  Claim the shared bus, select the sense segment, drive one U69 pin.
+  * @note   Common path for cs/reset/start: all three cost a possible segment
+  *         switch (free if the sense segment is already selected - see
+  *         MatrixCard_SelectSegment) plus one expander write, bracketed by
+  *         the shared-bus claim/release every card must use.
+  */
+static HAL_StatusTypeDef board_ads_line(uint8_t pin, uint8_t state)
+{
+  HAL_StatusTypeDef st;
+
+  MatrixCard_BusClaim(&g_matrix);
+  st = MatrixCard_SelectSegment(&g_matrix, MATRIX_ADCCTL_SEG);
+  if (st == HAL_OK)
+  {
+    st = MCP23017_WritePin(&s_adcctl, pin, state);
+  }
+  MatrixCard_BusRelease(&g_matrix);
+  return st;
+}
+
+/**
+  * @brief  io.cs callback. assert=1 means CS low (device selected).
+  */
+static HAL_StatusTypeDef board_ads_cs(void *ctx, uint8_t assert)
+{
+  (void)ctx;
+  return board_ads_line(BOARD_ADS_PIN_CS, (uint8_t)(assert == 0U));
+}
+
+/**
+  * @brief  io.reset callback. assert=1 means RESET low (device held in reset).
+  */
+static HAL_StatusTypeDef board_ads_reset(void *ctx, uint8_t assert)
+{
+  (void)ctx;
+  return board_ads_line(BOARD_ADS_PIN_RESET, (uint8_t)(assert == 0U));
+}
+
+/**
+  * @brief  io.start callback. assert=1 means START/SYNC high (conversions run).
+  */
+static HAL_StatusTypeDef board_ads_start(void *ctx, uint8_t assert)
+{
+  (void)ctx;
+  return board_ads_line(BOARD_ADS_PIN_START, assert);
+}
+
+/**
+  * @brief  io.drdy callback. DRDY_1 is active low (SBAS660C), so "ready"
+  *         means the pin reads 0.
+  */
+static HAL_StatusTypeDef board_ads_drdy(void *ctx, uint8_t *ready)
+{
+  uint16_t pins;
+  HAL_StatusTypeDef st;
+
+  (void)ctx;
+  MatrixCard_BusClaim(&g_matrix);
+  st = MatrixCard_SelectSegment(&g_matrix, MATRIX_ADCCTL_SEG);
+  if (st == HAL_OK)
+  {
+    st = MCP23017_ReadPins(&s_adcctl, &pins);
+  }
+  MatrixCard_BusRelease(&g_matrix);
+  if (st != HAL_OK)
+  {
+    return st;
+  }
+  *ready = (uint8_t)(((pins >> BOARD_ADS_PIN_DRDY) & 1U) == 0U);
+  return HAL_OK;
+}
+
+/**
+  * @brief  Instantiate U69 and the ADS124S08 itself.
+  * @note   Must run after board_init_matrix(), which brings up U21 - U69 is
+  *         unreachable until the sense segment can be selected. Runs a self
+  *         offset calibration once at bring-up (cancels the ADC's own offset;
+  *         Kelvin_MeasurePair separately subtracts a fresh zero-current
+  *         baseline per point for the rest of the path - see BU-10).
+  * @retval HAL status from the first failing step.
+  */
+static HAL_StatusTypeDef board_init_ads124s08(void)
+{
+  static const ADS124S08_Io_t io = {
+    board_ads_cs, board_ads_reset, board_ads_start, board_ads_drdy, NULL
+  };
+  HAL_StatusTypeDef st;
+
+  /* U69 is on the shared bus (BOARD_HV_I2C), same as every other Matrix
+   * expander - see the note above board_ads_line(). */
+  MatrixCard_BusClaim(&g_matrix);
+  st = MatrixCard_SelectSegment(&g_matrix, MATRIX_ADCCTL_SEG);
+  if (st == HAL_OK)
+  {
+    st = MCP23017_Init(&s_adcctl, BOARD_HV_I2C, MATRIX_ADCCTL_STRAP);
+  }
+  if (st == HAL_OK)
+  {
+    /* DRDY_1 is the only input on this expander. */
+    st = MCP23017_SetDirection(&s_adcctl, (uint16_t)(1U << BOARD_ADS_PIN_DRDY));
+  }
+  MatrixCard_BusRelease(&g_matrix);
+  if (st != HAL_OK)
+  {
+    return st;
+  }
+
+  st = ADS124S08_Init(&g_ads124s08, BOARD_MATRIX_ADC_SPI, &io,
+                      ADS124S08_GAIN_128, ADS124S08_DR_20);
+  if (st != HAL_OK)
+  {
+    return st;
+  }
+  return ADS124S08_SelfOffsetCal(&g_ads124s08);
 }
 
 /**
@@ -120,21 +275,47 @@ static HAL_StatusTypeDef board_init_frontend(void)
   return Frontend_Init(&g_frontend, &cfg);
 }
 
+/* HV_Card_EN1..4 (Control_Card-5 /uC/ + /Isolator/): one bus-segment enable
+ * per physical slot, J1..J4. J1 is the Matrix Card's own connector (it carries
+ * LO_S1-4, HI_S1-4, the SPI1 bus and IN - see PROJECT_LOG HW-09), not a free
+ * HV slot - EN1 is used directly by MatrixCard_Init() (board_init_matrix()
+ * above), not through this table. So board index 0 maps to slot 1 (J2/EN2)
+ * below: at most 3 HV boards fit alongside the Matrix Card. */
+static GPIO_TypeDef * const board_hv_en_port[4] = {
+  HV_CARD_EN1_GPIO_Port, HV_CARD_EN2_GPIO_Port,
+  HV_CARD_EN3_GPIO_Port, HV_CARD_EN4_GPIO_Port
+};
+static const uint16_t board_hv_en_pin[4] = {
+  HV_CARD_EN1_Pin, HV_CARD_EN2_Pin, HV_CARD_EN3_Pin, HV_CARD_EN4_Pin
+};
+
+/* board_init_hv() maps board index -> slot idx+1, so at most 3 boards fit
+ * (idx 0..2 -> J2..J4) once J1 is reserved for the Matrix Card. */
+#if BOARD_HV_COUNT > 3
+#error "BOARD_HV_COUNT > 3 needs J1 to also serve as an HV slot - see HW-09"
+#endif
+
 /**
   * @brief  Instantiate and bind one HV card at board index @p idx.
-  * @note   Fills an HvCardCfg_t: shared HV I2C bus, per-side expander straps
-  *         (inject 0x20..0x23, return 0x24..0x27), isolated SPI2 for the DAC8830
-  *         and both sense ADCs, and the HV-card ADC reference (+5V_ISO). Several
-  *         straps/CS lines are placeholders pending the connector netlist (TODO).
-  * @param  idx : [in] HV board index into g_hv[] (0..BOARD_HV_COUNT-1).
+  * @note   Fills an HvCardCfg_t: shared HV I2C bus (gated by this slot's
+  *         HV_Card_EN line - see the bus-sharing note above), per-side expander
+  *         straps (inject 0x20..0x23, return 0x24..0x27), isolated SPI2 for the
+  *         DAC8830 and both sense ADCs, and the HV-card ADC reference
+  *         (+5V_ISO). Several straps/CS lines are placeholders pending the
+  *         connector netlist (TODO).
+  * @param  idx : [in] HV board index into g_hv[] (0..BOARD_HV_COUNT-1); maps to
+  *                    physical slot idx+1 (J2..J5) - see board_hv_en_port above.
   * @retval HAL status from HvCard_Init().
   */
 static HAL_StatusTypeDef board_init_hv(uint8_t idx)
 {
   HvCardCfg_t cfg = {0};
   uint8_t i;
+  uint8_t slot = (uint8_t)(idx + 1U);   /* 0 -> J2/EN2, reserving J1 for Matrix */
 
-  cfg.i2c = BOARD_HV_I2C;          /* TODO: per-board bus when >1 board */
+  cfg.i2c = BOARD_HV_I2C;
+  cfg.en_port = board_hv_en_port[slot];
+  cfg.en_pin  = board_hv_en_pin[slot];
   for (i = 0U; i < HV_MCP_PER_SIDE; i++)
   {
     cfg.inject_strap[i] = i;       /* 0x20..0x23 - TODO verify straps   */
@@ -166,6 +347,11 @@ HAL_StatusTypeDef Board_Init(void)
   uint8_t i;
 
   st = board_init_matrix();
+  if (st != HAL_OK)
+  {
+    return st;
+  }
+  st = board_init_ads124s08();
   if (st != HAL_OK)
   {
     return st;

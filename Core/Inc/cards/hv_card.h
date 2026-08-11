@@ -23,6 +23,15 @@
   *              lines the MCU brings to the card (HV_Card_x.0 -> LEAK CS,
   *              HV_Card_x.1 -> RAIL CS). They are ADC chip-selects, NOT HV
   *              enable/discharge.
+  *
+  *          BUS SHARING: the Matrix Card and every HV card slot sit on the same
+  *          I2C bus (isolated I2C2, per the Control Card schematic), and every
+  *          card - Matrix included - hard-straps its expanders to the same
+  *          0x20..0x27 range. Nothing on the wire tells two cards apart except
+  *          one isolated enable line per HV slot (HV_Card_EN1..4, Control_Card-5
+  *          sheet /Isolator/ + /uC/), which this driver must assert before, and
+  *          deassert after, every I2C transaction so at most one card answers on
+  *          the bus at a time. See Doc/i2c_bus_sharing.md.
   ******************************************************************************
   */
 /* USER CODE END Header */
@@ -46,6 +55,12 @@ typedef struct
   I2C_HandleTypeDef *i2c;                 /* isolated I2C bus for this board    */
   uint8_t            inject_strap[HV_MCP_PER_SIDE]; /* A2:A0 of 4 inject MCPs   */
   uint8_t            return_strap[HV_MCP_PER_SIDE]; /* A2:A0 of 4 return MCPs   */
+
+  /* This slot's segment enable on the shared I2C bus (HV_CARD_EN1..4 - a plain
+   * MCU GPIO on the non-isolated side, buffered across the isolation boundary).
+   * Must be non-NULL: without it every relay-expander access on this board
+   * risks colliding with the Matrix Card or another HV board on the same bus. */
+  GPIO_TypeDef      *en_port;          uint16_t en_pin;
 
   SPI_HandleTypeDef *spi;                 /* isolated SPI bus (DAC8830 + ADCs)  */
   GPIO_TypeDef      *dac_cs_port;      uint16_t dac_cs_pin;   /* DAC8830 CS      */

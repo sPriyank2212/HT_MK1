@@ -225,6 +225,13 @@ ADS124S08 at gain 32 with the internal 2.5 V reference.
 
 ### 7.1 There is a usable current window
 
+**STALE (2026-08-11): this section's "target ~5 mA" was superseded 2026-08-01
+by BU-09 (real CD74HC4051 datasheet, worst-case Rₒₙ 250–320 Ω at 3.3 V) —
+current target is 3 mA, not 5 mA. The lower bound below is correct (1 mA,
+common-mode-limited, independent of the mux swap) but the table and the "target
+~5 mA" callout need re-deriving against the 3 mA ceiling. Not done in this
+pass — see `PROJECT_LOG.md` HW-11.**
+
 The excitation is bounded at both ends. Too little and the sense common mode
 falls below the PGA floor; too much and the force loop runs out of compliance on
 the 3.3 V rail. The window is wide enough — the point is to sit in it
@@ -315,14 +322,46 @@ do not expect to speed it up by raising the data rate alone.
 
 ### 7.6 Accuracy is DAC-limited until HW-04 is done
 
-| | as drawn | with HW-04 (LO_COM → spare AIN) |
-|---|---|---|
-| dominant error | DAC8775 current accuracy + tempco | R131 tolerance (0.01 %) + ADC gain error |
-| realistic accuracy | **~0.5 %** | **~0.05 %** |
+**Corrected 2026-08-11** — the "~0.5 %" figure below was unsourced. Re-derived
+from `Datasheet/dac8775.pdf` directly, with the specific gotcha that its TUE
+table has **four rows depending on temperature range *and* which current range
+is configured**, not one number:
 
-An order of magnitude, for one on-card net and two passives. The bench measured
-0.4 % with a **5 % divider** and no current calibration at all — that is what
-the ratiometric method buys.
+```
+TUE, -40..125°C, general (0-20/0-24/±24 mA ranges)   ±0.14 %FSR
+TUE, -40..125°C, "4 to 20 mA" range specifically       ±0.4 %FSR
+TUE, 25°C only,  "4 to 20 mA" range specifically       ±0.2 %FSR
+TUE, 25°C only,  general                              ±0.12 %FSR
+```
+
+§7.1's window is 1–3 mA — below the 4 mA floor of the "4 to 20 mA" range
+option, so the DAC has to be configured to 0–20 mA or 0–24 mA here. **The
+applicable row is the general ±0.14 %FSR one, not the ±0.4 % "4 to 20 mA" row**
+— that row characterizes a different range setting than this design can even
+use. (`DAC8775_RANGE_0_24MA` in `dac8775.h` is still a VERIFY placeholder,
+so which of 20 mA/24 mA FSR is real is itself unresolved — the table below
+gives both.)
+
+| FSR (range setting) | abs. error, ±0.14 %FSR, full temp | R_max for ±1 mΩ before cal, at 1 / 2 / 3 mA |
+|---|---|---|
+| 0–24 mA | 33.6 µA | 29.8 mΩ / 59.5 mΩ / 89.3 mΩ |
+| 0–20 mA | 28.0 µA | 35.7 mΩ / 71.4 mΩ / 107.1 mΩ |
+
+So: **~2.4× more headroom than a ±0.4 %/80 µA calculation would suggest** — but
+the conclusion does not change, because none of these ceilings (30–107 mΩ) are
+anywhere near the sub-1 mΩ noise-floor target from §7.9/the noise table.
+**Calibration is mandatory either way**; the DAC error was never actually the
+binding constraint once the correct row is used — the noise floor at a
+practical data rate is. Realistic *pre-calibration* accuracy is closer to
+**~0.15 %** (general row, 24 mA FSR) than either the old "~0.5 %" guess or a
+±0.4 %-row calculation, but "realistic accuracy" isn't the number that matters
+here — R_max-before-cal vs. the ±1 mΩ target is.
+
+An order of magnitude better again is available for one on-card net and two
+passives if HW-04 lands: dominant error becomes R131 tolerance (0.01 %) + ADC
+gain error, not DAC accuracy at all. The bench measured 0.4 % with a **5 %
+divider** and no current calibration at all — that is what the ratiometric
+method buys, independent of which DAC ships.
 
 ### 7.7 Two-segment I2C latency
 

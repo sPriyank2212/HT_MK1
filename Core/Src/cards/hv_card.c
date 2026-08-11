@@ -9,6 +9,45 @@
 
 #include "cards/hv_card.h"
 
+/* Settle time after asserting this board's bus-enable line, before the first
+ * I2C transaction: the isolator's own propagation delay is nanoseconds, but
+ * this gives margin without costing anything meaningful against I2C's own
+ * per-transaction overhead. VERIFY against the isolator datasheet if this
+ * ever needs to shrink. */
+#ifndef HV_BUS_ENABLE_SETTLE_MS
+#define HV_BUS_ENABLE_SETTLE_MS  1U
+#endif
+
+/**
+  * @brief  Put this board, and only this board, on the shared I2C bus.
+  * @note   The Matrix Card and every HV slot hard-strap their expanders to the
+  *         same 0x20..0x27 range (see hv_card.h header) - HV_Card_EN1..4 is the
+  *         only thing that keeps two of them from answering the same address
+  *         at once. Every function below that touches hv->inject[]/hv->ret[]
+  *         must bracket the transfer with claim/release; nothing else may run
+  *         between them.
+  * @param  hv : [in] instance; must be non-NULL, en_port must be configured.
+  * @retval None (GPIO writes do not fail).
+  */
+static void hv_bus_claim(HvCard_t *hv)
+{
+  HAL_GPIO_WritePin(hv->cfg.en_port, hv->cfg.en_pin, GPIO_PIN_SET);
+  HAL_Delay(HV_BUS_ENABLE_SETTLE_MS);
+}
+
+/**
+  * @brief  Take this board back off the shared I2C bus.
+  * @note   Leaving EN asserted after the transaction is what would let this
+  *         board's addresses collide with the Matrix Card's - deassert on
+  *         every exit path, including error returns.
+  * @param  hv : [in] instance; must be non-NULL, en_port must be configured.
+  * @retval None
+  */
+static void hv_bus_release(HvCard_t *hv)
+{
+  HAL_GPIO_WritePin(hv->cfg.en_port, hv->cfg.en_pin, GPIO_PIN_RESET);
+}
+
 /**
   * @brief  Map a 1-based side pin to its expander index and bit position.
   * @note   Linear layout: pin 1..64 -> expander 0..3, bit 0..15. VERIFY the
@@ -89,12 +128,14 @@ HAL_StatusTypeDef HvCard_OpenAllRelays(HvCard_t *hv)
   {
     return HAL_ERROR;
   }
+  hv_bus_claim(hv);
   st = hv_side_open(hv->inject);
-  if (st != HAL_OK)
+  if (st == HAL_OK)
   {
-    return st;
+    st = hv_side_open(hv->ret);
   }
-  return hv_side_open(hv->ret);
+  hv_bus_release(hv);
+  return st;
 }
 
 /**
@@ -114,24 +155,30 @@ HAL_StatusTypeDef HvCard_Init(HvCard_t *hv, const HvCardCfg_t *cfg)
   HAL_StatusTypeDef st;
   uint8_t i;
 
-  if (hv == NULL || cfg == NULL)
+  if (hv == NULL || cfg == NULL || cfg->en_port == NULL)
   {
     return HAL_ERROR;
   }
   hv->cfg = *cfg;
 
+  hv_bus_claim(hv);
   for (i = 0U; i < HV_MCP_PER_SIDE; i++)
   {
     st = MCP23017_Init(&hv->inject[i], cfg->i2c, cfg->inject_strap[i]);
     if (st != HAL_OK)
     {
-      return st;
+      break;
     }
     st = MCP23017_Init(&hv->ret[i], cfg->i2c, cfg->return_strap[i]);
     if (st != HAL_OK)
     {
-      return st;
+      break;
     }
+  }
+  hv_bus_release(hv);
+  if (st != HAL_OK)
+  {
+    return st;
   }
 
   /* DAC8830 -> 0 V program (HV off). */
@@ -165,7 +212,16 @@ HAL_StatusTypeDef HvCard_Init(HvCard_t *hv, const HvCardCfg_t *cfg)
   */
 HAL_StatusTypeDef HvCard_CloseInject(HvCard_t *hv, uint8_t pin)
 {
-  return (hv == NULL) ? HAL_ERROR : hv_side_close_one(hv->inject, pin);
+  HAL_StatusTypeDef st;
+
+  if (hv == NULL)
+  {
+    return HAL_ERROR;
+  }
+  hv_bus_claim(hv);
+  st = hv_side_close_one(hv->inject, pin);
+  hv_bus_release(hv);
+  return st;
 }
 
 /**
@@ -176,7 +232,16 @@ HAL_StatusTypeDef HvCard_CloseInject(HvCard_t *hv, uint8_t pin)
   */
 HAL_StatusTypeDef HvCard_CloseReturn(HvCard_t *hv, uint8_t pin)
 {
-  return (hv == NULL) ? HAL_ERROR : hv_side_close_one(hv->ret, pin);
+  HAL_StatusTypeDef st;
+
+  if (hv == NULL)
+  {
+    return HAL_ERROR;
+  }
+  hv_bus_claim(hv);
+  st = hv_side_close_one(hv->ret, pin);
+  hv_bus_release(hv);
+  return st;
 }
 
 /**

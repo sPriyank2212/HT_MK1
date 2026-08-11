@@ -30,6 +30,7 @@ extern "C" {
 #include "cards/matrix_card.h"
 #include "cards/control_frontend.h"
 #include "cards/hv_card.h"
+#include "drivers/ads124s08.h"
 
 /* Number of HV boards fitted in this build (1..4). TODO: confirm. */
 #ifndef BOARD_HV_COUNT
@@ -50,6 +51,7 @@ extern "C" {
 extern MatrixCard_t      g_matrix;
 extern ControlFrontend_t g_frontend;
 extern HvCard_t          g_hv[BOARD_HV_COUNT];
+extern ADS124S08_t       g_ads124s08;   /* Matrix Card U68, SPI1 - see HW-12  */
 
 /**
   * @brief  Initialise every card/driver to a safe idle state.

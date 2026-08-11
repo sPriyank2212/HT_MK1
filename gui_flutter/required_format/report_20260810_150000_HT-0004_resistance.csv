@@ -1,0 +1,20 @@
+# Harness Tester Results — Resistance
+# DUT ID,HT-0004
+# Operator,
+# Netlist,
+# Excitation Current (mA),2.000
+# Resistance Limit (mOhm),500
+# Verdict,FAIL
+# Date/Time,2026-08-10 15:00:00
+
+Test #,Source,Part Number,Conn ID,Src Pin Label,Src Pin #,Resistance (mOhm),Limit (mOhm),Status,Dst Pin #,Dst Pin Label,Conn ID,Part Number,Destination
+1,,,,Pin 1,1,42.3,500,PASS,14,Pin 14,,,
+2,,,,Pin 2,2,38.9,500,PASS,15,Pin 15,,,
+3,,,,Pin 3,3,655.2,500,FAIL_HIGH,10,Pin 10,,,
+4,,,,Pin 4,4,44.1,500,PASS,11,Pin 11,,,
+5,,,,Pin 7,7,39.7,500,PASS,12,Pin 12,,,
+6,,,,Pin 8,8,41.0,500,PASS,13,Pin 13,,,
+7,,,,Pin 9,9,37.6,500,PASS,1,Pin 1,,,
+8,,,,Pin 10,10,40.2,500,PASS,2,Pin 2,,,
+9,,,,Pin 11,11,43.8,500,PASS,1,Pin 1,,,
+10,,,,Pin 12,12,39.1,500,PASS,2,Pin 2,,,

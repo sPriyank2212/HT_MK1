@@ -362,10 +362,11 @@ static void run_continuity_all(uint8_t discover)
 
 /**
   * @brief  Resistance over the loaded netlist.
-  * @note   Kelvin_MeasurePair currently returns an error by design until FW-02
-  *         rewrites it for the ADS124S08, so every net reports fail_high. That
-  *         is deliberate - reporting a plausible number from a measurement path
-  *         that no longer exists would be worse.
+  * @note   Kelvin_MeasurePair (FW-02) reads HI_SENSE/LO_SENSE on the Matrix
+  *         Card's ADS124S08, auto-ranging the PGA and subtracting a
+  *         zero-current baseline per point. A bus/driver error (not a real
+  *         over-limit reading) still reports fail_high here rather than a
+  *         number computed from a failed conversion.
   * @retval None
   */
 static void run_resistance_all(void)

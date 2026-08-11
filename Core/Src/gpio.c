@@ -57,12 +57,22 @@ void MX_GPIO_Init(void)
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GPIOB, SPI3_CS_Pin|SPI3_CSB2_Pin, GPIO_PIN_RESET);
 
-  /*Configure GPIO pins : HV_CARD_DT_1_0_Pin HV_CARD_DT_1_1_Pin HV_CARD_DT_2_1_Pin HV_CARD_DT_3_0_Pin
-                           HV_CARD_DT_3_1_Pin OPT0_CNTR_Pin */
-  GPIO_InitStruct.Pin = HV_CARD_DT_1_0_Pin|HV_CARD_DT_1_1_Pin|HV_CARD_DT_2_1_Pin|HV_CARD_DT_3_0_Pin
-                          |HV_CARD_DT_3_1_Pin|OPT0_CNTR_Pin;
+  /* HV_CARD_EN1/EN2 default low - the shared I2C2 bus is address-colliding
+   * across the Matrix Card and every HV card slot, so each slot's segment
+   * must stay disabled until firmware explicitly selects it (see hv_card.c). */
+  HAL_GPIO_WritePin(GPIOC, HV_CARD_EN1_Pin|HV_CARD_EN2_Pin, GPIO_PIN_RESET);
+
+  /*Configure GPIO pins : HV_CARD_DT_1_0_Pin HV_CARD_DT_1_1_Pin HV_CARD_DT_2_1_Pin OPT0_CNTR_Pin */
+  GPIO_InitStruct.Pin = HV_CARD_DT_1_0_Pin|HV_CARD_DT_1_1_Pin|HV_CARD_DT_2_1_Pin|OPT0_CNTR_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
+  HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
+
+  /*Configure GPIO pins : HV_CARD_EN1_Pin HV_CARD_EN2_Pin */
+  GPIO_InitStruct.Pin = HV_CARD_EN1_Pin|HV_CARD_EN2_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
 
   /*Configure GPIO pins : I2C2_CS_Pin I2C3_CS_Pin */
@@ -85,10 +95,14 @@ void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
-  /*Configure GPIO pins : HV_CARD_DT_4_1_Pin HV_CARD_DT_4_0_Pin */
-  GPIO_InitStruct.Pin = HV_CARD_DT_4_1_Pin|HV_CARD_DT_4_0_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  /* HV_CARD_EN3/EN4 default low - same reasoning as EN1/EN2 above. */
+  HAL_GPIO_WritePin(GPIOA, HV_CARD_EN3_Pin|HV_CARD_EN4_Pin, GPIO_PIN_RESET);
+
+  /*Configure GPIO pins : HV_CARD_EN4_Pin HV_CARD_EN3_Pin */
+  GPIO_InitStruct.Pin = HV_CARD_EN4_Pin|HV_CARD_EN3_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
   /*Configure GPIO pin : HV_CARD_DT_2_0_Pin */

@@ -9,75 +9,137 @@
 
 #include "test/kelvin.h"
 
+#define KELVIN_FULLSCALE_CODE  8388608.0f   /* 2^23 */
+
+/* PGA gain sequence for auto-ranging, highest first. Most harness wires are a
+ * fraction of an ohm, so starting high gives the best resolution on the
+ * common case; a genuinely large R (near-open fault) falls through to a lower
+ * gain instead of saturating the conversion. */
+static const ADS124S08_Gain_t kelvin_gain_seq[] = {
+  ADS124S08_GAIN_128, ADS124S08_GAIN_64, ADS124S08_GAIN_32, ADS124S08_GAIN_16,
+  ADS124S08_GAIN_8,   ADS124S08_GAIN_4,  ADS124S08_GAIN_2,  ADS124S08_GAIN_1
+};
+#define KELVIN_GAIN_STEPS  (sizeof(kelvin_gain_seq) / sizeof(kelvin_gain_seq[0]))
+
+/**
+  * @brief  Convert at each gain in kelvin_gain_seq, stopping at the first that
+  *         does not saturate.
+  * @param  code : [out] the accepted conversion.
+  * @retval HAL_OK on success, HAL_ERROR if every gain (including unity)
+  *         saturates, else the first failing status from the ADC driver.
+  */
+static HAL_StatusTypeDef kelvin_ranged_read(int32_t *code)
+{
+  HAL_StatusTypeDef st;
+  int32_t limit = (int32_t)(KELVIN_FULLSCALE_CODE * KELVIN_SATURATION_FRACTION);
+  uint8_t i;
+
+  for (i = 0U; i < KELVIN_GAIN_STEPS; i++)
+  {
+    st = ADS124S08_SetGain(&g_ads124s08, kelvin_gain_seq[i]);
+    if (st != HAL_OK)
+    {
+      return st;
+    }
+    st = ADS124S08_ConvertOnce(&g_ads124s08, code);
+    if (st != HAL_OK)
+    {
+      return st;
+    }
+    if (*code > -limit && *code < limit)
+    {
+      return HAL_OK;
+    }
+  }
+  /* Saturated even at unity gain: open circuit or a gross fault, not a
+   * measurable resistance. */
+  return HAL_ERROR;
+}
+
 /**
   * @brief  Measure the 4-wire (Kelvin) resistance of one harness pair.
-  * @note   Sequence: route the pair through the matrix, switch the control
-  *         front end to the current source, force KELVIN_FORCE_CODE, settle,
-  *         then read the node. In impedance mode the Opto SPDT disconnects the
-  *         control ADC, so the node is read through the matrix ADC (U33).
-  *         Resistance is R = (Vadc / INAMP_GAIN) / I_force and the verdict is
-  *         PASS when R <= KELVIN_R_MAX_OHM. The front end and matrix are always
-  *         released before returning, even on error.
+  * @note   Sequence: pair the sense array with the force array, route the
+  *         pins, switch the front end to the current source and force
+  *         KELVIN_FORCE_CODE, then read HI_SENSE - LO_SENSE on the Matrix
+  *         Card's ADS124S08 with the PGA auto-ranged to the highest gain that
+  *         does not saturate. A second conversion at the same gain with the
+  *         excitation off gives a system-offset baseline (mux charge
+  *         injection, lead offset - not just the ADC's own offset, which
+  *         ADS124S08_SelfOffsetCal cancels once at board init); the two codes
+  *         are subtracted before converting to ohms. The front end and matrix
+  *         are always released before returning, even on error.
   * @param  hi_pin : [in]  1-based HI-side harness pin.
   * @param  lo_pin : [in]  1-based LO-side harness pin.
-  * @param  res    : [out] result (raw code, volts, resistance, verdict). On any
+  * @param  res    : [out] result (code, volts, resistance, verdict). On any
   *                       early error the verdict is left TEST_ERROR. Must be non-NULL.
   * @retval HAL_OK    measurement completed (inspect res->verdict for pass/fail).
-  * @retval HAL_ERROR @p res is NULL.
+  * @retval HAL_ERROR @p res is NULL, or every PGA gain saturated.
   * @retval other     first failing HAL status from routing/front-end/ADC access.
   */
 HAL_StatusTypeDef Kelvin_MeasurePair(uint16_t hi_pin, uint16_t lo_pin,
                                      KelvinResult_t *res)
 {
   HAL_StatusTypeDef st;
+  int32_t code_excited, code_zero;
 
   if (res == NULL)
   {
     return HAL_ERROR;
   }
-  res->code           = 0U;
+  res->code           = 0;
   res->volts          = 0.0f;
   res->resistance_ohm = 0.0f;
   res->verdict        = TEST_ERROR;
 
-  /* Route the wire, switch the front end to the current source, force current. */
-  st = MatrixCard_ConnectPair(&g_matrix, hi_pin, lo_pin);
+  st = MatrixCard_SetSensePaired(&g_matrix, 1U);
   if (st != HAL_OK)
   {
     return st;
+  }
+
+  /* Route the wire, switch the front end to the current source. */
+  st = MatrixCard_ConnectPair(&g_matrix, hi_pin, lo_pin);
+  if (st != HAL_OK)
+  {
+    goto release;
   }
   st = Frontend_SetMode(&g_frontend, FRONTEND_MODE_IMPEDANCE);
   if (st != HAL_OK)
   {
     goto release;
   }
+
   st = Frontend_SetCurrentCode(&g_frontend, KELVIN_FORCE_CODE);
   if (st != HAL_OK)
   {
     goto release;
   }
-
   Board_SettleMs(KELVIN_SETTLE_MS);
+  st = kelvin_ranged_read(&code_excited);
+  if (st != HAL_OK)
+  {
+    goto release;
+  }
 
-  /* NOT IMPLEMENTED - awaiting FW-01 (drivers/ads124s08).
-   *
-   * This used to read HI_COM through the Matrix card's AD7476 (U33) and divide
-   * by a hard-coded 10 mA. Matrix_Card 2 deleted U33 entirely, and the
-   * measurement moved to a genuine 4-wire read of HI_SENSE - LO_SENSE on the
-   * ADS124S08. Failing loudly is better than returning a number produced by
-   * reading a chip that is no longer on the board.
-   *
-   * The rewrite (FW-02) needs, per Doc/4wire_resistance_validation.md:
-   *   - sense pairing on: MatrixCard_SetSensePaired(&g_matrix, 1)
-   *   - excitation ~5 mA (window is 1..8 mA; below 1 mA the sense common mode
-   *     falls under the ADS124S08 PGA floor, above 8 mA the force loop runs out
-   *     of compliance on 3.3 V)
-   *   - PGA auto-ranging, which also keeps the common mode legal on large R
-   *   - R = R_ref * code / (gain * 2^23)   <- NO factor of 2; that belongs to
-   *     the ADS1232 bench rig only (BU-08)
-   *   - current reversal to cancel thermal EMF (BU-10) */
-  st = HAL_ERROR;
-  res->verdict = TEST_ERROR;
+  /* Same gain, no excitation: the system-offset baseline. */
+  st = Frontend_SetCurrentCode(&g_frontend, 0U);
+  if (st != HAL_OK)
+  {
+    goto release;
+  }
+  Board_SettleMs(KELVIN_SETTLE_MS);
+  st = ADS124S08_ConvertOnce(&g_ads124s08, &code_zero);
+  if (st != HAL_OK)
+  {
+    goto release;
+  }
+
+  res->code           = code_excited - code_zero;
+  res->volts          = ADS124S08_CodeToVolts(&g_ads124s08, res->code);
+  res->resistance_ohm = ADS124S08_OhmsFromCurrent(&g_ads124s08, res->code,
+                                                   KELVIN_FORCE_CURRENT_A);
+  res->verdict        = (res->resistance_ohm <= KELVIN_R_MAX_OHM) ? TEST_PASS
+                                                                   : TEST_FAIL;
 
 release:
   /* Stop forcing current and open the matrix. */

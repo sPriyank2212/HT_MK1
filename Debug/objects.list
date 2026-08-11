@@ -1,4 +1,5 @@
 "./Core/Src/app/log.o"
+"./Core/Src/app/proto.o"
 "./Core/Src/app/tasks.o"
 "./Core/Src/app_freertos.o"
 "./Core/Src/gpio.o"
@@ -18,6 +19,7 @@
 "./Core/Src/cards/matrix_card.o"
 "./Core/Src/drivers/ad7476.o"
 "./Core/Src/drivers/ads1232.o"
+"./Core/Src/drivers/ads124s08.o"
 "./Core/Src/drivers/dac8775.o"
 "./Core/Src/drivers/dac8830.o"
 "./Core/Src/drivers/mcp23017.o"

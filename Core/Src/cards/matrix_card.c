@@ -10,6 +10,34 @@
 #include "cards/matrix_card.h"
 
 /* -------------------------------------------------------------------------- */
+/* Shared-bus arbitration                                                     */
+/* -------------------------------------------------------------------------- */
+
+/**
+  * @brief  Put the Matrix Card, and only the Matrix Card, on the shared bus.
+  * @note   See matrix_card.h - the Matrix Card's own expanders (everything
+  *         except U21) share an I2C bus with the HV cards, all at the same
+  *         0x20..0x27, so exactly one card's segment may be live at a time.
+  * @param  m : [in] instance; must be non-NULL, en_port must be configured.
+  * @retval None (GPIO writes do not fail).
+  */
+void MatrixCard_BusClaim(MatrixCard_t *m)
+{
+  HAL_GPIO_WritePin(m->en_port, m->en_pin, GPIO_PIN_SET);
+  HAL_Delay(MATRIX_BUS_EN_SETTLE_MS);
+}
+
+/**
+  * @brief  Take the Matrix Card back off the shared bus.
+  * @param  m : [in] instance; must be non-NULL, en_port must be configured.
+  * @retval None
+  */
+void MatrixCard_BusRelease(MatrixCard_t *m)
+{
+  HAL_GPIO_WritePin(m->en_port, m->en_pin, GPIO_PIN_RESET);
+}
+
+/* -------------------------------------------------------------------------- */
 /* Helpers                                                                    */
 /* -------------------------------------------------------------------------- */
 
@@ -183,7 +211,9 @@ HAL_StatusTypeDef MatrixCard_SelectSegment(MatrixCard_t *m, MatrixSeg_t seg)
   * @param  hi2c : [in]  shared I2C bus; must be non-NULL.
   * @retval HAL_OK on success, HAL_ERROR on a NULL argument, else propagated.
   */
-HAL_StatusTypeDef MatrixCard_Init(MatrixCard_t *m, I2C_HandleTypeDef *hi2c)
+HAL_StatusTypeDef MatrixCard_Init(MatrixCard_t *m, I2C_HandleTypeDef *hi2c_local,
+                                  I2C_HandleTypeDef *hi2c_shared,
+                                  GPIO_TypeDef *en_port, uint16_t en_pin)
 {
   static const uint8_t force_straps[2][MATRIX_EXP_PER_BANK] = {
     { MATRIX_HI_EN_LO_STRAP, MATRIX_HI_EN_HI_STRAP },
@@ -196,7 +226,7 @@ HAL_StatusTypeDef MatrixCard_Init(MatrixCard_t *m, I2C_HandleTypeDef *hi2c)
   HAL_StatusTypeDef st;
   uint8_t b, i;
 
-  if (m == NULL || hi2c == NULL)
+  if (m == NULL || hi2c_local == NULL || hi2c_shared == NULL || en_port == NULL)
   {
     return HAL_ERROR;
   }
@@ -204,9 +234,11 @@ HAL_StatusTypeDef MatrixCard_Init(MatrixCard_t *m, I2C_HandleTypeDef *hi2c)
   m->sense_paired = 0U;
   m->sel_cache    = 0U;          /* channel 0 both banks, both segments off */
   m->seg          = MATRIX_SEG_FORCE;
+  m->en_port      = en_port;
+  m->en_pin       = en_pin;
 
-  /* U21 sits in front of the translators, so it is reachable regardless. */
-  st = MCP23017_Init(&m->sel, hi2c, MATRIX_SEL_MCP_STRAP);
+  /* U21 is local to the Control Card on hi2c_local - no bus claim needed. */
+  st = MCP23017_Init(&m->sel, hi2c_local, MATRIX_SEL_MCP_STRAP);
   if (st != HAL_OK)
   {
     return st;
@@ -217,27 +249,31 @@ HAL_StatusTypeDef MatrixCard_Init(MatrixCard_t *m, I2C_HandleTypeDef *hi2c)
     return st;
   }
 
+  /* Everything from here on reaches the Matrix Card's own expanders over
+   * hi2c_shared, which the HV cards also sit on - claim the segment first. */
+  MatrixCard_BusClaim(m);
+
   /* Force segment. */
   m->seg = (MatrixSeg_t)0xFF;    /* force SelectSegment to act */
   st = MatrixCard_SelectSegment(m, MATRIX_SEG_FORCE);
   if (st != HAL_OK)
   {
-    return st;
+    goto release;
   }
   for (b = 0U; b < 2U; b++)
   {
     MCP23017_t *exp = (b == 0U) ? m->hi_en : m->lo_en;
     for (i = 0U; i < MATRIX_EXP_PER_BANK; i++)
     {
-      st = MCP23017_Init(&exp[i], hi2c, force_straps[b][i]);
+      st = MCP23017_Init(&exp[i], hi2c_shared, force_straps[b][i]);
       if (st != HAL_OK)
       {
-        return st;
+        goto release;
       }
       st = MCP23017_WritePins(&exp[i], MATRIX_EN_ALL_OFF);
       if (st != HAL_OK)
       {
-        return st;
+        goto release;
       }
     }
   }
@@ -246,28 +282,32 @@ HAL_StatusTypeDef MatrixCard_Init(MatrixCard_t *m, I2C_HandleTypeDef *hi2c)
   st = MatrixCard_SelectSegment(m, MATRIX_SEG_SENSE);
   if (st != HAL_OK)
   {
-    return st;
+    goto release;
   }
   for (b = 0U; b < 2U; b++)
   {
     MCP23017_t *exp = (b == 0U) ? m->hi_sns : m->lo_sns;
     for (i = 0U; i < MATRIX_EXP_PER_BANK; i++)
     {
-      st = MCP23017_Init(&exp[i], hi2c, sense_straps[b][i]);
+      st = MCP23017_Init(&exp[i], hi2c_shared, sense_straps[b][i]);
       if (st != HAL_OK)
       {
-        return st;
+        goto release;
       }
       st = MCP23017_WritePins(&exp[i], MATRIX_EN_ALL_OFF);
       if (st != HAL_OK)
       {
-        return st;
+        goto release;
       }
     }
   }
 
   /* Leave the force segment selected - the common case. */
-  return MatrixCard_SelectSegment(m, MATRIX_SEG_FORCE);
+  st = MatrixCard_SelectSegment(m, MATRIX_SEG_FORCE);
+
+release:
+  MatrixCard_BusRelease(m);
+  return st;
 }
 
 /**
@@ -289,22 +329,21 @@ HAL_StatusTypeDef MatrixCard_SetSensePaired(MatrixCard_t *m, uint8_t on)
 
   if (on == 0U)
   {
+    MatrixCard_BusClaim(m);
     st = MatrixCard_SelectSegment(m, MATRIX_SEG_SENSE);
-    if (st != HAL_OK)
+    if (st == HAL_OK)
     {
-      return st;
+      st = matrix_drive_bank(m, MATRIX_BANK_HI, 1U, 0xFFU);
     }
-    st = matrix_drive_bank(m, MATRIX_BANK_HI, 1U, 0xFFU);
-    if (st != HAL_OK)
+    if (st == HAL_OK)
     {
-      return st;
+      st = matrix_drive_bank(m, MATRIX_BANK_LO, 1U, 0xFFU);
     }
-    st = matrix_drive_bank(m, MATRIX_BANK_LO, 1U, 0xFFU);
-    if (st != HAL_OK)
+    if (st == HAL_OK)
     {
-      return st;
+      st = MatrixCard_SelectSegment(m, MATRIX_SEG_FORCE);
     }
-    st = MatrixCard_SelectSegment(m, MATRIX_SEG_FORCE);
+    MatrixCard_BusRelease(m);
     if (st != HAL_OK)
     {
       return st;
@@ -330,28 +369,28 @@ HAL_StatusTypeDef MatrixCard_BankOff(MatrixCard_t *m, MatrixBank_t bank)
     return HAL_ERROR;
   }
 
+  MatrixCard_BusClaim(m);
+
   st = MatrixCard_SelectSegment(m, MATRIX_SEG_FORCE);
-  if (st != HAL_OK)
+  if (st == HAL_OK)
   {
-    return st;
+    st = matrix_drive_bank(m, bank, 0U, 0xFFU);
   }
-  st = matrix_drive_bank(m, bank, 0U, 0xFFU);
-  if (st != HAL_OK || m->sense_paired == 0U)
+  if (st == HAL_OK && m->sense_paired != 0U)
   {
-    return st;
+    st = MatrixCard_SelectSegment(m, MATRIX_SEG_SENSE);
+    if (st == HAL_OK)
+    {
+      st = matrix_drive_bank(m, bank, 1U, 0xFFU);
+    }
+    if (st == HAL_OK)
+    {
+      st = MatrixCard_SelectSegment(m, MATRIX_SEG_FORCE);
+    }
   }
 
-  st = MatrixCard_SelectSegment(m, MATRIX_SEG_SENSE);
-  if (st != HAL_OK)
-  {
-    return st;
-  }
-  st = matrix_drive_bank(m, bank, 1U, 0xFFU);
-  if (st != HAL_OK)
-  {
-    return st;
-  }
-  return MatrixCard_SelectSegment(m, MATRIX_SEG_FORCE);
+  MatrixCard_BusRelease(m);
+  return st;
 }
 
 /**
@@ -396,41 +435,37 @@ HAL_StatusTypeDef MatrixCard_SelectPin(MatrixCard_t *m, MatrixBank_t bank, uint1
     return HAL_ERROR;
   }
 
+  MatrixCard_BusClaim(m);
+
   st = MatrixCard_SelectSegment(m, MATRIX_SEG_FORCE);
-  if (st != HAL_OK)
+  if (st == HAL_OK)
   {
-    return st;
+    st = matrix_drive_bank(m, bank, 0U, 0xFFU);    /* break */
   }
-  st = matrix_drive_bank(m, bank, 0U, 0xFFU);      /* break */
-  if (st != HAL_OK)
+  if (st == HAL_OK)
   {
-    return st;
+    matrix_stage_channel(m, bank, channel);
+    st = matrix_flush_select(m);
+  }
+  if (st == HAL_OK)
+  {
+    st = matrix_drive_bank(m, bank, 0U, mux);      /* make */
+  }
+  if (st == HAL_OK && m->sense_paired != 0U)
+  {
+    st = MatrixCard_SelectSegment(m, MATRIX_SEG_SENSE);
+    if (st == HAL_OK)
+    {
+      st = matrix_drive_bank(m, bank, 1U, mux);
+    }
+    if (st == HAL_OK)
+    {
+      st = MatrixCard_SelectSegment(m, MATRIX_SEG_FORCE);
+    }
   }
 
-  matrix_stage_channel(m, bank, channel);
-  st = matrix_flush_select(m);
-  if (st != HAL_OK)
-  {
-    return st;
-  }
-
-  st = matrix_drive_bank(m, bank, 0U, mux);        /* make */
-  if (st != HAL_OK || m->sense_paired == 0U)
-  {
-    return st;
-  }
-
-  st = MatrixCard_SelectSegment(m, MATRIX_SEG_SENSE);
-  if (st != HAL_OK)
-  {
-    return st;
-  }
-  st = matrix_drive_bank(m, bank, 1U, mux);
-  if (st != HAL_OK)
-  {
-    return st;
-  }
-  return MatrixCard_SelectSegment(m, MATRIX_SEG_FORCE);
+  MatrixCard_BusRelease(m);
+  return st;
 }
 
 /**
@@ -455,55 +490,48 @@ HAL_StatusTypeDef MatrixCard_ConnectPair(MatrixCard_t *m, uint16_t hi_pin, uint1
     return HAL_ERROR;
   }
 
+  MatrixCard_BusClaim(m);
+
   st = MatrixCard_SelectSegment(m, MATRIX_SEG_FORCE);
-  if (st != HAL_OK)
+  if (st == HAL_OK)
   {
-    return st;
+    st = matrix_drive_bank(m, MATRIX_BANK_HI, 0U, 0xFFU);
   }
-  st = matrix_drive_bank(m, MATRIX_BANK_HI, 0U, 0xFFU);
-  if (st != HAL_OK)
+  if (st == HAL_OK)
   {
-    return st;
+    st = matrix_drive_bank(m, MATRIX_BANK_LO, 0U, 0xFFU);
   }
-  st = matrix_drive_bank(m, MATRIX_BANK_LO, 0U, 0xFFU);
-  if (st != HAL_OK)
+  if (st == HAL_OK)
   {
-    return st;
+    matrix_stage_channel(m, MATRIX_BANK_HI, hi_ch);
+    matrix_stage_channel(m, MATRIX_BANK_LO, lo_ch);
+    st = matrix_flush_select(m);
+  }
+  if (st == HAL_OK)
+  {
+    st = matrix_drive_bank(m, MATRIX_BANK_HI, 0U, hi_mux);
+  }
+  if (st == HAL_OK)
+  {
+    st = matrix_drive_bank(m, MATRIX_BANK_LO, 0U, lo_mux);
+  }
+  if (st == HAL_OK && m->sense_paired != 0U)
+  {
+    st = MatrixCard_SelectSegment(m, MATRIX_SEG_SENSE);
+    if (st == HAL_OK)
+    {
+      st = matrix_drive_bank(m, MATRIX_BANK_HI, 1U, hi_mux);
+    }
+    if (st == HAL_OK)
+    {
+      st = matrix_drive_bank(m, MATRIX_BANK_LO, 1U, lo_mux);
+    }
+    if (st == HAL_OK)
+    {
+      st = MatrixCard_SelectSegment(m, MATRIX_SEG_FORCE);
+    }
   }
 
-  matrix_stage_channel(m, MATRIX_BANK_HI, hi_ch);
-  matrix_stage_channel(m, MATRIX_BANK_LO, lo_ch);
-  st = matrix_flush_select(m);
-  if (st != HAL_OK)
-  {
-    return st;
-  }
-
-  st = matrix_drive_bank(m, MATRIX_BANK_HI, 0U, hi_mux);
-  if (st != HAL_OK)
-  {
-    return st;
-  }
-  st = matrix_drive_bank(m, MATRIX_BANK_LO, 0U, lo_mux);
-  if (st != HAL_OK || m->sense_paired == 0U)
-  {
-    return st;
-  }
-
-  st = MatrixCard_SelectSegment(m, MATRIX_SEG_SENSE);
-  if (st != HAL_OK)
-  {
-    return st;
-  }
-  st = matrix_drive_bank(m, MATRIX_BANK_HI, 1U, hi_mux);
-  if (st != HAL_OK)
-  {
-    return st;
-  }
-  st = matrix_drive_bank(m, MATRIX_BANK_LO, 1U, lo_mux);
-  if (st != HAL_OK)
-  {
-    return st;
-  }
-  return MatrixCard_SelectSegment(m, MATRIX_SEG_FORCE);
+  MatrixCard_BusRelease(m);
+  return st;
 }
