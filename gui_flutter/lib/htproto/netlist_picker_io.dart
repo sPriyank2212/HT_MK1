@@ -31,3 +31,21 @@ Future<(String name, Uint8List bytes)?> pickNetlistFile() async {
   if (bytes == null) return null;
   return (picked.name, bytes);
 }
+
+/// Opens the native "save file" dialog and returns the chosen path, or null
+/// if the operator cancelled. Only the path comes back — the caller writes
+/// the file itself (`dart:io`, same as `SessionLogger`), so this stays a
+/// thin wrapper around the one thing that actually needs the platform
+/// channel, matching `pickNetlistFile`'s isolation reasoning above.
+Future<String?> pickSavePath({
+  required String dialogTitle,
+  required String fileName,
+  required List<String> allowedExtensions,
+}) {
+  return FilePicker.saveFile(
+    dialogTitle: dialogTitle,
+    fileName: fileName,
+    type: FileType.custom,
+    allowedExtensions: allowedExtensions,
+  );
+}

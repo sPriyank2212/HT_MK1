@@ -59,15 +59,21 @@ static HAL_StatusTypeDef kelvin_ranged_read(int32_t *code)
 /**
   * @brief  Measure the 4-wire (Kelvin) resistance of one harness pair.
   * @note   Sequence: pair the sense array with the force array, route the
-  *         pins, switch the front end to the current source and force
-  *         KELVIN_FORCE_CODE, then read HI_SENSE - LO_SENSE on the Matrix
-  *         Card's ADS124S08 with the PGA auto-ranged to the highest gain that
-  *         does not saturate. A second conversion at the same gain with the
-  *         excitation off gives a system-offset baseline (mux charge
-  *         injection, lead offset - not just the ADC's own offset, which
-  *         ADS124S08_SelfOffsetCal cancels once at board init); the two codes
-  *         are subtracted before converting to ohms. The front end and matrix
-  *         are always released before returning, even on error.
+  *         pins, switch the front end to impedance mode (isolates the
+  *         Control-Card continuity divider's 10 k pull-up from HI_COM - it
+  *         would otherwise steal a chunk of the 2 mA excitation), then
+  *         route the ADS124S08's own IDAC1 onto AIN9 (= HI_COM) at
+  *         KELVIN_IDAC_MAG and read HI_SENSE - LO_SENSE on the same chip with
+  *         the PGA auto-ranged to the highest gain that does not saturate.
+  *         A second conversion at the same gain with the excitation off gives
+  *         a system-offset baseline (mux charge injection, lead offset - not
+  *         just the ADC's own offset, which ADS124S08_SelfOffsetCal cancels
+  *         once at board init); the two codes are subtracted before
+  *         converting to ohms. The front end and matrix are always released
+  *         before returning, even on error. FW-12: the excitation current
+  *         source used to be the Control-Card DAC8775; that chip is gone from
+  *         the schematic and the IDAC inside the ADS124S08 itself does this
+  *         now - see Doc/idac_current_source.md.
   * @param  hi_pin : [in]  1-based HI-side harness pin.
   * @param  lo_pin : [in]  1-based LO-side harness pin.
   * @param  res    : [out] result (code, volts, resistance, verdict). On any
@@ -97,7 +103,8 @@ HAL_StatusTypeDef Kelvin_MeasurePair(uint16_t hi_pin, uint16_t lo_pin,
     return st;
   }
 
-  /* Route the wire, switch the front end to the current source. */
+  /* Route the wire, switch the front end to impedance mode (isolates the
+   * continuity divider from HI_COM - see the function note above). */
   st = MatrixCard_ConnectPair(&g_matrix, hi_pin, lo_pin);
   if (st != HAL_OK)
   {
@@ -109,7 +116,8 @@ HAL_StatusTypeDef Kelvin_MeasurePair(uint16_t hi_pin, uint16_t lo_pin,
     goto release;
   }
 
-  st = Frontend_SetCurrentCode(&g_frontend, KELVIN_FORCE_CODE);
+  st = ADS124S08_SetIdac(&g_ads124s08, ADS124S08_MUX_AIN9, ADS124S08_IDAC_OFF,
+                         KELVIN_IDAC_MAG);
   if (st != HAL_OK)
   {
     goto release;
@@ -122,7 +130,8 @@ HAL_StatusTypeDef Kelvin_MeasurePair(uint16_t hi_pin, uint16_t lo_pin,
   }
 
   /* Same gain, no excitation: the system-offset baseline. */
-  st = Frontend_SetCurrentCode(&g_frontend, 0U);
+  st = ADS124S08_SetIdac(&g_ads124s08, ADS124S08_IDAC_OFF, ADS124S08_IDAC_OFF,
+                         ADS124S08_IMAG_OFF);
   if (st != HAL_OK)
   {
     goto release;
@@ -143,7 +152,8 @@ HAL_StatusTypeDef Kelvin_MeasurePair(uint16_t hi_pin, uint16_t lo_pin,
 
 release:
   /* Stop forcing current and open the matrix. */
-  (void)Frontend_SetCurrentCode(&g_frontend, 0U);
+  (void)ADS124S08_SetIdac(&g_ads124s08, ADS124S08_IDAC_OFF, ADS124S08_IDAC_OFF,
+                          ADS124S08_IMAG_OFF);
   (void)Frontend_SetMode(&g_frontend, FRONTEND_MODE_CONTINUITY);
   (void)MatrixCard_AllOff(&g_matrix);
   return st;

@@ -6,13 +6,22 @@
   *          by the continuity and Kelvin tests.
   *
   *          Elements (per Control_Card.kicad_sch):
-  *            - DAC8775 IDAC  -> forces the Kelvin test current (I_OUT)
-  *            - TS5A3159 SPDT -> OPT0_CNTR selects the front end between the
-  *              current source (impedance mode) and the +3V3 continuity divider
+  *            - TS5A3159 SPDT -> OPT0_CNTR selects the front end between
+  *              impedance mode (I_OUT, isolates ADC_IN's pull-up from HI_COM)
+  *              and the +3V3 continuity divider
   *            - AD7476 ADC    -> digitises the resulting node voltage (ADC_IN)
   *
-  *          This layer hides the three parts behind a small API; the test
-  *          modules call SetMode / SetCurrent / Read.
+  *          FW-12 (2026-08-12): the DAC8775 that used to force the Kelvin
+  *          current through I_OUT is gone from the schematic - excitation now
+  *          comes from the ADS124S08's own IDAC on the Matrix Card (see
+  *          Doc/idac_current_source.md, test/kelvin.c). This layer no longer
+  *          drives any current; FRONTEND_MODE_IMPEDANCE still means something
+  *          real, though - the continuity divider's 10 k pull-up on ADC_IN
+  *          would otherwise load HI_COM in parallel with the IDAC's 2 mA, so
+  *          Kelvin still swings the SPDT to isolate it before exciting.
+  *
+  *          This layer hides the remaining two parts behind a small API; the
+  *          test modules call SetMode / Read.
   ******************************************************************************
   */
 /* USER CODE END Header */
@@ -24,7 +33,6 @@
 extern "C" {
 #endif
 
-#include "drivers/dac8775.h"
 #include "drivers/ad7476.h"
 
 /* OPT0_CNTR logic level per mode. VERIFY against the TS5A3159 wiring (which
@@ -44,7 +52,6 @@ typedef enum
 
 typedef struct
 {
-  DAC8775_t       idac;          /* Kelvin current source            */
   AD7476_t        adc;           /* front-end ADC                    */
   GPIO_TypeDef   *opto_port;     /* OPT0_CNTR (must be a GPIO OUTPUT) */
   uint16_t        opto_pin;
@@ -54,9 +61,6 @@ typedef struct
 
 typedef struct
 {
-  SPI_HandleTypeDef *idac_spi;   /* SPI2 */
-  GPIO_TypeDef      *idac_cs_port;
-  uint16_t           idac_cs_pin;
   SPI_HandleTypeDef *adc_spi;    /* SPI1 */
   GPIO_TypeDef      *adc_cs_port;
   uint16_t           adc_cs_pin;
@@ -71,11 +75,6 @@ HAL_StatusTypeDef Frontend_Init(ControlFrontend_t *fe, const ControlFrontendCfg_
   * @brief  Select continuity or impedance signal path (drives OPT0_CNTR).
   */
 HAL_StatusTypeDef Frontend_SetMode(ControlFrontend_t *fe, FrontendMode_t mode);
-
-/**
-  * @brief  Set the Kelvin force current (raw IDAC code; channel A).
-  */
-HAL_StatusTypeDef Frontend_SetCurrentCode(ControlFrontend_t *fe, uint16_t code);
 
 /**
   * @brief  Read the front-end node: raw 12-bit code / volts.

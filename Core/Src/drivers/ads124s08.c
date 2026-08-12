@@ -260,6 +260,32 @@ HAL_StatusTypeDef ADS124S08_SetMux(ADS124S08_t *dev, uint8_t p, uint8_t n)
 }
 
 /**
+  * @brief  Configure the excitation current sources.
+  * @param  dev       : [in] instance; must be non-NULL.
+  * @param  idac1_mux : [in] IDAC1 output pin.
+  * @param  idac2_mux : [in] IDAC2 output pin.
+  * @param  mag       : [in] magnitude code, shared by both IDACs.
+  * @retval HAL status from the register writes.
+  */
+HAL_StatusTypeDef ADS124S08_SetIdac(ADS124S08_t *dev, uint8_t idac1_mux,
+                                    uint8_t idac2_mux, uint8_t mag)
+{
+  HAL_StatusTypeDef st;
+
+  if (dev == NULL)
+  {
+    return HAL_ERROR;
+  }
+  st = ADS124S08_WriteReg(dev, ADS124S08_REG_IDACMUX,
+                          (uint8_t)(((idac2_mux & 0x0FU) << 4) | (idac1_mux & 0x0FU)));
+  if (st != HAL_OK)
+  {
+    return st;
+  }
+  return ADS124S08_WriteReg(dev, ADS124S08_REG_IDACMAG, (uint8_t)(mag & 0x0FU));
+}
+
+/**
   * @brief  Set the PGA gain, PGA enabled.
   * @param  dev  : [in] instance; must be non-NULL.
   * @param  gain : [in] new gain.

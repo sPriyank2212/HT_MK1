@@ -215,36 +215,15 @@ class ResultsView extends StatelessWidget {
           const PanelTitle('Run history'),
           const FlexSpacer(),
           RowWrap([
-            Btn('Export CSV', onTap: () {}),
-            Btn('Print report', onTap: () {}),
+            Btn('Export CSV', onTap: () => s.exportHistoryCsv()),
+            // Real printing needs OS print-dialog integration (a plugin
+            // this project doesn't depend on yet) - not the same scope as
+            // "where does history live" (GUI-05). Left honestly disabled
+            // rather than wired to a no-op.
+            Btn('Print report', disabled: true, onTap: null),
           ]),
         ],
-        child: HtTable(
-          minWidth: 900,
-          columns: const [
-            HtCol('Run'),
-            HtCol('Serial'),
-            HtCol('MTX netlist'),
-            HtCol('HV netlist'),
-            HtCol('Continuity'),
-            HtCol('Resistance'),
-            HtCol('HV'),
-            HtCol('Verdict'),
-          ],
-          rows: [
-            for (final r in _history)
-              [
-                Td(r.$1, numeric: true),
-                Td(r.$2, numeric: true),
-                Td(r.$3, numeric: true),
-                Td(r.$4, numeric: true),
-                Tag(r.$5, r.$6),
-                Tag(r.$7, r.$8),
-                Tag(r.$9, r.$10),
-                Tag(r.$11, r.$12),
-              ],
-          ],
-        ),
+        child: _runHistoryTable(context, s),
       ),
       HtPanel(
         header: const [PanelTitle('Fault pareto · this shift')],
@@ -273,24 +252,58 @@ class ResultsView extends StatelessWidget {
     ]);
   }
 
-  static const _history = <(String, String, String, String, TagVariant, String,
-      TagVariant, String, TagVariant, String, TagVariant, String)>[
-    ('0418', '24-A0417', 'AV-880_RevC', 'AV-880_HV_3card', TagVariant.ok,
-        'Pass', TagVariant.ok, 'Pass', TagVariant.bad, '1 low', TagVariant.bad,
-        'Fail'),
-    ('0417', '24-A0416', 'AV-880_RevC', 'AV-880_HV_3card', TagVariant.ok,
-        'Pass', TagVariant.ok, 'Pass', TagVariant.ok, 'Pass', TagVariant.ok,
-        'Pass'),
-    ('0416', '24-A0415', '— built', '—', TagVariant.acc, '310 found',
-        TagVariant.mut, 'Not run', TagVariant.mut, 'Not run', TagVariant.acc,
-        'Netlist built'),
-    ('0415', '24-A0414', 'AV-880_RevC', '—', TagVariant.bad, '1 open',
-        TagVariant.mut, 'Not run', TagVariant.mut, 'Not run', TagVariant.bad,
-        'Fail'),
-    ('0414', '24-A0413', 'AV-880_RevC', 'AV-880_HV_3card', TagVariant.ok,
-        'Pass', TagVariant.ok, 'Pass', TagVariant.ok, 'Pass', TagVariant.ok,
-        'Pass'),
-  ];
+  /// GUI-05: real data, `AppState.history` (stored on the GUI host — decided
+  /// 2026-08-12) — replaces what used to be five hardcoded rows. One row per
+  /// completed run (`CONT`/`RES`/`INSUL RUN`), newest first; there is no
+  /// "build"/serial-number concept in the protocol to group them by harness,
+  /// so this is per-test rather than per-build the way the old mock-up was.
+  Widget _runHistoryTable(BuildContext context, AppState s) {
+    final entries = s.history.load().reversed.toList();
+    if (entries.isEmpty) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 22),
+        child: Text('No runs recorded yet this session.',
+            style: context.type.td.copyWith(color: context.colors.ink3),
+            textAlign: TextAlign.center),
+      );
+    }
+    return HtTable(
+      minWidth: 900,
+      columns: const [
+        HtCol('When'),
+        HtCol('Test'),
+        HtCol('MTX netlist'),
+        HtCol('HV netlist'),
+        HtCol('Passed', right: true),
+        HtCol('Failed', right: true),
+        HtCol('Verdict'),
+      ],
+      rows: [
+        for (final e in entries)
+          [
+            Td(_stamp(e.timestamp), numeric: true),
+            Td(_kindLabel(e.kind)),
+            Td(e.mtxNetlist ?? '—'),
+            Td(e.hvNetlist ?? '—'),
+            Td('${e.passed}', numeric: true),
+            Td('${e.failed}', numeric: true),
+            Tag(e.pass ? TagVariant.ok : TagVariant.bad,
+                e.pass ? 'Pass' : 'Fail'),
+          ],
+      ],
+    );
+  }
+
+  static String _kindLabel(String kind) => switch (kind) {
+        'cont' => 'Continuity',
+        'res' => 'Resistance',
+        'insul' => 'HV',
+        _ => kind,
+      };
+
+  static String _two(int n) => n.toString().padLeft(2, '0');
+  static String _stamp(DateTime t) =>
+      '${t.year}-${_two(t.month)}-${_two(t.day)} ${_two(t.hour)}:${_two(t.minute)}';
 
   static const _pareto = <(String, String, String, String, String, String)>[
     ('F06', 'Continuity', 'Open circuit', 'J2-07 backshell', '14', '46 %'),
@@ -320,15 +333,28 @@ class _DiagViewState extends State<DiagView> {
   int _optoMode = 0;
   int _hvCard = 0;
 
+  // GUI-07: r_max / ins_min editors, seeded once from LIMITS GET (fetched on
+  // connect - see AppState.connect()) so opening this panel shows what the
+  // instrument actually has set, not an invented default. Both are wire
+  // milliohms displayed as ohms (÷1000), same convention as r_max_mohm's use
+  // elsewhere (e.g. the Calibration panel's reference-resistor readout).
+  double? _rMaxOhm;
+  double? _insMinOhm;
+
   @override
   Widget build(BuildContext context) {
     final s = widget.s;
+    if (s.limits != null && _rMaxOhm == null) {
+      _rMaxOhm = s.limits!.rMaxMohm / 1000.0;
+      _insMinOhm = s.limits!.insMinMohm / 1000.0;
+    }
     final panels = <Widget>[
       _busMap(context, s),
       _cards(context, s),
       _manualSwitch(context, s),
       _manualRelay(context, s),
       _calibration(context, s),
+      _testLimits(context, s),
     ];
 
     return Cols([
@@ -717,6 +743,91 @@ class _DiagViewState extends State<DiagView> {
                 variant: BtnVariant.primary, disabled: true, onTap: null),
             Btn('Compliance sweep', disabled: true, onTap: null),
             Btn('Cal certificate', disabled: true, onTap: null),
+          ]),
+        ],
+      )),
+    );
+  }
+
+  /// GUI-07: `LIMITS SET r_max_mohm=<int> ins_min_mohm=<int>` had a working
+  /// encoder (`commands.limitsSet`) and a firmware side that answers it, but
+  /// no control anywhere called it — there was no way to change either limit
+  /// from the GUI at all. Seeded from `LIMITS GET` on connect (AppState
+  /// .connect()); "Apply" sends exactly the two values currently on the
+  /// sliders, so nothing is sent until the operator asks for it.
+  Widget _testLimits(BuildContext context, AppState s) {
+    final c = context.colors;
+    final t = context.type;
+    final synced = s.limits != null;
+    final rMax = _rMaxOhm ?? 5.0;
+    final insMin = _insMinOhm ?? 10.0;
+
+    return HtPanel(
+      header: [
+        const PanelTitle('Test limits'),
+        const FlexSpacer(),
+        Tag(TagVariant.warn, 'Engineer'),
+      ],
+      child: PanelPad(Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            synced
+                ? 'Read from the instrument on connect (LIMITS GET).'
+                : 'Not connected — showing the last-known / default values.',
+            style: t.mono(size: 11, color: c.ink3, height: 1.5),
+          ),
+          const SizedBox(height: 10),
+          _CtlRow(
+            label: 'R max',
+            control: Row(children: [
+              Expanded(
+                child: HtSlider(
+                  value: rMax,
+                  min: 0,
+                  max: 20,
+                  step: 0.1,
+                  onChanged: (v) => setState(() => _rMaxOhm = v),
+                ),
+              ),
+              const SizedBox(width: 11),
+              SizedBox(
+                width: 90,
+                child: Text('${rMax.toStringAsFixed(1)} Ω', style: t.out(c.ink)),
+              ),
+            ]),
+          ),
+          const SizedBox(height: 10),
+          _CtlRow(
+            label: 'Insul. min',
+            control: Row(children: [
+              Expanded(
+                child: HtSlider(
+                  value: insMin,
+                  min: 0,
+                  max: 20000,
+                  step: 100,
+                  onChanged: (v) => setState(() => _insMinOhm = v),
+                ),
+              ),
+              const SizedBox(width: 11),
+              SizedBox(
+                width: 90,
+                child:
+                    Text('${insMin.toStringAsFixed(0)} Ω', style: t.out(c.ink)),
+              ),
+            ]),
+          ),
+          const SizedBox(height: 14),
+          RowWrap([
+            Btn(
+              'Apply',
+              variant: BtnVariant.primary,
+              onTap: () => s.setLimits(
+                (rMax * 1000).round(),
+                (insMin * 1000).round(),
+              ),
+            ),
           ]),
         ],
       )),

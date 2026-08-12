@@ -1,5 +1,0 @@
-../Core/Src/drivers/dac8775.c:25:19:DAC8775_WriteReg	24	static
-../Core/Src/drivers/dac8775.c:57:19:DAC8775_Init	24	static
-../Core/Src/drivers/dac8775.c:79:19:DAC8775_SelectChannel	16	static
-../Core/Src/drivers/dac8775.c:94:19:DAC8775_ConfigCurrentRange	24	static
-../Core/Src/drivers/dac8775.c:115:19:DAC8775_SetCode	24	static

@@ -1,5 +1,55 @@
 # Proposed New Protocol Commands
 
+## Re-checked 2026-08-12 against current firmware (GUI-06)
+
+This document was written 2026-08-08, before **FW-02** (Kelvin measurement path wired up,
+CL-23) and **FW-12** (excitation moved from the DAC8775 to the ADS124S08's own IDAC, CL-33).
+Two of the seven items below were explicitly gated on exactly the hardware-reachability gap
+those two closed, so their verdicts changed. Re-checked each entry against `Core/Src` as it
+stands today rather than assuming the 2026-08-08 pass still holds:
+
+| Command | 2026-08-08 verdict | 2026-08-12 status | What changed |
+|---|---|---|---|
+| `MANUAL READ` | Build | **Unchanged — still buildable** | Continuity's ADC read path wasn't touched by FW-02/FW-12 |
+| `BUS SCAN` | Build | **Unchanged — still buildable** | No bus-enumeration code exists yet either way; re-confirmed by re-reading `board.c` |
+| `MANUAL SWEEP <hi>` | Build | **Unchanged — still buildable** | `run_continuity_all`'s inner loop is untouched |
+| `CAL RUN` | Blocked on FW-01/FW-02 | **Unblocked — the hardware gap it cited is closed** | FW-02 (CL-23) wired the ADS124S08 into `board.c` and made it electrically reachable; `Kelvin_MeasurePair` measures for real now. See the updated write-up below — the design question has changed, not just the blocker |
+| `MANUAL RELAYTEST <board>` | Safety review first | **Unchanged — still needs a safety review first** | Unrelated subsystem (HV relays), FW-02/FW-12 didn't touch it |
+| Auto-range PGA | Recommend against; fold into FW-02 once it lands | **Confirmed done — remove the button** | `kelvin.c`'s `kelvin_ranged_read()` already auto-ranges the PGA automatically, exactly as this doc recommended. Nothing left to build; the GUI button should come out rather than get a command |
+| Compliance sweep | Keep as a bench tool | **Unchanged — still a bench tool, not an operator control** | The actual compliance window has since been characterized twice more in `Doc/4wire_resistance_validation.md` §7.1 (3 mA, then 2 mA) — as a document, not a live on-instrument command; the reasoning against exposing it as a button stands |
+
+**Net effect: five of seven are buildable today with no hardware blocker (`MANUAL READ`,
+`BUS SCAN`, `MANUAL SWEEP`, `CAL RUN` now, `MANUAL RELAYTEST` pending a safety review); one is
+already done and just needs its button removed (Auto-range PGA); one stays a deliberate
+non-command (Compliance sweep).** This document still only proposes wire formats — nothing in
+`Core/Src` has been touched for any of the buildable ones. See `PROJECT_LOG.md` GUI-06 for the
+open per-command go/no-go this still needs.
+
+### `CAL RUN`, revisited
+
+The 2026-08-08 entry recommended deferring the wire-format design itself until the hardware
+gap closed. It has closed, so the design question is now real, and it's worth being precise
+about what a persistent `CAL RUN` would add on top of what already exists:
+
+- `ADS124S08_SelfOffsetCal` (SFOCAL) already runs once at board init — cancels the **ADC's own**
+  offset only.
+- `Kelvin_MeasurePair` already takes a **per-point** zero-current baseline and subtracts it
+  before every single measurement (CL-23) — cancels mux charge-injection and lead offset,
+  fresh every time, not stored.
+- Neither of those touches **current-magnitude accuracy** — the IDAC's own tolerance (typ
+  ±0.5 %, worst-case ±3 % per `Doc/idac_current_source.md` §3) is not calibrated out by
+  anything today.
+
+So a `CAL RUN` that duplicates the per-point offset subtraction `kelvin.c` already does would
+add nothing. One that measures R131 (100 Ω, 0.01 %) as a known reference and derives a
+current/gain correction factor from it would be new and useful — but that's the same
+measurement HW-04 (now agreed, awaiting the schematic edit that adds a ratiometric tap on
+`AIN8`) is meant to enable properly. Recommend deciding `CAL RUN`'s scope *after* HW-04 lands,
+so it can do the ratiometric measurement HW-04 was proposed for instead of building a
+current-source-only stand-in now and redesigning it later.
+
+---
+
 Companion to `GUI_protocol_command_coverage.md` §4. That document found seven GUI buttons
 with no matching firmware command at all: Rescan, Read ADC, Sweep this HS, Run self-cal,
 Auto-range PGA, Compliance sweep, Relay self-test. Per the brief §7, protocol changes are
@@ -89,14 +139,14 @@ all 256.
                                   then <CAL ...> reads the updated values
 ```
 
-**Blocked on FW-01/FW-02, not just unbuilt.** Self-cal means measuring the loopback/reference
-path (R131, 100 Ω 0.01 %) through the real signal chain and storing the resulting offset —
-and the signal chain it needs to measure through, for resistance, is the ADS124S08 path that
-is currently electrically unreachable from this MCU (`Doc/matrix-card-kelvin-resistance-rework`
-memory; `ADC_CS_1`/`ADC_RST_1`/`Start_SYNC_1`/`DRDY_1`/`SPI1_SCLK` exist only on the Matrix
-Card). Designing this command's wire format is easy; implementing it usefully is not possible
-until that routing gap closes. Recommend deferring the protocol design itself until FW-02 lands
-— a command that can only ever answer `ERR EHW` isn't worth adding yet.
+**Unblocked 2026-08-12 — FW-02/CL-23 closed the routing gap this was waiting on.** Originally
+blocked, not just unbuilt: self-cal means measuring the loopback/reference path (R131, 100 Ω
+0.01 %) through the real signal chain and storing the resulting offset, and the ADS124S08 path
+was electrically unreachable from this MCU at the time this was written. It isn't anymore —
+`board.c` now instantiates and drives it, and `Kelvin_MeasurePair` measures real resistance.
+The design question is real now; see "`CAL RUN`, revisited" above for what it should actually
+do given `kelvin.c` already subtracts a per-point offset, and why its scope is best decided
+after HW-04 (ratiometric `AIN8` tap) lands rather than before.
 
 ### `MANUAL RELAYTEST <board>` — HV relay self-check without energising
 
@@ -125,13 +175,13 @@ interlock" are the same task, not two.
 
 **Button:** Resistance view — "Auto-range PGA"
 
-`Doc/4wire_resistance_validation.md` §4 already lists PGA auto-ranging as a **requirement of
-the FW-02 resistance rewrite itself** — "PGA auto-ranging, which also keeps the common mode
-legal on large R" — not a separate operator-triggered step. Recommend this happens
-automatically inside `Kelvin_MeasurePair` once FW-02 is built, the same way a real DMM
-auto-ranges without being asked. Building it as a standalone manual command would mean two
-copies of the same ranging logic to keep in sync. Suggest removing this button rather than
-building a command for it, once FW-02 ships and resistance measurement auto-ranges by itself.
+**Done 2026-08-12: confirmed already automatic, no command needed.** `Doc/4wire_resistance_
+validation.md` §4 already listed PGA auto-ranging as a **requirement of the FW-02 resistance
+rewrite itself**, not a separate operator-triggered step, and that's what landed —
+`kelvin.c`'s `kelvin_ranged_read()` steps the PGA from gain 128 down to gain 1 automatically on
+every measurement, the same way a real DMM auto-ranges without being asked. There is nothing
+left to build here. **Recommend removing the button** rather than adding a command for it —
+this was the plan even in the original write-up, just contingent on FW-02 landing, and it has.
 
 ### Compliance sweep
 
@@ -149,12 +199,12 @@ button an operator can reach from the normal Resistance or Diagnostics screens.
 
 ## Summary
 
-| Command | New measurement logic? | Blocked on hardware? | Recommend |
+| Command | New measurement logic? | Blocked on hardware? | Recommend (2026-08-12) |
 |---|---|---|---|
 | `MANUAL READ` | No — readback only | No | Build |
 | `BUS SCAN` | Some (new enumeration) | No | Build |
 | `MANUAL SWEEP <hi>` | No — reuses discovery's inner loop | No | Build |
-| `CAL RUN` | Yes | **Yes — FW-01/FW-02** | Design after the ADC routing gap closes |
+| `CAL RUN` | Yes | **No — unblocked by FW-02/CL-23** | Design after HW-04 (`AIN8`) lands, not before |
 | `MANUAL RELAYTEST <board>` | Some | No, but safety-critical | Safety review before protocol design |
-| Auto-range PGA | N/A | Tied to FW-02 | Fold into `RES RUN`, don't add a command |
+| Auto-range PGA | N/A | N/A — **done** | Already automatic (FW-02/CL-23); remove the button |
 | Compliance sweep | N/A | No | Keep as a bench tool, not an operator control |

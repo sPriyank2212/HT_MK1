@@ -23,6 +23,7 @@ and 500 V insulation testing across a Control Card, a Matrix Card and up to four
 | `Doc/*.pdf` | The KiCad schematics. **These are the source of truth.** Where any document disagrees with them, they win |
 | `Datasheet/` | Component datasheets, with [DATASHEETS.md](Datasheet/DATASHEETS.md) as the tick-list |
 | [Doc/i2c_bus_sharing.md](Doc/i2c_bus_sharing.md) | Why the Matrix Card and every HV card share one I2C address range, and how `HV_Card_EN1-4` gates them apart |
+| [Doc/idac_current_source.md](Doc/idac_current_source.md) | Why the DAC8775 is gone and Kelvin excitation now comes from the ADS124S08's own IDAC, the 2 mA ceiling that comes with it, and what firmware still needs to change |
 
 ### Work in progress
 
@@ -41,17 +42,17 @@ and 500 V insulation testing across a Control Card, a Matrix Card and up to four
 
 | Card | File | Notes |
 |---|---|---|
-| Control | `Doc/Control_Card-5.pdf` | STM32G474, DAC8775 current source (HW-11: sourcing issue, replacement pending), mux addressing via MCP23017 U21, now 6 connectors (J1–J6) |
-| Matrix | `Doc/Matrix_Card-7.pdf` | 128× CD74HC4051, 4-wire sense array, ADS124S08 (U68, sheet 9 — confirmed present, see HW-12) |
-| HV | `Doc/HV_Card-3.pdf` | 500 V, 64 HS + 64 LS reed relays per card, R3003 now 5 kΩ (HW-08) |
+| Control | `Doc/Control_Card 1.pdf` | STM32G474, mux addressing via MCP23017 U21, 6 connectors (J1–J6). **DAC8775 removed** — Kelvin excitation now sources from the ADS124S08's own IDAC instead (HW-11 closed; firmware updated, FW-12 closed — see `Doc/idac_current_source.md`) |
+| Matrix | `Doc/Matrix_Card-8.pdf` | 128× CD74HC4051, 4-wire sense array, ADS124S08 (U68, sheet 9 — confirmed present, see HW-12); AIN9 now wired to `HI_COM` for the IDAC excitation path |
+| HV | `Doc/HV_Card-3.pdf` | 500 V, 64 HS + 64 LS reed relays per card, R3003 = 5 kΩ, confirmed (HW-08 closed) |
 
-**2026-08-11: schematic set replaced** (`Control_Card-4`/`Matrix_Card 2`/`HV_Card-1` → `-5`/`-7`/`-3`), still uncommitted in the working tree. See `PROJECT_LOG.md` HW-12 for what changed and what's still unconfirmed.
+**2026-08-12: schematic set replaced again** (`Control_Card-5`/`Matrix_Card-7` → `Control_Card 1`/`Matrix_Card-8`), still uncommitted in the working tree, same-day as `-4`/`2`/`-1` → `-5`/`-7`/`-3` closed out under HW-12. Note the naming break: `Control_Card 1.pdf` doesn't follow the `-N` convention the other files use — worth confirming that's intentional before the next sync. See `Doc/idac_current_source.md` for what changed and why it matters.
 
 ## Firmware layout
 
 ```
 Core/Src, Core/Inc
-  drivers/   ads124s08, mcp23017, dac8775, dac8830, ad7476, ads1232(bench-only)
+  drivers/   ads124s08, mcp23017, dac8830, ad7476, ads1232(bench-only)
   cards/     matrix_card, hv_card, control_frontend
   test/      continuity, kelvin, insulation
   bsp/       board            — instantiates and binds everything

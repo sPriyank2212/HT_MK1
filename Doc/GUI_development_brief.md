@@ -107,7 +107,7 @@ in the protocol does this.
 ```
 >PING                          -> <PONG
 >ID                            -> <ID HT_MK1 fw=<semver> proto=1
->STATUS                        -> <STATUS state=<idle|hv_armed> fixture=<none|mtx|hv> hv_mv=<int>
+>STATUS                        -> <STATUS state=<idle|hv_armed|running|fault> fixture=<none|mtx|hv> hv_mv=<int>
 >SAFE                          -> <OK started   force everything to the safe state
 >ABORT                         -> <OK           stop the running test now — see 3.2.1
 
@@ -138,10 +138,11 @@ in the protocol does this.
 `<OK` for everything answered on the spot. Match both exactly — the difference is not
 cosmetic, it tells you whether the instrument has begun work or merely recorded something.
 
-`>STATUS` reports only `idle` or `hv_armed`. It does **not** report `running` or `fault`, even
-while a run is executing — those two states reach you through `!STATE` and `!FAULT` only. On
-reconnect (§3.5 rule 4) treat a `STATUS` of `idle` as "not armed", not as "not running", and
-wait for the next event before concluding the instrument is quiet.
+`>STATUS` reports `idle`, `hv_armed`, `running` or `fault` (fixed 2026-08-12, FW-06) — the same
+priority order the `!STATE` heartbeat already used: a latched fault outranks a run in progress,
+which outranks armed, which outranks idle. On reconnect (§3.5 rule 4) a GUI can now trust a
+polled `STATUS` directly instead of waiting for the next event to learn the instrument is
+mid-run or faulted.
 
 Errors: `<ERR <code> <text>` — e.g. `<ERR EFIXTURE harness is on the matrix fixture`.
 
@@ -541,8 +542,9 @@ behaviour the firmware does not have:
     reply** (the simulator answers empty lines with `ERR ESYNTAX`).
 13. `SAFE`, `MANUAL PATH` and `MANUAL OFF` reply `<OK` in the simulator; per §3.2 they are
     sequencer-queued and reply `<OK started` (as does idle `ABORT`, deviation 1).
-14. `STATUS` can report `state=running` in the simulator; per §3.2 the firmware only ever
-    reports `idle` or `hv_armed` — `running`/`fault` reach the GUI via `!STATE`/`!FAULT` only.
+14. ~~`STATUS` can report `state=running` in the simulator; per §3.2 the firmware only ever
+    reports `idle` or `hv_armed`~~ **Resolved 2026-08-12 (FW-06):** the firmware now reports
+    `running` and `fault` too, matching the simulator.
 
 ### 8.3 Answers to §8.2
 
@@ -594,11 +596,13 @@ and 12 match the firmware exactly as written. Three notes:
   simulated ramp is fine, but nothing on the instrument produces one today.
 - **9 — reversed, see Q1.** Your simulator is correct; the brief was wrong.
 
-**13 and 14, which you added after reading §8.3, are both confirmed.** `SAFE`, `MANUAL PATH`
-and `MANUAL OFF` go through the same enqueue path and reply `<OK started`, as does `ABORT` when
-idle; `STATUS` is built from the armed flag alone and can never say `running` or `fault`. That
-`STATUS` gap is logged as **FW-06** — the information exists, it just isn't in the polled reply,
-so on reconnect keep treating `idle` as "not armed" rather than "not running" (§3.2).
+**13 and 14, which you added after reading §8.3, are both confirmed** (as of the exchange this
+section records). `SAFE`, `MANUAL PATH` and `MANUAL OFF` go through the same enqueue path and
+reply `<OK started`, as does `ABORT` when idle; `STATUS` was built from the armed flag alone and
+could not say `running` or `fault`. That `STATUS` gap was logged as **FW-06** and is now fixed
+(2026-08-12) — `STATUS` reports `running` and `fault` too, so a reconnect can trust the polled
+reply directly instead of the "treat idle as not-armed" workaround this paragraph originally
+described. See §3.2.
 
 **Net: fourteen raised, thirteen real, one (9) caused by this brief.** The scoreboard across
 both rounds is three firmware defects found from the GUI side — the two in `5d837d8`, and now
@@ -695,8 +699,9 @@ Implemented in `Core/Src/app/proto.c`, on hardware now.
 | **Refused by design** | `MANUAL RELAY` → `ERR EHW` |
 | **Runs but always fails** | `RES RUN` — every net reports `fail_high` with `!FAULT F08`. The resistance measurement path is mid-rewrite for a new ADC (firmware task FW-02); reporting a plausible number from a measurement path that no longer exists would be worse than reporting a failure. **Build the resistance screen anyway** — the event format is final, and your simulator should exercise it properly |
 | **Accepted, not yet driven** | `HV SET` — the arm check and the range check are real, and the value is echoed as `!HV <mv>`, but it does not yet move the rail. The rail is raised by the insulation run itself, at a fixed fraction. Build to the contract; the command's behaviour will not change, only what it drives |
-| **Not emitted yet** | `!RES` verdict `fail_low`, and `>STATUS` still never reports `running` or `fault` (FW-06, see §3.2). `!STATE fault` is now emitted, but only in the one internal case in §3.4. Handle all of them; they are part of the contract |
+| **Not emitted yet** | `!RES` verdict `fail_low`. `!STATE fault` is emitted only in the one internal case in §3.4. Handle it; it's part of the contract |
 | **Fixed 2026-08-05** | **FW-07** — `ABORT` now stops a run, and commands sent mid-run are answered mid-run. Console RX became interrupt-driven, comms moved above the sequencer, and settle delays yield instead of busy-spinning. **FW-08** — `!SAFE` is now emitted where the hardware is actually made safe, not where the request was posted. Both found by the GUI-side task-2 review |
+| **Fixed 2026-08-12** | **FW-06** — `>STATUS` now reports `running` and `fault`, not just `idle`/`hv_armed` (see §3.2) |
 
 Two conveniences for hand-testing over a terminal:
 

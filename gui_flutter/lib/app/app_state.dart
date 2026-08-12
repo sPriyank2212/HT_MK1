@@ -27,6 +27,7 @@
 library;
 
 import 'dart:async';
+import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
@@ -37,6 +38,7 @@ import '../htproto/codec.dart' as proto;
 import '../htproto/connection.dart';
 import '../htproto/messages.dart' as msg;
 import '../htproto/netlist_file.dart';
+import 'run_history.dart';
 
 /// matches PROTO_HV_LIVE_MV in the firmware
 const int kHvLiveMv = 50000;
@@ -276,6 +278,30 @@ class AppState extends ChangeNotifier {
 
   static Future<(String, Uint8List)?> _noPick() async => null;
 
+  /// GUI-05: where completed runs are recorded — stored on the GUI host, not
+  /// the instrument (decided 2026-08-12). Defaults to in-memory only, so the
+  /// existing test suite never touches disk unless a test explicitly passes
+  /// a real directory. `main.dart` passes `defaultHistoryDir()`.
+  final RunHistoryStore history;
+
+  /// Opens the native "save file" dialog for exporting run history to CSV.
+  /// Injected the same way as [pickNetlistFile] — keeps `file_picker`'s
+  /// platform channel out of this file and its tests. Default is "nothing
+  /// ever gets a path", which makes [exportHistoryCsv] a no-op in tests that
+  /// never inject one.
+  final Future<String?> Function({
+    required String dialogTitle,
+    required String fileName,
+    required List<String> allowedExtensions,
+  }) pickSavePath;
+
+  static Future<String?> _noSavePath({
+    required String dialogTitle,
+    required String fileName,
+    required List<String> allowedExtensions,
+  }) async =>
+      null;
+
   /// the selector's pending choice, set by [choosePort] and preselected from
   /// `--serial` or the first enumerated port; becomes [host] when [connectTo]
   /// opens the link
@@ -296,8 +322,16 @@ class AppState extends ChangeNotifier {
     this.serialLink = true,
     List<PortEntry> Function()? listPorts,
     Future<(String, Uint8List)?> Function()? pickNetlistFile,
+    RunHistoryStore? history,
+    Future<String?> Function({
+      required String dialogTitle,
+      required String fileName,
+      required List<String> allowedExtensions,
+    })? pickSavePath,
   })  : listPorts = listPorts ?? _noPorts,
-        pickNetlistFile = pickNetlistFile ?? _noPick {
+        pickNetlistFile = pickNetlistFile ?? _noPick,
+        history = history ?? RunHistoryStore(),
+        pickSavePath = pickSavePath ?? _noSavePath {
     nlMtx = MtxNetlist(
       loaded: true,
       name: 'AV-880_RevC.hnl',
@@ -1334,6 +1368,18 @@ class AppState extends ChangeNotifier {
       return;
     }
     final pass = m.failed == 0;
+    // GUI-05: one history row per completed run, whatever the netlist
+    // context was at the moment it finished. There is no "build"/serial
+    // number concept in the protocol to group cont+res+insul together, so
+    // this is per-test, not per-harness.
+    history.append(RunHistoryEntry(
+      timestamp: DateTime.now(),
+      kind: kind,
+      mtxNetlist: nlMtx.loaded ? nlMtx.name : null,
+      hvNetlist: nlHv.loaded ? nlHv.name : null,
+      passed: m.passed,
+      failed: m.failed,
+    ));
     R[key] = pass ? 'pass' : 'fail';
     _setDom(
       kind == 'cont'
@@ -1653,6 +1699,71 @@ class AppState extends ChangeNotifier {
     if (_reportRefusal('fault clear', res)) return;
     log('ok', 'seq', 'fault cleared — instrument returning to idle');
     paintLink();
+  }
+
+  /// `LIMITS SET r_max_mohm=<int> ins_min_mohm=<int>` (GUI-07). Both values
+  /// are wire milliohms, same convention as `r_max_mohm` elsewhere in the
+  /// protocol (brief §3.2). On success, `limits` is updated from the values
+  /// just sent rather than re-issuing `LIMITS GET` - `<OK` on this command
+  /// means the instrument accepted exactly what was asked for (brief §3.2.1:
+  /// "any value" is accepted, there is no range refusal to reconcile).
+  Future<void> setLimits(int rMaxMohm, int insMinMohm) async {
+    final res = await _cmd(proto.commands.limitsSet(rMaxMohm, insMinMohm));
+    if (_reportRefusal('limits set', res)) return;
+    limits = msg.LimitsReply(rMaxMohm: rMaxMohm, insMinMohm: insMinMohm);
+    log('ok', 'seq',
+        'limits set: r_max ${rMaxMohm}mΩ, ins_min ${insMinMohm}mΩ');
+    updateControls();
+  }
+
+  /// GUI-05: "Export CSV" on the Results view's Run history panel. Writes
+  /// every recorded run (oldest history entries last touched runs first) to
+  /// a CSV file at a location the operator picks. Returns false, with a log
+  /// line explaining why, if there is nothing to export yet or the operator
+  /// cancelled the save dialog — never throws for either of those.
+  Future<bool> exportHistoryCsv() async {
+    final entries = history.load();
+    if (entries.isEmpty) {
+      log('warn', 'hist', 'no run history to export yet');
+      return false;
+    }
+    final path = await pickSavePath(
+      dialogTitle: 'Export run history',
+      fileName: 'run_history_${_csvStamp(DateTime.now())}.csv',
+      allowedExtensions: ['csv'],
+    );
+    if (path == null) return false; // operator cancelled
+
+    final buf = StringBuffer(
+        'Timestamp,Kind,MTX netlist,HV netlist,Passed,Failed,Verdict\n');
+    for (final e in entries.reversed) {
+      buf.writeln([
+        e.timestamp.toIso8601String(),
+        e.kind,
+        e.mtxNetlist ?? '',
+        e.hvNetlist ?? '',
+        e.passed,
+        e.failed,
+        e.pass ? 'Pass' : 'Fail',
+      ].map(_csvField).join(','));
+    }
+    await File(path).writeAsString(buf.toString());
+    log('ok', 'hist', 'run history exported to $path');
+    return true;
+  }
+
+  static String _csvStamp(DateTime t) {
+    String two(int n) => n.toString().padLeft(2, '0');
+    return '${t.year}${two(t.month)}${two(t.day)}-'
+        '${two(t.hour)}${two(t.minute)}${two(t.second)}';
+  }
+
+  static String _csvField(Object? v) {
+    final s = v.toString();
+    if (s.contains(',') || s.contains('"') || s.contains('\n')) {
+      return '"${s.replaceAll('"', '""')}"';
+    }
+    return s;
   }
 
   /// Diagnostics — "Close path": `MANUAL PATH`, energising exactly the one

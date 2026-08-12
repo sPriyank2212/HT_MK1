@@ -221,46 +221,145 @@ the bring-up order, and the diagnostics pattern.
 
 Forward-looking risk list for when this is picked up again. Ordered by how much
 damage each does if missed. Numbers assume CD74HC4051 at ~100 Ω, R131 = 100 Ω,
-ADS124S08 at gain 32 with the internal 2.5 V reference.
+ADS124S08 at gain 32 with the internal 2.5 V reference — except §7.1, which
+uses the real BU-09 datasheet figures (typ ~110–140 Ω, worst-case ~250–320 Ω
+at 3.3 V) now that they're measured rather than assumed.
 
 ### 7.1 There is a usable current window
 
-**STALE (2026-08-11): this section's "target ~5 mA" was superseded 2026-08-01
-by BU-09 (real CD74HC4051 datasheet, worst-case Rₒₙ 250–320 Ω at 3.3 V) —
-current target is 3 mA, not 5 mA. The lower bound below is correct (1 mA,
-common-mode-limited, independent of the mux swap) but the table and the "target
-~5 mA" callout need re-deriving against the 3 mA ceiling. Not done in this
-pass — see `PROJECT_LOG.md` HW-11.**
+**SUPERSEDED again, same day (2026-08-12):** the 3 mA target below assumes the
+excitation current source can be set to any value the compliance/common-mode
+window allows, which was true for the DAC8775 this was written against but is
+no longer true — the DAC8775 has been removed from the schematic, and the
+ADS124S08's own internal IDAC now sources the Kelvin excitation current
+instead (routed to `HI_COM` via `AIN9`). The IDAC's magnitude register
+(`IDACMAG`) tops out at **2 mA** — there is no code for 3 mA. See
+`Doc/idac_current_source.md` for the full finding. **Re-derived below against
+2 mA — see "Revised again 2026-08-12 (DOC-04)".** Everything from "Revised
+2026-08-12 (DOC-03)" through the end of the original §7.1 table is kept
+below only as a record of the DAC8775-era reasoning; treat the DOC-04 block
+as current.
+
+**Revised 2026-08-12 (DOC-03), superseded the same day by DOC-04 below:**
+re-derived against the real CD74HC4051 figures BU-09 measured 2026-08-01
+(typ ~110–140 Ω, worst-case ~250–320 Ω at 3.3 V), which is what actually
+moved the target from ~5 mA to **3 mA** — this table and the ~5 mA callout
+were the one place that revision was never propagated into, until now. The
+1 mA lower bound's conclusion is unchanged (it never depended on the mux
+swap - see below); only the table and the upper/target figures move.
+
+---
+
+### Revised again 2026-08-12 (DOC-04): 2 mA is fixed, not chosen
+
+The framing changes, not just the number. DOC-03's 3 mA was a *target* picked
+from inside a window — the DAC8775 could in principle be programmed to
+whatever the compliance/common-mode analysis allowed. The IDAC cannot: its
+`IDACMAG` register has exactly nine non-zero codes, topping out at
+**2000 µA**, full stop (`Doc/idac_current_source.md` §3). There is no
+"choosing" left to do — the question is only whether the one current the
+hardware can produce clears both bounds with margin, which it does.
+
+**Also corrected here: the compliance ceiling.** DOC-03 (and the original
+5 mA-era derivation) used an assumed "~3.0 V, rail minus some DAC headroom"
+ceiling reverse-engineered from where the old table's own rows seemed to
+fail. The IDAC has a real, datasheet-sourced number instead: compliance
+voltage down to **AVDD − 0.6 V** at the 1–2 mA range
+(`Datasheet/ads124s08.pdf`, Excitation Current Sources table — see
+`Doc/idac_current_source.md` §3). AVDD = 3.3 V (unipolar), so the ceiling is
+**2.7 V**, not the previous ~3.0 V guess. Same worst-case/typ-low asymmetry
+as DOC-03 (compliance worst at high Rₒₙ, common mode worst at low Rₒₙ,
+matching §7.2's reasoning) — only the target current and the ceiling value
+change:
+
+```
+force loop (compliance, worst-case Rₒₙ) = 2 × 320 Ω + R131 + R_wire ≈ 740 Ω + R_wire
+LO_SENSE   (CM floor, typ-low Rₒₙ)      = I × (110 Ω + R131)        ≈ I × 210 Ω
+CM floor                                = 0.15 + 15.5 × I(A)          (ADS124S08, gain 32–128)
+compliance ceiling                      = AVDD − 0.6 V = 2.7 V          (IDAC spec, not a guess)
+```
+
+| I | HI_COM, worst Rₒₙ (1 Ω wire) | LO_SENSE, typ-low Rₒₙ | CM floor | verdict |
+|---|---|---|---|---|
+| 0.5 mA | 0.37 V | 0.105 V | 0.158 V | **common-mode FAIL** |
+| 1 mA | 0.74 V | 0.210 V | 0.166 V | OK, 44 mV margin |
+| **2 mA** | **1.48 V** | **0.420 V** | **0.181 V** | **the only current available — comfortable on both ends** |
+| 3 mA | 2.22 V | 0.630 V | 0.197 V | would still clear compliance (0.48 V margin under the corrected 2.7 V ceiling) — moot, no `IDACMAG` code produces it |
+| 4 mA | 2.96 V | 0.840 V | 0.212 V | **compliance FAIL** under the corrected ceiling too |
+| 5 mA | 3.71 V | 1.050 V | 0.228 V | **compliance FAIL** |
+
+**2 mA clears compliance with 1.22 V (45 %) of margin** (2.7 V ceiling minus
+1.48 V worst-case drop) **and clears the common-mode floor with 239 mV of
+margin** (0.420 V vs a 0.181 V floor). Both margins are larger than DOC-03's
+3 mA numbers were against the old ~3.0 V ceiling — less current means less
+drop, so moving down from 3 mA to 2 mA only helps compliance; nothing about
+this change reopens a bound in the wrong direction. Worth noting for the
+record: at the corrected 2.7 V ceiling, 3 mA would *also* have cleared
+compliance (0.48 V margin) — DOC-03's target wasn't wrong on physics, it's
+simply unreachable now. The worst-case compliance failure point with the
+corrected ceiling is **~3.6 mA** (2.7 V ÷ 741 Ω), comfortably above the fixed
+2 mA operating point.
+
+**Resolution cost, the one real trade-off:** at gain 32, 1 count = VREF /
+(gain × 2²³) / I = 9.31 nV / 0.002 A = **4.66 µΩ per count**, worse than
+3 mA's 3.10 µΩ/count by exactly the 3:2 current ratio. A 1 Ω wire now gives
+2 mV against the 78.125 mV full scale (2.6 % of FS) instead of 3 mV — still
+comfortable, and PGA auto-ranging (FW-02) already compensates by stepping to
+a higher gain for small signals; this is a noise-floor cost, not a
+functional one.
+
+**The lower bound is unaffected by any of this.** `LO_SENSE = I × (R_LOmux +
+R131)` against `0.15 + 15.5·I(A)` never depended on which chip forces the
+current, only on the current's magnitude and the mux geometry — 2 mA clears
+it with more room than 3 mA did (239 mV vs 3 mA's 433 mV — still ample, just
+smaller in proportion to the smaller current). See §5.1 for the one caveat:
+the floor rises with the resistance being measured, which auto-ranging
+handles.
+
+---
+
+**DAC8775-era material below, kept for history — not the current numbers:**
 
 The excitation is bounded at both ends. Too little and the sense common mode
 falls below the PGA floor; too much and the force loop runs out of compliance on
-the 3.3 V rail. The window is wide enough — the point is to sit in it
-deliberately rather than by accident.
+the 3.3 V rail. Unlike the earlier ~100 Ω placeholder, the real Rₒₙ spread is
+wide enough that the two ends now need **different** worst-case assumptions:
+the common-mode floor is worst when a channel's mux happens to run **low**
+(smaller LO_SENSE), while compliance is worst when it runs **high** (bigger
+voltage drop) - the same asymmetry §7.2 already argues for.
 
 ```
-force loop  = 2 × R_mux + R131 + R_wire  ≈ 300 Ω + R_wire
-LO_SENSE    = I × (R_mux + R131)         ≈ I × 200 Ω
-CM floor    = 0.15 + 15.5 × |V_IN|       (ADS124S08, gain 32–128)
+force loop (compliance, worst-case Rₒₙ) = 2 × 320 Ω + R131 + R_wire ≈ 740 Ω + R_wire
+LO_SENSE   (CM floor, typ-low Rₒₙ)      = I × (110 Ω + R131)        ≈ I × 210 Ω
+CM floor                                = 0.15 + 15.5 × I(A)          (ADS124S08, gain 32–128)
+compliance ceiling                      ≈ 3.0 V (3.3 V rail less DAC headroom - the same
+                                           threshold the 8 mA/10 mA rows below already implied)
 ```
 
-| I | HI_COM (1 Ω wire) | LO_SENSE | CM floor | verdict |
+| I | HI_COM, worst Rₒₙ (1 Ω wire) | LO_SENSE, typ-low Rₒₙ | CM floor | verdict |
 |---|---|---|---|---|
-| 0.5 mA | 0.15 V | 0.100 V | 0.158 V | **common-mode FAIL** |
-| 1 mA | 0.30 V | 0.200 V | 0.165 V | OK, 35 mV margin |
-| 2 mA | 0.60 V | 0.400 V | 0.181 V | OK |
-| **5 mA** | **1.51 V** | **1.000 V** | **0.227 V** | **comfortable — target this** |
-| 8 mA | 2.41 V | 1.600 V | 0.274 V | OK, near compliance |
-| 10 mA | 3.01 V | 2.000 V | 0.305 V | **compliance FAIL** |
+| 0.5 mA | 0.37 V | 0.105 V | 0.158 V | **common-mode FAIL** |
+| 1 mA | 0.74 V | 0.210 V | 0.166 V | OK, 44 mV margin |
+| 2 mA | 1.48 V | 0.420 V | 0.181 V | OK |
+| **3 mA** | **2.22 V** | **0.630 V** | **0.197 V** | **comfortable — target this** |
+| 4 mA | 2.96 V | 0.840 V | 0.212 V | **compliance FAIL (just)** |
+| 5 mA | 3.71 V | 1.050 V | 0.228 V | **compliance FAIL** |
+| 10 mA | 7.41 V | 2.100 V | 0.305 V | **compliance FAIL** |
 
-**Target ~5 mA.** That is a good outcome of the CD74HC4051 swap — with the old
-CD4067B the ceiling was under 1 mA and this window did not exist.
+**Target 3 mA.** That is still a real improvement from the CD4067B era (ceiling
+was under 1 mA, no window at all existed), but the real Rₒₙ numbers close the
+window from the top much sooner than the original ~100 Ω placeholder assumed —
+a worst-case channel now runs out of compliance around **4 mA**, not 10 mA.
+3 mA sits with roughly 0.8 V (26 %) of compliance margin below that, comfortably
+inside the window from both directions.
 
-The lower bound comes from `LO_SENSE = I × (R_LOmux + R131) = I × 200 Ω` against
-a floor of `0.15 + 15.5·|V_IN|`. Anywhere from 1 mA up is fine; at 5 mA there is
-772 mV of margin. See §5.1 for the one caveat — the floor rises with the
-resistance being measured, which auto-ranging handles.
+The lower bound is unchanged in substance: `LO_SENSE = I × (R_LOmux + R131)`
+against a floor of `0.15 + 15.5·I(A)` — neither side of that comparison depends
+on the mux swap that moved the target, which is why 1 mA still clears it. At
+3 mA there is 433 mV of common-mode margin. See §5.1 for the one caveat — the
+floor rises with the resistance being measured, which auto-ranging handles.
 
-At 5 mA, gain 32: 1 count = **1.86 µΩ**, a 1 Ω wire gives 5 mV against a 78 mV
+At 3 mA, gain 32: 1 count = **3.10 µΩ**, a 1 Ω wire gives 3 mV against a 78 mV
 full scale. Comfortable everywhere.
 
 ### 7.2 Per-channel Rₒₙ spread narrows that window
@@ -294,6 +393,31 @@ R = (V_forward − V_reverse) / (2 × I)
 This costs one extra conversion per point and removes the single largest error
 term. The ADS124S08's `G_CHOP` bit cancels *its own* offset but does nothing
 about EMF out in the harness — the two are complementary, not alternatives.
+
+**Revisited 2026-08-12 (FW-12/DOC-04): this mitigation needs a hardware
+change now, not just a firmware register write.** The paragraph above assumed
+the DAC8775, which has a genuine bipolar ±24 mA output — reversal was one
+register field. The DAC8775 is gone; the ADS124S08's IDACs that replaced it
+are **source-only** (`Datasheet/ads124s08.pdf` Table 32/33 define a magnitude
+and an output pin per IDAC, nothing that flips current direction). Reversing
+the physical current through the DUT would mean sourcing from the *low* side
+instead of the high side — but the excitation loop is asymmetric by design:
+`HI_COM` is fed by the IDAC (via `AIN9`), and the return path to ground is a
+fixed 100 Ω pull-down (R131) on the **`LO_COM`** side only. There is no
+symmetric pull-down on `HI_COM` for a low-side IDAC to push current back
+through in the other direction, and no evidence any second `AINx` is wired to
+`LO_COM` at all for a second IDAC to use even if there were. **Conclusion:**
+current reversal is not a firmware task to pick up later, the way it was
+under the DAC8775 assumption — it needs a symmetric force-side return path
+(or some other reversal mechanism) added to the Matrix Card schematic first.
+
+**Decided 2026-08-12: not required.** The user confirmed thermal-EMF current
+reversal (BU-10) is not needed — the schematic change described above will
+not be pursued. The accuracy floor this section describes (500 µΩ per µV of
+junction EMF at the fixed 2 mA operating point) stands as a known, accepted
+limitation rather than something the design works around. `G_CHOP` (the
+ADS124S08's own offset cancellation) remains in use; it was never the same
+mechanism as this and cancels a different, smaller error term.
 
 ### 7.4 Sense-path leakage from 32 parallel multiplexers
 
@@ -381,7 +505,7 @@ collision is fixed anyway.
 | BU-07 | common-mode headroom — §7.1 |
 | BU-08 | do not copy the bench formula — full-scale conventions differ |
 | HW-09 | four card slots, five cards |
-| BU-01 | compliance sweep, now with a real target (~5 mA) |
+| BU-01 | compliance sweep, now with a real target (3 mA) |
 
 ### 7.9 What would most reduce risk, in order
 

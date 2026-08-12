@@ -26,6 +26,7 @@ import 'package:flutter/widgets.dart';
 
 import 'app/app_state.dart';
 import 'app/modals.dart';
+import 'app/run_history.dart';
 import 'app/shell.dart';
 import 'design/tokens.dart';
 import 'htproto/connection.dart';
@@ -247,6 +248,8 @@ Future<void> main(List<String> args) async {
 
   final logDir = o.logDir != null ? Directory(o.logDir!) : defaultLogDir();
   stdout.writeln('session logs in ${logDir.path}');
+  final historyDir = defaultHistoryDir();
+  stdout.writeln('run history in ${historyDir.path}');
 
   late final AppState state;
   final cm = ConnectionManager(
@@ -274,6 +277,9 @@ Future<void> main(List<String> args) async {
     // netlist_picker_io.dart's own comment for why this is injected rather
     // than imported directly by AppState.
     pickNetlistFile: netlist_picker.pickNetlistFile,
+    // GUI-05: run history lives on the GUI host, not the instrument.
+    history: RunHistoryStore(historyDir),
+    pickSavePath: netlist_picker.pickSavePath,
   );
   state.refreshPorts();
   // --serial preselects its port; the selector shows it even when the

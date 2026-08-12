@@ -84,7 +84,29 @@ extern "C" {
 #define ADS124S08_MUX_AIN1       0x1U
 #define ADS124S08_MUX_AIN2       0x2U
 #define ADS124S08_MUX_AIN3       0x3U
+#define ADS124S08_MUX_AIN9       0x9U   /* Kelvin excitation output - see IDACMUX */
 #define ADS124S08_MUX_AINCOM     0xCU
+
+/* IDACMUX (Table 33): output channel for each IDAC. Same AINx numbering as
+ * the input mux above; 0xF is "disconnected", the reset default for both
+ * IDAC1 and IDAC2 - route an IDAC there to turn it off without disturbing
+ * the other one. */
+#define ADS124S08_IDAC_OFF       0xFU
+
+/* IDACMAG (Table 32) IMAG[3:0]: excitation current magnitude. One field sets
+ * BOTH IDAC1 and IDAC2 to the same value - there is no independent per-IDAC
+ * magnitude. 1001 = 2000 uA is the highest code that exists; there is no
+ * higher setting (idac_current_source.md S3). */
+#define ADS124S08_IMAG_OFF       0x0U
+#define ADS124S08_IMAG_10UA      0x1U
+#define ADS124S08_IMAG_50UA      0x2U
+#define ADS124S08_IMAG_100UA     0x3U
+#define ADS124S08_IMAG_250UA     0x4U
+#define ADS124S08_IMAG_500UA     0x5U
+#define ADS124S08_IMAG_750UA     0x6U
+#define ADS124S08_IMAG_1000UA    0x7U
+#define ADS124S08_IMAG_1500UA    0x8U
+#define ADS124S08_IMAG_2000UA    0x9U
 
 /* PGA register fields. PGA_EN = 01 enables; 00 powers down and bypasses, which
  * removes the common-mode headroom requirement entirely (useful for
@@ -186,6 +208,24 @@ HAL_StatusTypeDef ADS124S08_Command(ADS124S08_t *dev, uint8_t cmd);
   * @param  p, n : [in] ADS124S08_MUX_* codes.
   */
 HAL_StatusTypeDef ADS124S08_SetMux(ADS124S08_t *dev, uint8_t p, uint8_t n);
+
+/**
+  * @brief  Configure the excitation current sources.
+  * @note   IDACMAG's magnitude field is shared - both IDACs run at the same
+  *         current, only their output pin is independent (IDACMUX). Route an
+  *         IDAC to ADS124S08_IDAC_OFF to disable it without touching the
+  *         other. Two register writes (IDACMUX then IDACMAG); on failure the
+  *         second is not attempted, so a device left mid-configured always
+  *         has its current sources routed nowhere useful rather than routed
+  *         somewhere with the wrong magnitude.
+  * @param  dev       : [in] instance; must be non-NULL.
+  * @param  idac1_mux : [in] output pin for IDAC1 - ADS124S08_MUX_* or _IDAC_OFF.
+  * @param  idac2_mux : [in] output pin for IDAC2 - ADS124S08_MUX_* or _IDAC_OFF.
+  * @param  mag       : [in] ADS124S08_IMAG_* code, applied to both IDACs.
+  * @retval HAL status from the register writes.
+  */
+HAL_StatusTypeDef ADS124S08_SetIdac(ADS124S08_t *dev, uint8_t idac1_mux,
+                                    uint8_t idac2_mux, uint8_t mag);
 
 /**
   * @brief  Set the PGA gain (PGA enabled).

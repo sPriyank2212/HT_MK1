@@ -157,14 +157,18 @@ void Proto_EvtState(const char *state)
 
 /**
   * @brief  Name the state this instrument is in right now.
-  * @note   Deliberately NOT shared with the >STATUS reply. STATUS has always
-  *         answered hv_armed-or-idle and the GUI is written against that; the
-  *         heartbeat needs the more precise answer, because announcing "idle"
-  *         part-way through a run would be a lie the GUI would act on.
-  * @retval const char* one of "running" / "hv_armed" / "idle".
+  * @note   Shared by the heartbeat and the polled >STATUS reply (FW-06) - a
+  *         GUI that reconnects mid-run or mid-fault and re-issues >STATUS
+  *         (brief 3.5.3 rule 4) must see the same truth the heartbeat would
+  *         have told it, not the older hv_armed-or-idle-only answer.
+  * @retval const char* one of "fault" / "running" / "hv_armed" / "idle".
   */
 static const char *proto_state_name(void)
 {
+  if (Safety_InFault() != 0)
+  {
+    return "fault";
+  }
   if (s_busy != 0U)
   {
     return "running";
@@ -411,7 +415,7 @@ static void proto_exec(char *line)
   else if (strcmp(t[0], "STATUS") == 0)
   {
     proto_emit('<', "STATUS state=%s fixture=%s hv_mv=%ld",
-               s_armed ? "hv_armed" : "idle",
+               proto_state_name(),
                proto_fixture_name(s_fixture), (long)s_hv_mv);
   }
   else if (strcmp(t[0], "SAFE") == 0)

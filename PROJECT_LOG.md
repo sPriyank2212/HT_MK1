@@ -13,17 +13,60 @@ ID prefixes: `HW-` schematic/hardware · `FW-` firmware · `BU-` bring-up/verify
 
 ---
 
-## Status snapshot — 2026-08-11
+## Status snapshot — 2026-08-12 (later still — a round of user decisions)
 
 | Category | Count |
 |---|---|
 | Blocking — firmware cannot proceed | **0** |
 | Agreed, awaiting schematic edit | 3 |
-| Awaiting a decision | 7 |
-| Firmware work queued | 4 |
-| Awaiting the GUI side | 2 |
-| Verify at bring-up | 10 |
-| Closed to date | 25 |
+| Awaiting a decision | 3 |
+| Firmware work queued | 1 |
+| Awaiting the GUI side | 1 |
+| Verify at bring-up | 9 |
+| Closed to date | 37 |
+
+**Five decisions this round (CL-35 through CL-37, plus HW-04 and HW-09 below):**
+- **HW-04 agreed** — routes to `AIN8` (not the originally-proposed `AIN2`), next schematic
+  revision. Moved to "agreed, awaiting schematic edit."
+- **HW-09 left open at the user's request** — a 5th-HV-card-via-J1-spare-pins plan is being
+  worked out; the exact mechanism isn't settled. See the row itself for what was verified
+  (the real J1 pinout, read pin-by-pin off `Control_Card 1.pdf`) versus what's still open.
+- **GUI-04 decided: RAM-only** (CL-35) — no code change, matches current behaviour.
+- **GUI-05 decided + built: stored on the GUI host** (CL-37) — real local run-history storage
+  and a working `Export CSV`, replacing five hardcoded mock rows. See below.
+- **GUI-06: feasibility re-checked against current firmware** (post FW-02/FW-12) — five of
+  seven proposed commands are buildable today with no hardware blocker, one (Auto-range PGA)
+  turns out to already be done and just needs its button removed, one (Compliance sweep)
+  stays a deliberate non-command. Still awaiting the actual per-command go/no-go.
+- **GUI-08 left open at the user's request** — no change.
+- **BU-10 decided: not required** (CL-36) — the schematic change current reversal would have
+  needed will not be pursued; documented as an accepted accuracy limit instead.
+
+**FW-12 + DOC-04 done (CL-33, CL-34): Kelvin excitation now runs on the ADS124S08's own
+IDAC, and the excitation-window derivation agrees with it.** `kelvin.c` routes IDAC1 to
+`AIN9` (= `HI_COM`) at the IDAC's 2 mA ceiling instead of calling the now-nonexistent
+DAC8775 via `control_frontend.c`; the DAC8775 half of the front end and the `dac8775.h`/`.c`
+driver are deleted outright rather than left as orphans. `Doc/4wire_resistance_validation.md`
+§7.1 re-derived for 2 mA as a *fixed* operating point rather than a target — margin is
+comfortable on both ends (45% compliance, 239 mV common-mode), and the pass also corrected
+the compliance-ceiling formula to a real datasheet number (AVDD − 0.6 V = 2.7 V) instead of
+the earlier ~3.0 V guess. **BU-10 (thermal-EMF current reversal) moved from "verify at
+bring-up" to "awaiting a decision"**: the IDACs are source-only with no reverse mode, and the
+excitation loop's return path (R131) is asymmetric — reversal now needs a schematic change,
+not a firmware register write. Full clean `make all`: 0 errors, 0 warnings (65024 B text).
+
+**Six items closed 2026-08-12 earlier in the day (CL-26 through CL-31): FW-06, DOC-01,
+DOC-02 (retroactive), DOC-03, HW-08, GUI-07.** All were coding/documentation work with no
+product or hardware decision blocking them — see the activity entries below for the full
+account. One item surfaced in passing and logged, not fixed: **FW-11** (`LIMITS SET
+ins_min_mohm` has no effect on the insulation verdict — needs a decision, not just code).
+
+**The DAC8775 is gone from the schematic — Kelvin excitation now sources from the
+ADS124S08's own IDAC.** Confirmed against the current `Control_Card 1.pdf`/`Matrix_Card-8.pdf`:
+the DAC8775 sheet is now empty except unrelated pull-ups, and `AIN9` is wired directly to
+`HI_COM`, the ADS124S08's own excitation-current pin. This closed **HW-11** outright (CL-32)
+— there's no DAC left to replace, so the LTC2662-16 investigation was moot. Full write-up:
+`Doc/idac_current_source.md`.
 
 **FW-02 is done: `RES RUN` now measures instead of failing every net.** `Kelvin_MeasurePair`
 reads HI_SENSE/LO_SENSE on the Matrix Card's ADS124S08 (PGA auto-ranged, zero-current baseline
@@ -114,20 +157,16 @@ window and nothing downstream can be finalised without it.
 | ID | Item | Agreed |
 |---|---|---|
 | HW-03 | Matrix card moves to the non-isolated domain: `+5V_ISO` → plain `+5V`, no isolators in the Matrix path. Follow-ons: the Matrix card's ADuM1205 (U103) becomes redundant once both sides share ground — DNF with links or keep as a buffer; and feed the slot raw `I2C3_SDA`/`I2C3_SCL` rather than `ISO_SDA3`/`ISO_SCL3`. | 2026-07-29 |
-| HW-08 | HV card R3003 50 kΩ → 5 kΩ, giving 0.245 V at 500 V from the 10 M : 5 k divider. **The PDF in the repo still shows 50 kOhms** (HV_Card-1.pdf sheet 2), so either the change is not exported or HV_Card-1 is stale — re-issue and re-check. | 2026-07-20 |
 | HW-10 | Add pull resistors on the three ADC control lines that U69 drives, so they are defined while the MCP23017 is still in its power-on high-Z input state: `ADC_CS_1` and `ADC_RST_1` pulled **up** to +3V3 (CS deasserted, ADC out of reset), `Start_SYNC_1` pulled **down** to GND. Sheet 9 currently carries only 4.7 K (I2C and address strapping) and 47 Ω (series damping) — nothing on these nets. Same argument as the mux enables. | 2026-07-29 |
+| HW-04 | **Decided 2026-08-12: implement in the next schematic revision, using `GPIO0_AIN8` (not the originally-proposed `AIN2`).** Route the `LO_COM` node (top of R131) to ADS124S08 `AIN8` (Matrix sheet 9), with the same RC treatment as originally proposed (1 kΩ series + 100 nF to AINCOM) unless the schematic spec says otherwise. `AIN8` is confirmed free — it's `AIN9`'s old calibration-tap partner, unconnected since FW-12 routed `AIN9` to the IDAC (CL-32). Purpose unchanged: R = V_kelvin / I, and without measuring I across R131 the current comes from the IDAC's programmed magnitude, so resistance accuracy equals the excitation source's tolerance instead of R131's 0.01 %. Firmware side (ratiometric read via `AIN8`, `ADS124S08_OhmsRatiometric`) is not implemented yet — waiting on the schematic edit to land. | 2026-08-12 |
 
 ### Awaiting a decision
 
 | ID | Item | Raised |
 |---|---|---|
-| HW-04 | **Current reference — on-card net, not a connector wire.** Route the `LO_COM` node (top of R131) to **U68 AIN2**, both on Matrix sheet 9, with 1 kΩ series + 100 nF to AINCOM. Purpose is measuring the excitation current, not sensing harness voltage: R = V_kelvin / I, and without measuring I across R131 the current comes from the DAC8775's programmed value, so resistance accuracy equals DAC tolerance plus tempco and R131's 0.01 % does nothing. AIN2–AIN5 are free. If declined, firmware calibrates the current against a reference resistor instead and the accuracy claim drops accordingly. | 2026-07-27 |
-| HW-09 | **Four card slots, five cards.** The Control card has four 50-pin connectors (J2–J5). A 256-line harness needs four HV cards (64 HS lines each) *plus* the Matrix card. Not a problem while only one or two HV cards are fitted, but the full configuration cannot be assembled as drawn. Decide before the connector pinout is frozen. | 2026-07-27 |
-| GUI-04 | **Netlist persistence** (brief §8 Q2): should an uploaded netlist survive a reboot, or is RAM-only + re-upload-every-boot the accepted behaviour? Confirmed on hardware that it does not persist today. Surfaced by `Doc/GUI_protocol_command_coverage.md` §6. | 2026-08-08 |
-| GUI-05 | **Run history storage** (brief §8 Q4): stored on the instrument, or the GUI host? Blocks the Results view's Export CSV / Print report from being anything but decoration — that table is static mock data today. Surfaced by `Doc/GUI_protocol_command_coverage.md` §6. | 2026-08-08 |
-| GUI-06 | **Seven proposed protocol commands** awaiting a firmware-side yes/no: `BUS SCAN`, `MANUAL READ`, `MANUAL SWEEP`, self-cal, PGA auto-range, compliance sweep, relay self-test. Full command-by-command writeup with size estimates in `Doc/GUI_protocol_proposed_commands.md` — two (auto-range PGA, compliance sweep) are recommended against as separate commands at all. Nothing in `Core/Src` touched for any of it. | 2026-08-08 |
-| HW-11 | **DAC8775 (Kelvin current source, Control Card) is hard to source, and it's the wrong product category anyway.** DAC8775/DAC8760/AD5758/AD5755 are all "4-20 mA loop driver" parts that inherently need a wide supply (DAC8775: ±15 V typical; DAC8760: 10–36 V; AD5758: up to ±33 V) to drive long 2-wire process loops — none run from the 3.3 V this board actually has. Real operating current is 1–3 mA (§7.1, `Doc/4wire_resistance_validation.md`), and only channel A is used today, so the right category is a small-range precision current-source DAC, not an industrial loop driver. **Leading candidate, confirmed 2026-08-11: ADI LTC2662-16** (`LTC2662IUH-16#PBF`) — 5-channel (1 used, same as today), 16-bit, SPI, **2.85–5.5 V single supply** (direct fit for this board's 3.3 V rail), 8 selectable per-channel ranges down to **3.125 mA full scale** (16-bit over that span = 47.7 nA/LSB, far finer than needed), integrated 1.25 V reference (10 ppm/°C max). **214 units in stock at DigiKey, $49.18 @ qty 1, MOQ = 1.** Not yet verified: dropout/compliance voltage specifically at the 3.125 mA range (datasheet PDF fetch failed repeatedly this session — only the headline "1 V dropout @ 200 mA" spec is confirmed, and dropout is expected but not confirmed to scale down at lower ranges) and gain-error/TUE accuracy at 3.125 mA. Calibration is mandatory regardless of which part ships (see CL-21). Runner-up: TI DAC8760 (same family as DAC8775, easiest port, but still needs 10–36 V — would require adding a boost regulator this board doesn't have today, a real cost the LTC2662 avoids). | 2026-08-11 |
-| GUI-08 | **The required netlist format has no connector concept; the parser and the wire protocol don't either.** `gui_flutter/required_format/example_netlist27072026.xlsx` numbers pins per-connector (`Conn ID` + `Src Pin #`), so a straight-through harness has `Src Pin # == Dst Pin #` on every row — but `NETLIST ADD <hi> <lo>` and the matrix routing use one flat `1..256` fixture address, so every row in that exact file collides and is rejected (correctly — pinned by a test, see CL-20). Needs a decision: either netlists must supply pre-globalised pin numbers, or a `Conn ID` → base-offset map gets built (real firmware/GUI work, not a header rename). See `gui_flutter/required_format/README.md`. | 2026-08-10 |
+| HW-09 | **Four card slots, five cards — left open at the user's request 2026-08-12.** The Control card has 50-pin connectors J1–J4 (confirmed by reading `Control_Card 1.pdf`'s `/Connector/` sheet directly, pin by pin — J1 is not a separate 5th connector as this row previously assumed; J5 on that sheet is the power barrel jack, not a card slot). J1 carries the Matrix Card's own signals (`LO_S1-4`/`HI_S1-4`/`IN`/`SPI1_*`) plus an apparently-unused `ISO_HV_Card_1.0-3` nibble and its own `EN1` (already claimed for Matrix bus gating) — the plan discussed is a 5th physical HV connector fed by spare/unused J1 pins via a new harness branch, but the exact mechanism is still being worked out. Also noted: `Matrix_Card-8.pdf`'s `J101` does not use matching pin numbers for the same signals as `Control_Card 1.pdf`'s `J1` — consistent with this project's established pattern (BU-06) of harness-level, not schematic-level, signal mapping. | 2026-07-27 |
+| GUI-06 | **Seven proposed protocol commands** awaiting a firmware-side yes/no: `BUS SCAN`, `MANUAL READ`, `MANUAL SWEEP`, self-cal, PGA auto-range, compliance sweep, relay self-test. Full command-by-command writeup with size estimates in `Doc/GUI_protocol_proposed_commands.md` (2026-08-08, pre-FW-02/FW-12) — two (auto-range PGA, compliance sweep) are recommended against as separate commands at all. **Feasibility re-checked against the current firmware 2026-08-12 — see the note below the table.** Still awaiting the actual per-command yes/no. | 2026-08-08 |
+| GUI-08 | **The required netlist format has no connector concept; the parser and the wire protocol don't either.** `gui_flutter/required_format/example_netlist27072026.xlsx` numbers pins per-connector (`Conn ID` + `Src Pin #`), so a straight-through harness has `Src Pin # == Dst Pin #` on every row — but `NETLIST ADD <hi> <lo>` and the matrix routing use one flat `1..256` fixture address, so every row in that exact file collides and is rejected (correctly — pinned by a test, see CL-20). Needs a decision: either netlists must supply pre-globalised pin numbers, or a `Conn ID` → base-offset map gets built (real firmware/GUI work, not a header rename). **Left open at the user's request 2026-08-12.** See `gui_flutter/required_format/README.md`. | 2026-08-10 |
 
 ### Firmware work queued
 
@@ -138,14 +177,17 @@ window and nothing downstream can be finalised without it.
 | ~~FW-03~~ | **DONE 2026-08-01** — `matrix_card` reworked for the Matrix_Card 2 geometry: 8:1 muxes, 32 per bank, 3 select bits, 8 enable expanders across two buffered I2C segments, byte-swapped enable map, segment switching via `HI_S3`/`LO_S3`. AD7476 binding removed (rev 2 deleted U33). | 2026-07-27 |
 | ~~FW-04~~ | **DONE, retroactively closed 2026-08-10 — see CL-19.** Mux address lines via MCP23017 U21 landed in `f778ba7` (2026-08-01) as part of the FW-03 rework; never marked closed under its own ID. Original scope: mux address lines come from MCP23017 U21 on I2C3, not MCU GPIO; add OLAT shadow registers, and consider 400 kHz — a 256 × 256 scan is roughly 70 s of pure bus time at 100 kHz versus 18 s at 400 kHz. **The 400 kHz question is still open** — no I2C3 timing override found in `board.c` — carried forward under BU-03. | 2026-07-27 |
 | ~~FW-05~~ | **DONE 2026-08-01** — `app/proto.c`, see CL-11. Original scope: implement the instrument side of the GUI protocol defined in `Doc/GUI_development_brief.md` §3 — line-based ASCII over the VCP at 115200. Replaces the current single-keystroke bring-up console (`c`/`k`/`i`/`s`/`f`/`r`). Needs: command parser, `<` replies with 2 s worst-case latency, `!` result streaming during a run, and `!STATE`/`!FIXTURE`/`!HV`/`!SAFE` events. The GUI is being built against this contract, so changes to it must be agreed, not made. | 2026-08-01 |
-| FW-06 | **`>STATUS` never reports `running` or `fault`.** `proto_exec` builds the reply from `s_armed` alone, so a GUI that reconnects mid-run and re-issues `>STATUS` — which the brief §3.5 rule 4 requires it to do — is told `idle` while a run is executing. `!STATE` does carry `running`, so the information exists; only the polled path is missing it. Documented as-is in the brief for now (§3.2, Appendix B) rather than changed silently: the reply is protocol-visible and the GUI is being built against it, so agree it first. Fix is to report from `s_busy` and `Safety_InFault()` as well. | 2026-08-05 |
+| ~~FW-06~~ | **DONE 2026-08-12** — see CL-26. Original scope: **`>STATUS` never reports `running` or `fault`.** `proto_exec` builds the reply from `s_armed` alone, so a GUI that reconnects mid-run and re-issues `>STATUS` — which the brief §3.5 rule 4 requires it to do — is told `idle` while a run is executing. `!STATE` does carry `running`, so the information exists; only the polled path is missing it. Fix is to report from `s_busy` and `Safety_InFault()` as well. | 2026-08-05 |
+| FW-11 | **`LIMITS SET ins_min_mohm` changes a number nothing reads.** Found while wiring GUI-07 to a real control. `Proto_LimitInsMinMohm()` is defined and returned correctly by `>LIMITS GET`, but has exactly zero callers anywhere in `Core/Src/test` or `tasks.c` — insulation's pass/fail comes only from the fixed `INSULATION_V_PASS_MAX` voltage threshold in `insulation.c`, never from this configurable limit. Separately, the firmware's own default (`s_lim_ins_mohm = 10000000`) is commented `/* 10 Mohm */` but at genuine wire-milliohm units (matching `r_max_mohm`'s confirmed convention) that value is 10,000 mΩ = 10 kΩ, not 10 MΩ — three orders of magnitude off from what the comment claims and from the ~10 MΩ threshold used everywhere else in the project. Not fixed here: wiring a dead parameter into the verdict path is a behavior change to a safety-relevant pass/fail test, not a mechanical sync — needs a decision on whether `LIMITS SET` should gate insulation at all before the code changes. | 2026-08-12 |
+| ~~FW-12~~ | **DONE 2026-08-12** — see CL-33. Original scope: Kelvin excitation needs to move from the DAC8775 to the ADS124S08's own IDAC. The DAC8775 is confirmed gone from the schematic (HW-11, closed as CL-32) — `AIN9` on the ADS124S08 now wires straight to `HI_COM`. `kelvin.c` still calls `Frontend_SetCurrentCode`/`Frontend_SetMode(FRONTEND_MODE_IMPEDANCE)` against a chip that no longer exists on the board. Needs: an `ADS124S08_SetIdac()`-style helper, `kelvin.c` switched over to it, the DAC8775 half of `control_frontend.c`/`.h` removed, and `board.c`'s SPI2/DAC8775 CS wiring dropped. Full scope in `Doc/idac_current_source.md` §5. | 2026-08-12 |
 | ~~FW-07~~ | **DONE 2026-08-05** — see CL-12. Original scope: **`>ABORT` cannot stop a run — the comms thread is starved for the whole run.** `tSequencer` is `osPriorityNormal`, `tComms` is `osPriorityBelowNormal`, and the sequencer never yields during a run: the settle delays are `HAL_Delay` (the stock `__weak` one — a busy-spin on `HAL_GetTick`, TIM1 timebase, nothing overrides it) and the I2C/SPI calls are polled. With `configUSE_PREEMPTION=1` a lower-priority task never runs while a higher-priority one is runnable, so `Proto_RxByte` is never called during a run: **the abort flag the run loops poll can never be set, and the polling in `tasks.c` is unreachable in practice.** Worse, RX is single-byte polled with no interrupt or DMA, so mid-run bytes are lost to overrun rather than buffered. Scale: insulation is 256 × ~250 ms ≈ 64 s, discover 65,536 × ~2 ms ≈ 131 s — an operator pressing Abort during a 500 V run has no effect for that long. Physical E-stop and the safety task (`osPriorityHigh`, blocks on `osDelay`) are unaffected. Found by the GUI-side task-2 review. Two candidate fixes, neither started: interrupt/DMA RX into a ring buffer with `tComms` blocking on it, or `osDelay` instead of `HAL_Delay` in the test settle paths so the sequencer yields. | 2026-08-05 |
 | ~~FW-08~~ | **DONE 2026-08-05** — see CL-13. Original scope: **`Proto_SetFixture` announces `!SAFE` before the hardware is safe.** It posts `CMD_FORCE_SAFE` to the queue and then immediately emits `!HV 0` and `!SAFE`, without waiting for execution — so the instrument tells the GUI it is safe while the rail may still be up. Directly contradicts the brief's central rule that the GUI must never show a safe state it has not been told is real. Masked today by FW-07 (a fixture change cannot be received mid-run), so **fixing FW-07 unmasks this** — do them together. Also in the same path: the arm is dropped with no `!STATE idle`, and `!SAFE` is emitted twice (once inline, once when the queued force-safe runs). | 2026-08-05 |
 | ~~FW-09~~ | **DONE 2026-08-05** — see CL-15. Original scope: **An abort in the first moments of a run is silently lost.** `proto_post_run` clears `s_abort` and posts; the sequencer then calls `Proto_ClearAbort()` *again* at run entry (`tasks.c` 281 / 348 / 396). An `>ABORT` processed in the window between the post and that second clear is wiped, the GUI has already had its `<OK`, and the run continues to completion — up to 64 s at 500 V for insulation. **The FW-07 fix made this more reachable, not less:** `tComms` now sits above the sequencer, so it can preempt and set the flag exactly in that window. Fix is to delete the three entry-side clears — `proto_post_run` is the only path that starts a run and it already clears the flag at the one point where clearing is correct, before the command is queued. Raised verbally on 2026-08-05 and not logged at the time; logged now. | 2026-08-05 |
 | ~~FW-10~~ | **DONE 2026-08-05** — see CL-16. Original scope: **A latched fault wedges the run path permanently, and the GUI waits forever.** `run_command` returns early when `s_fault` is set, *before* the switch — so a dequeued run command never reaches `Proto_EvtDone`. `s_busy` stays 1, every later run is refused `ERR EBUSY`, and no `!DONE` is ever emitted, so a GUI that is waiting for the run to finish waits for ever. Compounded by there being **no protocol command to clear a fault** (`Safety_ClearFault` is not reachable from `proto.c`), so recovery is a power cycle. Fix is small — in the skip path, emit `!FAULT` and `!DONE` for run commands so the GUI is released, and add a way to clear the latch. Found while closing FW-09; **not a release blocker on its own** (it needs a fault first, and a faulted instrument is already unusable) but it turns one fault into a hung GUI. | 2026-08-05 |
-| DOC-01 | `fw_status.txt` still describes the 2-wire path, 10 mA excitation, and Matrix U33 as the resistance ADC. Sync it with v1.4. | 2026-07-27 |
-| DOC-03 | `Doc/4wire_resistance_validation.md` §7.1 still targets **~5 mA** excitation. Superseded 2026-08-01 by BU-09 (real CD74HC4051 datasheet, worst-case Rₒₙ 250–320 Ω) which revised the target to **3 mA**, but that revision was never propagated into §7.1's compliance table — only into the project log. The 1 mA lower bound in §7.1 is still correct (common-mode-limited, independent of the mux swap); only the upper end and the "target ~5 mA" callout need re-deriving against 3 mA. Flagged in the doc 2026-08-11. | 2026-08-11 |
-| DOC-02 | **`HT_ENABLE_ADS1232` defaults to 1, but README.md says "default off".** `Core/Inc/drivers/ads1232.h` has `#ifndef HT_ENABLE_ADS1232 / #define HT_ENABLE_ADS1232 1`, so every Debug build compiles the bench driver in — which is why the current image carries it. One of the two is wrong. The bench validation is finished (CL-10 / the 2026-08-01 write-up), so the header default should probably become 0 and the rig be enabled explicitly with `-DHT_ENABLE_ADS1232=1`. Noticed while hand-linking on 2026-08-05. | 2026-08-05 |
+| ~~DOC-01~~ | **DONE 2026-08-12** — see CL-27. Original scope: `fw_status.txt` still describes the 2-wire path, 10 mA excitation, and Matrix U33 as the resistance ADC. Sync it with v1.4. | 2026-07-27 |
+| ~~DOC-03~~ | **DONE 2026-08-12** — see CL-29. Original scope: `Doc/4wire_resistance_validation.md` §7.1 still targets **~5 mA** excitation. Superseded 2026-08-01 by BU-09 (real CD74HC4051 datasheet, worst-case Rₒₙ 250–320 Ω) which revised the target to **3 mA**, but that revision was never propagated into §7.1's compliance table — only into the project log. **Superseded again the same day — see DOC-04.** | 2026-08-11 |
+| ~~DOC-04~~ | **DONE 2026-08-12** — see CL-34. Original scope: `Doc/4wire_resistance_validation.md` §7.1 needs re-deriving a second time, same day as CL-29. CL-29's 3 mA derivation assumed an unbounded current source (true for the DAC8775 it was written against); the ADS124S08's internal IDAC that replaced it (HW-11, CL-32) tops out at **2 mA** — there's no `IDACMAG` code above that. Re-derive §7.1's compliance/common-mode table with 2 mA as the fixed operating point rather than a target being justified. See `Doc/idac_current_source.md` §3–4. | 2026-08-12 |
+| ~~DOC-02~~ | **Retroactively closed 2026-08-12 — see CL-28.** Already fixed as a side effect of the heartbeat commit (`c579830`, 2026-08-07), before this item was ever logged as open in this form: `HT_ENABLE_ADS1232`'s default was flipped 1→0 in the same change that added `Proto_EvtHeartbeat()`, "carrying the bench diagnostic off with it." README's "default off" and the header have matched since; nobody had marked this row closed. | 2026-08-05 |
 
 ### Awaiting the GUI side
 
@@ -160,7 +202,9 @@ primary build** — new items are filed against it. GUI-03 is against the now-su
 | ~~GUI-01~~ | **FIXED 2026-08-05 (GUI side)** — `_link_lost` is now called after `_io_lock` is released, and there is a regression test (`TestSendFailure`: the `execute()` call runs in a thread, so a regression fails the test instead of hanging the suite). Re-verified on the fixed code: send failure now surfaces `LinkLostError` immediately and the link drops to `LINK_LOST`. Original scope: Blocker — a send failure deadlocks the connection manager; `_execute` called `_link_lost()` while holding the non-reentrant `_io_lock`. | 2026-08-05 |
 | ~~GUI-02~~ | **FIXED 2026-08-05 (GUI side)** — `!RES` milliohms, `!INSUL` leak_mohm, `<STATUS hv_mv`, the `<LIMITS` values and `!HV` now parse as signed int32; pins, counts and progress stay unsigned. Regression test added (`test_signed_measurement_values`), and the old malformed-case test that asserted `hv_mv=-5` was invalid has been corrected — it was encoding the bug. Original scope: signed wire fields parsed as unsigned, so a valid negative reading was reported as a protocol violation. | 2026-08-05 |
 | GUI-03 | **Three minors, in `gui/` (Python, superseded 2026-08-10 — low priority).** A single non-ASCII byte kills the reader thread and turns into a misleading 5 s "link lost" (`UnicodeDecodeError` is caught outside the read loop); `_link_lost` nulls `_transport` under a live reader/sender, so `AttributeError` escapes instead of `LinkLostError`; and `parse_line('')` raises, where ignoring empty lines would be safer. Acknowledged by the GUI side 2026-08-05, not yet done. | 2026-08-05 |
-| GUI-07 | **`LIMITS SET` never wired, in `gui_flutter/`.** The codec encoder exists (`commands.limitsSet()`) and the firmware answers it, but nothing in `AppState` calls it — there is no way to change `r_max_mohm`/`ins_min_mohm` from the GUI at all. A real gap, not a proposal. Found by `Doc/GUI_protocol_command_coverage.md` §1. | 2026-08-08 |
+| ~~GUI-07~~ | **DONE 2026-08-12** — see CL-31. Original scope: `LIMITS SET` never wired, in `gui_flutter/`. The codec encoder exists (`commands.limitsSet()`) and the firmware answers it, but nothing in `AppState` calls it — there is no way to change `r_max_mohm`/`ins_min_mohm` from the GUI at all. Found by `Doc/GUI_protocol_command_coverage.md` §1. | 2026-08-08 |
+| ~~GUI-04~~ | **DECIDED 2026-08-12: stays RAM-only.** No firmware or GUI change needed — matches current behaviour exactly (confirmed on hardware that netlists do not persist across reboot today). Original question (brief §8 Q2): should an uploaded netlist survive a reboot? Answer: no. | 2026-08-08 |
+| ~~GUI-05~~ | **DECIDED + DONE 2026-08-12 — see CL-37.** Decision: stored on the GUI host, not the instrument. Original scope: run history storage (brief §8 Q4) blocked the Results view's Export CSV / Print report from being anything but decoration — that table was static mock data. `Export CSV` now writes real data; `Print report` is left honestly disabled (real OS print integration is a different scope, not the storage-location question this item asked). | 2026-08-08 |
 
 ### Verify at bring-up
 
@@ -173,7 +217,6 @@ primary build** — new items are filed against it. GUI-03 is against the now-su
 | BU-05 | ~~No differential RC filter~~ **DONE in Matrix rev 2** — R234/R235 4.99 k 0.1 % + C33 47 nF + C142/C143 4.7 nF fitted. | 2026-07-27 |
 | BU-07 | **Common-mode: hold the excitation at ≥1 mA.** `LO_SENSE = I × (R_LOmux + R131) = I × 200 Ω` against an ADS124S08 floor of `0.15 + 15.5·\|V_IN\|`. At 1 mA that is 0.200 V vs 0.165 V (+35 mV); at the 5 mA target it is 1.000 V vs 0.227 V (+772 mV) — comfortable, **nothing to fix in hardware**. Revised 2026-08-01: the earlier "marginal" framing overstated it. The real caveat is that the floor grows with the measured resistance, capping R at ~11 Ω at 5 mA on gain 32 — handled by PGA auto-ranging, since gain ≤16 uses a much lower floor. See Doc/4wire_resistance_validation.md §5.1. | 2026-08-01 |
 | BU-09 | **Measure CD74HC4051 Rₒₙ at 3.3 V** — reduced 2026-08-01 after reading SCHS122O. Channel-to-channel spread (ΔrON) is **10 Ω max**, so the "some wires read wrong" concern is largely closed; a sanity check across a few channels is enough. What remains is that rON is characterised only from **VCC = 4.5 V** (typ 70 Ω, max 160 Ω at 25 °C, 200 Ω at 85 °C) and the card runs at 3.3 V — extrapolate typ ~110–140 Ω, max ~250–320 Ω. **Excitation target revised 5 mA → 3 mA**, which stays inside both compliance and common-mode limits even at worst-case rON. | 2026-08-01 |
-| BU-10 | **Thermal EMF is the accuracy floor below ~1 mΩ.** At 5 mA, 1 µV of junction EMF = 200 µΩ. A 256-line harness has hundreds of dissimilar-metal junctions. Mitigation to design in now: **current reversal** — the DAC8775 has a ±24 mA range, and R = (V_fwd − V_rev)/(2I) cancels EMF because it does not reverse with the current. The ADS124S08 `G_CHOP` bit cancels the ADC's own offset only; the two are complementary. See §7.3. | 2026-08-01 |
 | BU-11 | **Measure sense-path leakage.** `HI_SENSE` is the common node of 32 CD74HC4051s with 31 disabled; summed off-channel leakage into the 4.99 kΩ series resistor could be a large offset (1 µA → 5 mV). Should largely cancel between HI and LO legs, but unverified. Cheap test: enable a sense bank with no excitation and check the differential reads near zero. Rises sharply with temperature. See §7.4. | 2026-08-01 |
 | BU-08 | **Do not copy the bench resistance formula.** ADS1232 full scale is ±0.5·VREF/Gain, ADS124S08 is ±VREF/Gain. The bench divides by `2 × gain × 2²³`; the product must divide by `gain × 2²³`. Copy-pasting gives a silent 2× error. | 2026-08-01 |
 | BU-06 | Harness build must encode `ISO_HV_CARD_ENx` per card slot (card 1 → EN1 … card 4 → EN4). HV_Card-1 sheet 1 states this is done in the cable, not the schematic. | 2026-07-27 |
@@ -185,6 +228,18 @@ primary build** — new items are filed against it. GUI-03 is against the now-su
 
 | ID | Closed | Item | Resolution |
 |---|---|---|---|
+| CL-37 | 2026-08-12 | GUI-05 run history stored on the GUI host | User decided: stored on the GUI host, not the instrument. New `gui_flutter/lib/app/run_history.dart` — `RunHistoryEntry` (timestamp, kind, MTX/HV netlist names, passed/failed) and `RunHistoryStore`, one JSON line per completed run appended and flushed immediately (same reliability reasoning as `SessionLogger` — a crash between runs must not lose the ones already finished). `RunHistoryStore()` with no directory is in-memory only, so the ~180 pre-existing GUI tests that construct `AppState` without a history directory keep working unmodified; `main.dart` passes a real `defaultHistoryDir()` (new in `paths.dart`, factored out of `defaultLogDir()`'s existing candidate-search logic rather than duplicated — same `%LOCALAPPDATA%\HT_MK1\` search, one leaf folder over: `history` next to `sessions`). `AppState._onDone` appends an entry for every completed run except a fault-refused one (FW-10's `!DONE <kind> 0 0` is not a real result and would show a false pass). `ResultsView`'s "Run history" table now reads `s.history.load()` instead of five hardcoded rows — column shape changed from the mock's per-*build* layout (Serial, parallel Continuity/Resistance/HV columns) to per-*run* (When/Test/MTX netlist/HV netlist/Passed/Failed/Verdict), because the protocol has no build/serial-number concept tying three test kinds together, and forcing one would have been invented, not real. `Export CSV` (`AppState.exportHistoryCsv`) writes real rows to a path from a native save dialog (`file_picker`, isolated in `netlist_picker_io.dart` via the same injected-function pattern as `pickNetlistFile`) — empty history or a cancelled dialog both return `false` without writing anything. `Print report` left honestly disabled (`Btn(..., disabled: true)`) rather than wired to a no-op — real OS print integration is a different scope than "where does history live," and this project has no print/PDF package dependency to build it with yet. Explicitly out of scope, left mock: the "First-pass yield" sparkline and "Fault pareto" table on the same view — GUI-05's ticket named Export CSV/Print report specifically, not those. 12 new tests (`run_history_test.dart`, `run_history_app_state_test.dart`): in-memory mode never touches disk, persistence survives a fresh `RunHistoryStore` on the same directory, one corrupt line doesn't hide the rest, fault-refused runs are not recorded, CSV export writes a real header + rows. Full suite: 193/194 (the one failure is the pre-existing unrelated gap from CL-20). `flutter analyze`: 0 issues. |
+| CL-36 | 2026-08-12 | BU-10 decided: current reversal not required | User decided thermal-EMF current reversal is not required — the schematic change CL-33/CL-34's session identified as necessary (a symmetric force-side return path, since the IDACs are source-only) will not be pursued. `Doc/4wire_resistance_validation.md` §7.3 updated: the 500 µΩ-per-µV-of-junction-EMF accuracy floor at the fixed 2 mA operating point is now documented as an accepted limitation, not a gap something is expected to close. `G_CHOP` (the ADS124S08's own offset cancellation, unrelated mechanism) stays in use. No code changed — this closes a decision, not a defect. |
+| CL-35 | 2026-08-12 | GUI-04 decided: netlist stays RAM-only | User decided: no persistence across reboot, matching current behaviour exactly (confirmed on hardware previously that netlists do not survive a reboot today). No code change needed — the answer to brief §8 Q2 is "no," and nothing currently does otherwise. |
+| CL-34 | 2026-08-12 | DOC-04 §7.1 re-derived for 2 mA fixed operating point | `Doc/4wire_resistance_validation.md` §7.1 gained a new "Revised again 2026-08-12 (DOC-04)" block, kept alongside (not overwriting) the CL-29/DOC-03 3 mA derivation per the flag already left in place. Framing changed, not just the number: 3 mA was a target picked from inside a window (true for the DAC8775 this replaces); 2 mA is the only current `IDACMAG` can produce, so the question is only whether it clears both bounds, which it does with room — 45% compliance margin (1.22 V of 2.7 V), 239 mV common-mode margin. Also corrected the compliance ceiling itself: earlier passes used an inferred "~3.0 V, rail minus some headroom" figure; the IDAC has a real datasheet number instead (`AVDD − 0.6 V` = 2.7 V, from the Excitation Current Sources table), which is a *tighter* ceiling than the old guess, and 2 mA still clears it comfortably. Noted for the record that 3 mA would also have cleared compliance under the corrected ceiling (0.48 V margin) — DOC-03 wasn't wrong on the physics, it's just unreachable now. Resolution cost: 4.66 µΩ/count at gain 32 vs 3 mA's 3.10 µΩ/count, a noise-floor cost PGA auto-ranging already absorbs, not a functional one. Also updated §7.3 (thermal EMF / BU-10): current reversal needs a schematic change now, not a firmware register write — see BU-10's updated entry above and CL-33's note. |
+| CL-33 | 2026-08-12 | FW-12 Kelvin excitation moved to the ADS124S08's own IDAC | `ADS124S08_SetIdac(dev, idac1_mux, idac2_mux, mag)` added to `ads124s08.{h,c}` (two register writes: `IDACMUX` then `IDACMAG`), following `ADS124S08_SetGain`'s pattern, plus `ADS124S08_MUX_AIN9`, `ADS124S08_IDAC_OFF` and the `ADS124S08_IMAG_*` magnitude codes (sourced from `Datasheet/ads124s08.pdf` Tables 32/33 - IDACMAG's magnitude field is shared between both IDACs, only the output pin is independent). `kelvin.c` now calls `ADS124S08_SetIdac(&g_ads124s08, ADS124S08_MUX_AIN9, ADS124S08_IDAC_OFF, KELVIN_IDAC_MAG)` instead of `Frontend_SetCurrentCode`; `kelvin.h`'s `KELVIN_FORCE_CODE` (a DAC8775 code) is replaced by `KELVIN_IDAC_MAG` (`ADS124S08_IMAG_2000UA`) and `KELVIN_FORCE_CURRENT_A` becomes a fixed 0.002f - no longer a TUNE placeholder, the hardware ceiling. **`FRONTEND_MODE_IMPEDANCE` kept, not deleted**: `Frontend_SetMode` never touched the DAC8775 (pure OPT0_CNTR GPIO toggle), and it still does real work - the continuity divider's 10 k pull-up on `ADC_IN` would otherwise load `HI_COM` in parallel with the IDAC's 2 mA, so Kelvin still swings the SPDT to isolate it before exciting. Only `Frontend_SetCurrentCode`, the `idac` field, and `idac_spi`/`idac_cs_port`/`idac_cs_pin` came out of `control_frontend.{h,c}`. `board.c`: `BOARD_IDAC_SPI`/`BOARD_IDAC_CS_PORT`/`_PIN` removed, `board_init_frontend()` no longer configures an IDAC (hspi2 itself stays - HV DAC8830/AD7476 still use it). `dac8775.{h,c}` deleted outright (register map was still VERIFY and now moot) along with the matching entries in `Debug/Core/Src/drivers/subdir.mk` and `Debug/objects.list` so `make all` doesn't try to compile a file that no longer exists (the CL-23 lesson - these lists don't update themselves). Full clean `make clean && make all`: 0 errors, 0 warnings, 65024 B text (was 64872 B before FW-02; net change reflects the new driver code minus the deleted DAC8775 driver). GUI still references the DAC8775 in three places (`gui_flutter/lib/views/misc_views.dart`'s Diagnostics bus-map panel, `res_hv_views.dart`'s path/band labels ×2) - noted, not fixed, out of this task's file scope (`Doc/idac_current_source.md` §5 lists firmware files only). |
+| CL-32 | 2026-08-12 | HW-11 resolved: DAC8775 removed, ADS124S08 IDAC sources excitation instead | User pointed at the current schematic and asked to check; confirmed directly, not inferred. `DAC8775` no longer appears anywhere in `Control_Card 1.pdf` — its sheet (`DAC.kicad_sch`) is now four unrelated pull-up resistors, the component was deleted. On `Matrix_Card-8.pdf`, ADS124S08 pin `GPIO1_AIN9` (previously a calibration-resistor tap) is now wired directly to `HI_COM`, matching the chip's documented IDAC-to-AINx routing (`IDACMUX`/`IDACMAG`, already in `ads124s08.h`'s register map from FW-01, never used). No DAC to replace, so the LTC2662-16 investigation this item was tracking is moot - closed as superseded by hardware rather than decided. Datasheet-confirmed: IDAC accuracy at the 2 mA range is typ ±0.5%/worst-case ±3%, current matching between the two IDACs typ 0.07%/worst-case 0.4% - a real, vendor-characterized spec for exactly this application, stronger footing than the DAC8775 path (whose register map was still marked VERIFY). Hard constraint found in the same pass: IDAC tops out at 2 mA (`IDACMAG` code `1001`), reopening the excitation target CL-29 had just closed at 3 mA the same day - see **DOC-04**. Firmware not yet updated for the new current source - see **FW-12**. Full write-up: `Doc/idac_current_source.md`. Also flagged, not chased: the new PDFs are still uncommitted and `Control_Card 1.pdf` breaks the project's `-N` naming convention. |
+| CL-31 | 2026-08-12 | GUI-07 `LIMITS SET` wired to a real control | `gui_flutter/lib/app/app_state.dart` gained `AppState.setLimits(rMaxMohm, insMinMohm)` — issues `LIMITS SET`, checked against the same `_reportRefusal` pattern every other operator action uses, and updates `limits` locally from the values just sent on `<OK` (no round-trip `LIMITS GET` needed, since the brief §3.2.1 says any value is accepted). Diagnostics screen (`gui_flutter/lib/views/misc_views.dart`) gained a "Test limits" panel — two sliders (R max in Ω, Insulation min in Ω, both wire-milliohm fields ÷1000 same as the Calibration panel's reference-resistor readout) seeded once from `LIMITS GET` on connect, plus an Apply button. `flutter analyze`: 0 issues. `flutter test`: 181/182 pass, the one failure (`netlist_file_generated_test.dart`) is the pre-existing unrelated WIP-scaffolding gap noted in CL-20. Found in passing (not fixed): `Proto_LimitInsMinMohm()` has no caller in the insulation verdict path at all, and the firmware's own default is off by 1000× from what its comment claims — logged as **FW-11**, not fixed here since it changes safety-relevant pass/fail behaviour and needs a decision first. |
+| CL-30 | 2026-08-12 | HW-08 confirm-and-close | Read `HV_Card-3.pdf`'s title block text directly (`pdftotext -layout`): sheet shows `R3003 5KOhms` next to the schematic's own stated formula `V_HV_Sense = 0.00049 * HV_Voltage`, matching firmware's scaling exactly. The 50 kΩ drawing error (originally raised 2026-07-20) is resolved in the current schematic. No firmware change was needed — `board.c`'s 0.00049 scaling was already correct against the *intended* value, only the drawing was wrong. |
+| CL-29 | 2026-08-12 | DOC-03 §7.1 re-derived for 3 mA | `Doc/4wire_resistance_validation.md` §7.1's compliance table was still built around a ~100 Ω placeholder Rₒₙ and a stale ~5 mA target from before BU-09 measured the real CD74HC4051 figures (typ ~110–140 Ω, worst-case ~250–320 Ω at 3.3 V). Re-derived using worst-case Rₒₙ (320 Ω) for the compliance/upper-bound check and typ-low Rₒₙ (110 Ω) for the common-mode/lower-bound check — the same asymmetric worst-case reasoning §7.2 already used. Result explains *why* BU-09 moved the target: with real Rₒₙ, worst-case compliance now fails around ~4 mA (not ~10 mA as the old ~100 Ω placeholder implied), so 3 mA is the point that sits with real margin on both ends (≈0.8 V / 26 % compliance headroom, 433 mV common-mode headroom) rather than an arbitrary round number. The 1 mA lower-bound conclusion carries over unchanged, as instructed — it never depended on the mux swap. One stray downstream reference to "~5 mA" (§7.8's BU-01 row, citing the same superseded figure) was also corrected for consistency. |
+| CL-28 | 2026-08-12 | DOC-02 `HT_ENABLE_ADS1232` default (retroactive) | Confirmed already fixed: `Core/Inc/drivers/ads1232.h`'s default flipped 1→0 in commit `c579830` (2026-08-07, the heartbeat change), which explicitly notes in its commit message "Carries HT_ENABLE_ADS1232 off with it." README's "default off" claim and the header have agreed since that commit; this open item was simply never marked closed. No code change made — verified current state matches both README and this item's intent. |
+| CL-27 | 2026-08-12 | DOC-01 `fw_status.txt` synced to FW-02 | Full pass over `fw_status.txt` against the current architecture: schematic filenames updated to `Control_Card-5.pdf`/`Matrix_Card-7.pdf`/`HV_Card-3.pdf` (the git-tracked current revisions — see note below); BUS/PERIPHERAL MAP rewritten for the real I2C2-shared/I2C3-local split (`Doc/i2c_bus_sharing.md`) and SPI1 now correctly names the ADS124S08 as the resistance ADC, not the long-removed Matrix U33; every place the doc still described the superseded 2-wire/100 Ω-return/10 mA resistance test, the single-char console, or the un-gated per-card I2C scheme was marked SUPERSEDED with a pointer to the FW-*/CL-* that replaced it, rather than silently deleted, so the doc's own history stays legible. R3003's value note updated to match HW-08 (CL-30). Added a banner at the top pointing to `PROJECT_LOG.md` as the live tracker, since this file had drifted out of sync for weeks at a time before. **Found in passing:** the working tree has an uncommitted rename churn — `Control_Card-5.pdf`/`Matrix_Card-7.pdf` deleted, replaced by untracked `Control_Card 1.pdf`/`Matrix_Card-8.pdf` with identical embedded title-block dates (2026-08-06 / 2026-07-11) to the files they replaced — almost certainly a design-sync re-export rather than a real new revision, but not committed or reconciled; flagged for the user rather than chased, since it isn't this session's change. |
+| CL-26 | 2026-08-12 | FW-06 `>STATUS` reports `running`/`fault` | `proto_state_name()` (already used by the `!STATE` heartbeat) is now also used by the `>STATUS` handler in `Core/Src/app/proto.c`, and gained a fault check (`Safety_InFault()`) it didn't have before — priority order is fault > running > armed > idle, matching what the heartbeat already implied. A GUI that reconnects mid-run or mid-fault and re-issues `>STATUS` (brief §3.5 rule 4) now gets the truth directly instead of waiting for the next event. `Doc/GUI_development_brief.md` updated in the four places that documented the old idle/hv_armed-only contract (§3.2's command table, the prose right below it, the §8.3 exchange, Appendix B, and deviation #14) so the brief matches the fixed behaviour rather than describing a gap that no longer exists. No toolchain available this session to do a full arm-none-eabi-gcc build; change reuses an existing, previously-verified helper function, so risk is low, but this is unverified beyond code review. |
 | CL-25 | 2026-08-11 | Matrix Card confirmed on the same shared bus, gated to match | User confirmed directly (not inferred): the Matrix Card's own onboard expanders are on the same bus as HV Card 1, closing what CL-24 had left open. `MatrixCard_Init` split onto two I2C handles - `hi2c_local` for U21 alone (I2C3, stays put, never shares an address with anything) and `hi2c_shared` for the eight Matrix-card expanders (I2C2, same bus as every HV card). Added `en_port`/`en_pin` (`HV_Card_EN1`/J1) to `MatrixCard_t` and public `MatrixCard_BusClaim()`/`BusRelease()`, called around every function that touches `hi_en`/`lo_en`/`hi_sns`/`lo_sns` (`Init`, `SetSensePaired`, `BankOff`, `SelectPin`, `ConnectPair`). U69 (the ADS124S08 control expander, also on the shared bus per HW-12) gets the same treatment in `board.c`'s io callbacks and `board_init_ads124s08()`, which also moved off `BOARD_MATRIX_I2C` onto `BOARD_HV_I2C` to match. `board_init_matrix()` updated for the new signature. Build verified clean (0 errors, 0 warnings). `Doc/i2c_bus_sharing.md` and `PROJECT_LOG.md` updated; the open question this closes was tracked only as prose in CL-24, never given its own BU- number, so nothing to formally close. |
 | CL-24 | 2026-08-11 | Shared I2C bus between the Matrix Card and every HV card, ungated | User traced the schematic and confirmed the Matrix Card and all four HV cards share one isolated I2C bus while every card's expanders hard-strap to the same 0x20-0x27 range - a guaranteed address collision the moment two cards are live together. `HV_Card_EN1..4` (PC5/PC6/PA10/PA9, through isolators U18/U19 to each HV connector) exist for exactly this, but nothing in firmware touched them, and CubeMX still had the four pins under a stale pre-rename label (`HV_CARD_DT_3_0`/`_3_1`/`_4_0`/`_4_1`) configured as unused inputs. Fixed: pins relabelled `HV_CARD_EN1..4` and switched to push-pull outputs, default low, in `HT_MK1.ioc`/`main.h`/`gpio.c`. `HvCardCfg_t` gained `en_port`/`en_pin`; `hv_card.c` added `hv_bus_claim()`/`hv_bus_release()` and wraps every function that touches `hv->inject[]`/`hv->ret[]` (Init's expander loop, OpenAllRelays, CloseInject, CloseReturn) so exactly one card's segment is ever live, on every exit path including errors. `board.c` maps HV board index to physical slot as idx+1 (board 0 -> J2/EN2), reserving J1/EN1 for the Matrix Card per HW-09, with a compile-time guard against `BOARD_HV_COUNT` exceeding the 3 slots that leaves. Diagram + plain-English write-up: `Doc/i2c_bus_sharing.md`. Build verified clean (0 errors, 0 warnings). **Whether the Matrix Card itself was on this bus was left open at the time** — resolved same day, see CL-25. |
 | CL-23 | 2026-08-11 | FW-02 4-wire Kelvin rewrite | `Kelvin_MeasurePair` now reads HI_SENSE/LO_SENSE on the Matrix Card's ADS124S08 instead of returning `HAL_ERROR`. Sequence: `MatrixCard_SetSensePaired`+`ConnectPair` route both force and sense arrays, `Frontend_SetCurrentCode` forces the excitation, then the PGA is auto-ranged (highest gain first, stepping down on saturation — most wires are near 0 Ω and want the resolution; a real fault falls through to unity gain instead of clipping). A second conversion at the same gain with the excitation off gives a per-point zero-current baseline that is subtracted before `ADS124S08_OhmsFromCurrent` — system-offset subtraction, complementary to the one-time `ADS124S08_SelfOffsetCal` now run at board init (cancels the ADC's own offset only). Current reversal for thermal EMF (BU-10, §7.3) is **not** included: it needs the DAC8775 configured for its bipolar ±24 mA range, and the DAC8775 register map is still placeholder/VERIFY (dac8775.h) — inventing a "reversed" code without knowing the real range encoding could silently drive the wrong current, which is worse than not reversing at all. Left as an explicit gap, not implemented unsafely. Getting a real reading also required work outside kelvin.c itself: `board.c` never had an ADS124S08 instance or U69 io-vtable wiring at all (only the driver existed, from FW-01) — added, including the segment-select dance every U69 access needs (it sits behind the same BUFF2 translator as the sense enables, see CL-22). SPI1 was still CubeMX's default 4-bit/mode-0 config left over from the removed AD7476, and clocked at 32 MHz against the ADS124S08's 10 MHz ceiling — both fixed in `spi.c` and `HT_MK1.ioc` (8-bit, mode 1, /8 prescaler = 8 MHz). Separately, `make` from the command line couldn't link at all: `proto.c` (FW-05, closed 2026-08-01) and `ads124s08.c` (FW-01) were never added to `Debug/Core/Src/{app,drivers}/subdir.mk` or `Debug/objects.list` — only the Eclipse IDE's own indexer knew about them. Fixed so a plain `make all` builds clean (64872 B text, 0 warnings) instead of only working from inside the IDE. **Unverified on real hardware** — BU-01 and BU-08 still gate trusting a specific number. |
@@ -214,6 +269,198 @@ primary build** — new items are filed against it. GUI-03 is against the now-su
 ---
 
 ## Activity log
+
+### 2026-08-12 (later still still — a round of decisions: HW-04/09, GUI-04/05/06/08, BU-10)
+- User answered the open-points list from the previous handoff. Worked each one in turn;
+  HW-09 and GUI-08 explicitly left open, not chased further, per the user's instruction.
+- **HW-04**: agreed for the next schematic revision, routing to `AIN8` instead of the
+  originally-proposed `AIN2` (confirmed free — `AIN9`'s old calibration-tap partner,
+  unconnected since FW-12). Moved from "awaiting a decision" to "agreed, awaiting schematic
+  edit." No firmware change yet — waiting on the schematic.
+- **HW-09**: before leaving it open, read the actual current connector pinout directly off
+  `Control_Card 1.pdf`'s `/Connector/` sheet (PyMuPDF renders at high zoom, not `pdftotext` —
+  the same lesson CL-22 already learned about dense multi-column schematic tables) to answer
+  "do you know the exact pin-to-pin connections" precisely rather than from memory. Found: only
+  four 50-pin connectors exist (J1–J4), not the five (J1 + J2–J5) the original HW-09 text
+  assumed — J5 on that sheet is the power barrel jack. J1 carries the Matrix Card's own signals
+  (`LO_S1-4`/`HI_S1-4`/`IN`/`SPI1_*`) plus an `ISO_HV_Card_1.0-3` nibble that's wired but
+  functionally unused by the Matrix Card, and 11 genuinely NC pins. Cross-checked against
+  `Matrix_Card-8.pdf`'s `J101` and found the two connectors do **not** share pin numbers for
+  the same signals — consistent with BU-06's already-established pattern that this project's
+  harness is a custom-wired loom (signal-name to signal-name), not a straight ribbon cable.
+  User's plan (a 5th HV connector fed by J1's spare pins via a new harness branch) is
+  documented in the row; the exact mechanism is still being worked out, left open as asked.
+- **GUI-04**: closed as decided — RAM-only, matches current behaviour, no code change (CL-35).
+- **BU-10**: closed as decided — not required. Updated `Doc/4wire_resistance_validation.md`
+  §7.3 to record the 500 µΩ/µV accuracy floor as an accepted limitation rather than a gap
+  something is expected to close (CL-36).
+- **GUI-06**: re-checked all seven proposed commands (`Doc/GUI_protocol_proposed_commands.md`,
+  written 2026-08-08) against the firmware as it stands after FW-02/FW-12, since two entries
+  were explicitly gated on hardware that has since changed. `CAL RUN` was blocked on the
+  ADS124S08 being electrically unreachable — FW-02 fixed exactly that, so it unblocked; added
+  a "revisited" section on what it should actually do now that `kelvin.c` already does
+  per-point offset subtraction (CL-23), recommending its scope wait for HW-04 rather than
+  building a current-source-only version now. Auto-range PGA turned out to be **already done**
+  — `kelvin_ranged_read()` auto-ranges automatically, exactly as the original doc recommended
+  contingent on FW-02 landing — so that recommendation flipped from "wait" to "remove the
+  button, nothing to build." The other four entries (`MANUAL READ`, `BUS SCAN`,
+  `MANUAL SWEEP`, `MANUAL RELAYTEST`, Compliance sweep) were unaffected and re-confirmed as-is.
+  Reported findings back; did not implement any of the seven — the user's message asked for the
+  check, not a go-ahead to build.
+- **GUI-05, decided (stored on the GUI host) and built the same session:** new
+  `gui_flutter/lib/app/run_history.dart` (`RunHistoryEntry` + `RunHistoryStore`, append-only
+  JSON Lines, flushed immediately - same reliability reasoning as `SessionLogger`). Judgment
+  call, not explicitly specified by the user: the mock Results table was shaped per-*build*
+  (one row = a serial-numbered harness with parallel Continuity/Resistance/HV columns), but the
+  protocol has no build/serial-number/multi-stage-grouping concept at all — inventing one would
+  have been new UX design, not "where does history live." Went with one row per completed run
+  instead, which is what the protocol actually gives (`!DONE <kind> <passed> <failed>`), and
+  said so explicitly in the table's own doc comment rather than silently reshaping the mockup.
+  `defaultHistoryDir()` added to `paths.dart`, factored out of `defaultLogDir()`'s existing
+  search logic instead of duplicated. `AppState._onDone` records every completed run except a
+  fault-refused one (FW-10's `!DONE 0 0` is a refusal, not a result). `Export CSV` wired to a
+  real native save dialog + real file write; `Print report` left honestly disabled rather than
+  a no-op, since real printing needs a package this project doesn't depend on yet — a
+  genuinely different scope than the storage-location question GUI-05 asked. Left the
+  sparkline and fault-pareto table on the same view as mock data on purpose - GUI-05's ticket
+  named Export CSV/Print report specifically. 12 new tests added
+  (`run_history_test.dart`, `run_history_app_state_test.dart`); full suite 193/194 (the one
+  failure is CL-20's pre-existing unrelated gap); `flutter analyze` clean (CL-37).
+- PROJECT_LOG updated throughout: HW-04 moved, GUI-04/GUI-05/BU-10 closed (CL-35/37/36),
+  GUI-06 updated in place with the feasibility findings, status snapshot and counts refreshed.
+
+### 2026-08-12 (later still — FW-12 + DOC-04: Kelvin excitation moved to the ADS124S08 IDAC)
+- Picked up the handoff from `Doc/idac_current_source.md` (written the previous session
+  specifically for this task) and PROJECT_LOG's FW-12/DOC-04 entries. Read both before
+  touching anything, as instructed - no history re-derived.
+- **`ADS124S08_SetIdac()` added** (`ads124s08.{h,c}`), following `ADS124S08_SetGain`'s
+  pattern: two register writes, `IDACMUX` then `IDACMAG`. Confirmed the register layout
+  against `Datasheet/ads124s08.pdf` Tables 32/33 directly rather than trusting the doc's
+  summary alone - `IDACMAG` has one shared 4-bit magnitude field for both IDACs (not
+  independent per-IDAC magnitudes, which the task's phrasing could have been read either
+  way), `IDACMUX` has independent 4-bit output-pin fields per IDAC, reset 0xFF (both
+  disconnected). Added `ADS124S08_MUX_AIN9`, `ADS124S08_IDAC_OFF` and the `ADS124S08_IMAG_*`
+  codes (`0001`=10 µA ... `1001`=2000 µA, confirmed as the ceiling - no code above it).
+- **`kelvin.c` switched to the IDAC.** Route IDAC1 → AIN9 at `KELVIN_IDAC_MAG`
+  (`ADS124S08_IMAG_2000UA`) instead of `Frontend_SetCurrentCode`; the zero-current baseline
+  step now sets both IDACs off (mux disconnected *and* magnitude zero, belt-and-braces)
+  instead of a DAC code of 0. `KELVIN_FORCE_CODE` (DAC-code based) removed from `kelvin.h`;
+  `KELVIN_FORCE_CURRENT_A` changes from a 10 mA TUNE/VERIFY placeholder to a fixed 2 mA -
+  the actual, only current the hardware can produce, not a value to tune later.
+- **Judgment call on `control_frontend.c`, worth recording:** the task doc explicitly left
+  "does FRONTEND_MODE_IMPEDANCE still mean anything" as an open decision. Traced it rather
+  than guessing either way - `Frontend_SetMode` never touched the DAC8775 at all (it's a
+  pure OPT0_CNTR GPIO toggle selecting the TS5A3159 SPDT throw), and the continuity throw's
+  10 kΩ pull-up on `ADC_IN` would load `HI_COM` in parallel with the IDAC's 2 mA if left
+  connected during a Kelvin measurement. So the mode switch stays and `kelvin.c` still calls
+  it - it just isolates the pull-up now instead of "selecting the current source." Only
+  `Frontend_SetCurrentCode`, the `idac` field and the `idac_spi`/`idac_cs_*` config fields
+  came out.
+- **`board.c`**: `BOARD_IDAC_SPI`/`BOARD_IDAC_CS_PORT`/`_PIN` removed, `board_init_frontend()`
+  no longer builds an IDAC config. `hspi2` itself is untouched - HV DAC8830/AD7476 still need
+  it, only the DAC8775-specific CS wiring on that bus went away.
+- **`dac8775.{h,c}` deleted outright**, not left as an orphan (the task's explicit call, and
+  the register map was still marked VERIFY - nothing worth preserving). Remembered the CL-23
+  lesson that `Debug/Core/Src/drivers/subdir.mk` and `Debug/objects.list` don't update
+  themselves when a source file is removed - cleaned both, plus the stale `dac8775.o/.d
+  /.cyclo/.su` build artifacts, before attempting a build.
+- **DOC-04**: re-derived `Doc/4wire_resistance_validation.md` §7.1 for 2 mA as a *fixed*
+  point rather than a target, per the flag the previous session left in place - did not
+  overwrite the CL-29 3 mA table, added a new block above it instead. Also corrected the
+  compliance-ceiling number while in there: earlier passes (this one included, until
+  re-reading `idac_current_source.md` §3 closely) used an inferred "~3.0 V, rail minus some
+  headroom" figure; the IDAC has a real datasheet number, `AVDD − 0.6 V` = 2.7 V. Recomputed
+  the whole table against the corrected ceiling rather than patching just the target row.
+- **BU-10 (thermal-EMF current reversal), the "worth a decision" question the task flagged:**
+  traced whether reversal is still possible with source-only IDACs. It is not, without a
+  schematic change - the excitation loop's return path (R131, 100 Ω to ground) is only on
+  the `LO_COM` side; there is no symmetric pull-down on `HI_COM` for a second, low-side IDAC
+  to push current back through, and IDACs have no documented direction/sink mode to begin
+  with. Moved BU-10 from "Verify at bring-up" to "Awaiting a decision" rather than leaving it
+  filed as something a future firmware session can just pick up - it can't, until the
+  schematic changes. Documented in `Doc/4wire_resistance_validation.md` §7.3 and here.
+- **Build verified with a full clean rebuild**, not just an incremental one: found the
+  bundled toolchain under `C:\ST\STM32CubeIDE_1.19.0\STM32CubeIDE\plugins\...gnu-tools-for-
+  stm32.14.3.rel1...\tools\bin` and `...externaltools.make...\tools\bin` (matches the
+  "14.3.rel1" the generated makefiles already expected), ran `make clean && make all`: 0
+  errors, 0 warnings, 65024 B text / 104 B data / 24464 B bss.
+- **Found, not fixed - out of this task's file scope:** `gui_flutter`'s Diagnostics bus-map
+  panel still labels SPI2 "DAC8775 · DAC8830 · HV AD7476 ×2" (`misc_views.dart`). One static
+  string; `Doc/idac_current_source.md` §5's file-by-file scope was firmware-only, so left for
+  a GUI-side pass rather than expanding this session's scope.
+- PROJECT_LOG updated: FW-12 and DOC-04 closed (CL-33, CL-34), BU-10 moved and rewritten,
+  status snapshot counts and the DAC8775 headline paragraph refreshed.
+
+### 2026-08-12 (later — DAC8775 confirmed removed, ADS124S08 IDAC found, HW-11 closed)
+- **User asked to check whether the schematics had been updated, and flagged that the DAC
+  had been replaced by "the same ADC" for current** - confirmed both directly against
+  `Control_Card 1.pdf`/`Matrix_Card-8.pdf`: DAC8775 is physically gone (its sheet is now
+  just unrelated pull-ups), and ADS124S08 pin `AIN9` is now wired straight to `HI_COM`,
+  matching the chip's own internal IDAC-to-AINx excitation architecture.
+- Verified against `Datasheet/ads124s08.pdf` directly rather than taking the pin-routing
+  alone as proof: `IDACMUX`/`IDACMAG` registers exist and do exactly this, IDAC accuracy at
+  2 mA is typ ±0.5%/worst ±3%, and the ceiling is a hard 2 mA (`IDACMAG` code `1001`) - no
+  code goes higher.
+- **HW-11 closed as CL-32** - superseded by hardware, not decided: there's no DAC left to
+  choose between DAC8775/DAC8760/LTC2662-16 for, so the whole open question is moot.
+- **Two new items opened, not fixed this pass** (docs-only pass, per the user's request -
+  firmware implementation is next session's work): **DOC-04** (re-derive
+  `4wire_resistance_validation.md` §7.1 against the 2 mA ceiling - CL-29 had *just* closed
+  DOC-03 the same day against 3 mA, before this finding, so that derivation is superseded
+  again within hours) and **FW-12** (move `kelvin.c`'s excitation from the now-nonexistent
+  DAC8775 to the ADS124S08's `IDACMUX`/`IDACMAG`, and strip the DAC8775 half out of
+  `control_frontend.c`/`board.c`).
+- New doc: `Doc/idac_current_source.md` - the full finding, the datasheet numbers, and a
+  file-by-file scope for FW-12, written as the reference for the session that implements it.
+  `fw_status.txt` got a banner flagging every DAC8775 section as stale (not rewritten line by
+  line - that file was just fully resynced this same day as CL-27 and a second full pass
+  would fight with FW-12's actual implementation). `README.md`'s hardware baseline table and
+  document map updated to match.
+- Also verified, since a toolchain was available this session and wasn't for CL-26: the
+  pending FW-06 (`proto.c`) change builds clean, 0 errors/0 warnings - no longer just
+  "verified beyond code review only."
+- Left alone, on purpose: the `Control_Card 1.pdf`/`Matrix_Card-8.pdf` naming/commit churn
+  CL-27 already flagged. Still uncommitted, still worth the user's attention, not this
+  session's call to rename.
+
+### 2026-08-12 (six ready-to-implement items closed: FW-06, DOC-01/02/03, HW-08, GUI-07)
+- Worked the punch list of items that needed no product/hardware decision, in the order
+  given: FW-06, DOC-01, DOC-02, DOC-03, HW-08, GUI-07. HW-04, HW-09, HW-11, GUI-04/05/06/08
+  were left untouched as instructed.
+- **CL-26 (FW-06):** `>STATUS` now reports `running`/`fault`, not just `idle`/`hv_armed` —
+  reused the existing `proto_state_name()` heartbeat helper (added a fault check to it)
+  instead of duplicating the priority logic. `Doc/GUI_development_brief.md` updated in the
+  four places that documented the old contract, so the brief and the firmware agree again.
+- **CL-27 (DOC-01):** `fw_status.txt` resynced to the FW-02/CL-23 architecture (4-wire
+  Kelvin via the ADS124S08, not the old 2-wire Matrix-U33 path) and the schematic filenames
+  it names. Found in passing: the working tree has an **uncommitted rename churn** in
+  `Doc/` — `Control_Card-5.pdf`/`Matrix_Card-7.pdf` deleted, replaced by untracked
+  `Control_Card 1.pdf`/`Matrix_Card-8.pdf`. Checked the embedded title-block dates on both:
+  identical to the files they replaced (2026-08-06 / 2026-07-11), so this reads as a
+  design-sync re-export rather than a real new revision — but it is not committed or
+  reconciled, and worth the user's attention since the next sync could rename them again.
+  Documentation in this session was written against the git-tracked `-5`/`-7` names.
+- **CL-28 (DOC-02):** turned out to already be fixed — `HT_ENABLE_ADS1232`'s default
+  flipped 1→0 in the 2026-08-07 heartbeat commit (`c579830`), whose own message says so
+  ("Carries HT_ENABLE_ADS1232 off with it"). Closed retroactively, same pattern as CL-19.
+- **CL-29 (DOC-03):** re-derived `Doc/4wire_resistance_validation.md` §7.1 against the real
+  BU-09 CD74HC4051 figures instead of the ~100 Ω placeholder the original table used. This
+  produced a real finding, not just a number update: worst-case compliance now fails around
+  ~4 mA (not ~10 mA), which is *why* 3 mA is the right target, not an arbitrary revision.
+- **CL-30 (HW-08):** confirmed directly from `HV_Card-3.pdf`'s extracted text — `R3003
+  5KOhms` — against the schematic's own stated divider formula. No firmware change needed.
+- **CL-31 (GUI-07):** added `AppState.setLimits()` and a "Test limits" panel (two sliders +
+  Apply) to the Diagnostics screen in `gui_flutter/`, seeded from `LIMITS GET` on connect.
+  `flutter analyze` clean, `flutter test` 181/182 (the one failure is the pre-existing
+  unrelated gap from CL-20). Found in passing, logged as **FW-11**, not fixed: the
+  `ins_min_mohm` limit this wires up has no effect on the actual insulation verdict in
+  firmware today, and the firmware's own default for it is off by 1000× from what its own
+  comment claims — a safety-relevant behaviour change that needs a decision, not a
+  mechanical fix, so left open rather than changed silently.
+- No arm-none-eabi-gcc toolchain was available in this session's shell to do a full firmware
+  build; the FW-06 change reuses an existing, previously-verified helper (`proto_state_name`)
+  so risk is low, but it is unverified beyond code review — worth a build/flash check next
+  session. The GUI side was verified for real (`flutter analyze` + `flutter test`).
 
 ### 2026-08-11 (later still still — Matrix Card confirmed on the shared bus, CL-25)
 - **User confirmed directly**: "We are using same I2C bus which we are using for the HV1 card" -

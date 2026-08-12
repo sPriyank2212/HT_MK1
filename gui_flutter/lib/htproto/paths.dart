@@ -23,22 +23,29 @@ String _join(String a, String b) =>
     a.endsWith(Platform.pathSeparator) ? '$a$b' : '$a${Platform.pathSeparator}$b';
 
 /// A writable directory for session logs, created if needed.
-Directory defaultLogDir() {
+Directory defaultLogDir() => _writableAppDir('sessions');
+
+/// A writable directory for run history (GUI-05: stored on the GUI host, not
+/// the instrument), created if needed. Same search order as the session
+/// log directory, one leaf folder over.
+Directory defaultHistoryDir() => _writableAppDir('history');
+
+Directory _writableAppDir(String leaf) {
   final candidates = <String>[];
 
   final local = Platform.environment['LOCALAPPDATA'];
   if (local != null && local.isNotEmpty) {
-    candidates.add(_join(_join(local, app), 'sessions')); // Windows
+    candidates.add(_join(_join(local, app), leaf)); // Windows
   }
   final xdg = Platform.environment['XDG_DATA_HOME'];
   if (xdg != null && xdg.isNotEmpty) {
-    candidates.add(_join(_join(xdg, app), 'sessions'));
+    candidates.add(_join(_join(xdg, app), leaf));
   }
   final home = Platform.environment['USERPROFILE'] ??
       Platform.environment['HOME'] ??
       Directory.current.path;
-  candidates.add(_join(_join(_join(_join(home, '.local'), 'share'), app), 'sessions'));
-  candidates.add(_join(_join(Directory.systemTemp.path, app), 'sessions'));
+  candidates.add(_join(_join(_join(_join(home, '.local'), 'share'), app), leaf));
+  candidates.add(_join(_join(Directory.systemTemp.path, app), leaf));
 
   for (final path in candidates) {
     try {

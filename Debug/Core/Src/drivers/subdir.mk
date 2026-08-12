@@ -8,7 +8,6 @@ C_SRCS += \
 ../Core/Src/drivers/ad7476.c \
 ../Core/Src/drivers/ads1232.c \
 ../Core/Src/drivers/ads124s08.c \
-../Core/Src/drivers/dac8775.c \
 ../Core/Src/drivers/dac8830.c \
 ../Core/Src/drivers/mcp23017.c
 
@@ -16,7 +15,6 @@ OBJS += \
 ./Core/Src/drivers/ad7476.o \
 ./Core/Src/drivers/ads1232.o \
 ./Core/Src/drivers/ads124s08.o \
-./Core/Src/drivers/dac8775.o \
 ./Core/Src/drivers/dac8830.o \
 ./Core/Src/drivers/mcp23017.o
 
@@ -24,7 +22,6 @@ C_DEPS += \
 ./Core/Src/drivers/ad7476.d \
 ./Core/Src/drivers/ads1232.d \
 ./Core/Src/drivers/ads124s08.d \
-./Core/Src/drivers/dac8775.d \
 ./Core/Src/drivers/dac8830.d \
 ./Core/Src/drivers/mcp23017.d
 

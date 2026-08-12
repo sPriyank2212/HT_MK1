@@ -3,16 +3,25 @@
   ******************************************************************************
   * @file    kelvin.h
   * @brief   4-wire (Kelvin) resistance measurement. Forces a known current via
-  *          the Control-Card IDAC (DAC8775) and reads the drop directly across
-  *          HI_SENSE/LO_SENSE on the Matrix Card's ADS124S08 - a true 4-wire
-  *          measurement, since the sense taps carry no force current and so
-  *          exclude mux/contact resistance from the force path.
+  *          the ADS124S08's OWN internal IDAC1 (routed to AIN9, which the
+  *          schematic wires directly to HI_COM) and reads the drop across
+  *          HI_SENSE/LO_SENSE on the same chip - a true 4-wire measurement,
+  *          since the sense taps carry no force current and so exclude
+  *          mux/contact resistance from the force path.
+  *
+  *          FW-12 (2026-08-12): the Control-Card DAC8775 that used to force
+  *          this current has been removed from the schematic - see
+  *          Doc/idac_current_source.md. The excitation and the measurement
+  *          are now the same chip.
   *
   *          R = V / I_force, with V from the ADS124S08 at auto-ranged PGA gain
-  *          and I_force from KELVIN_FORCE_CURRENT_A (TUNE/VERIFY - see below).
-  *          Ratiometric measurement (R = R_ref * code / (gain * 2^23), which
-  *          would cancel DAC error entirely) needs HW-04 and is not available
-  *          yet - see ads124s08.h.
+  *          and I_force fixed at KELVIN_FORCE_CURRENT_A - 2 mA, the IDAC's
+  *          hard ceiling (IDACMAG code 1001, there is no higher code; see
+  *          Doc/idac_current_source.md S3). Not a TUNE placeholder like the
+  *          old DAC8775 code was - this is the actual, only current the
+  *          hardware can produce. Ratiometric measurement (R = R_ref * code /
+  *          (gain * 2^23), which would cancel IDAC error entirely) needs
+  *          HW-04 and is not available yet - see ads124s08.h.
   ******************************************************************************
   */
 /* USER CODE END Header */
@@ -30,13 +39,17 @@ extern "C" {
 #define KELVIN_SETTLE_MS        2U
 #endif
 
-/* Force current setup. TUNE/VERIFY against the DAC8775 range + Vref - the
- * DAC8775 driver's register map is itself still placeholder (dac8775.h). */
-#ifndef KELVIN_FORCE_CODE
-#define KELVIN_FORCE_CODE       0x8000U     /* mid-scale IDAC code            */
+/* Excitation via the ADS124S08's own IDAC1, routed to AIN9 (= HI_COM).
+ * KELVIN_IDAC_MAG is the ADS124S08_IMAG_* code passed to ADS124S08_SetIdac();
+ * KELVIN_FORCE_CURRENT_A is the amps that code actually produces, used for
+ * ADS124S08_OhmsFromCurrent(). 2 mA (code 1001) is the highest magnitude the
+ * IDAC has - not a tunable target, the hardware ceiling. See
+ * Doc/idac_current_source.md S3. */
+#ifndef KELVIN_IDAC_MAG
+#define KELVIN_IDAC_MAG         ADS124S08_IMAG_2000UA
 #endif
 #ifndef KELVIN_FORCE_CURRENT_A
-#define KELVIN_FORCE_CURRENT_A  0.010f       /* amps actually forced at CODE   */
+#define KELVIN_FORCE_CURRENT_A  0.002f       /* amps actually forced at KELVIN_IDAC_MAG */
 #endif
 
 /* Acceptance limits (ohms). TUNE per harness spec. */

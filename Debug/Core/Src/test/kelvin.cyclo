@@ -1,2 +1,2 @@
 ../Core/Src/test/kelvin.c:31:26:kelvin_ranged_read	6
-../Core/Src/test/kelvin.c:79:19:Kelvin_MeasurePair	9
+../Core/Src/test/kelvin.c:85:19:Kelvin_MeasurePair	9

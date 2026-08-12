@@ -39,12 +39,16 @@ ADS124S08_t       g_ads124s08;
 
 /* ---------------------------------------------------------------------------
  * Bus assignment - corrected against the Doc/ schematics (2026-07):
- *   SPI1 = Matrix-Card AD7476 (U33, HI_COM)      [not bound here yet]
- *   SPI2 = DAC8775 (Kelvin) + HV-card AD7476s + DAC8830, all isolated (shared)
+ *   SPI1 = Matrix-Card ADS124S08 (U68, HI_SENSE/LO_SENSE + its own IDAC)
+ *   SPI2 = HV-card AD7476s + DAC8830, isolated (shared)
  *   SPI3 = Control-Card AD7476 (U4, ADC_IN off the Opto SPDT)
- * TODO(CubeMX): SPI2 carries 8-bit (DAC8775) and 16-bit (DAC8830/AD7476)
- *   devices - data size must be set per transaction, or run 8-bit with the
- *   drivers doing byte framing. See fw_status CONFIG TODO.
+ * FW-12 (2026-08-12): SPI2 no longer carries a DAC8775 - that chip is gone
+ *   from the schematic (Doc/idac_current_source.md). Kelvin excitation is
+ *   now sourced by the ADS124S08's own IDAC on SPI1, not a separate SPI2
+ *   device, so SPI2's mixed-frame-size TODO below is DAC8830/AD7476 only now.
+ * TODO(CubeMX): SPI2 carries 16-bit (DAC8830/AD7476) devices only - data size
+ *   must be set per transaction, or run 8-bit with the drivers doing byte
+ *   framing. See fw_status CONFIG TODO.
  * ------------------------------------------------------------------------- */
 #define BOARD_MATRIX_I2C      (&hi2c3)   /* U21/U20 ONLY - local to the Control
                                            * Card (Control_Card-5 sheet
@@ -63,7 +67,6 @@ ADS124S08_t       g_ads124s08;
                                            * segment onto this bus at a time -
                                            * see hv_card.c and
                                            * MatrixCard_BusClaim/Release. */
-#define BOARD_IDAC_SPI        (&hspi2)   /* DAC8775 (Kelvin)                   */
 #define BOARD_ADC_SPI         (&hspi3)   /* AD7476 (Control front end, U4)     */
 #define BOARD_HV_SPI          (&hspi2)   /* HV DAC8830 + both AD7476 (isolated)*/
 #define BOARD_MATRIX_ADC_SPI  (&hspi1)   /* ADS124S08 (Matrix U68) - the only  */
@@ -78,8 +81,9 @@ ADS124S08_t       g_ads124s08;
  * ------------------------------------------------------------------------- */
 #define BOARD_ADC_CS_PORT     SPI3_CS_GPIO_Port   /* PB1 - Control ADC (U4)     */
 #define BOARD_ADC_CS_PIN      SPI3_CS_Pin
-#define BOARD_IDAC_CS_PORT    SPI3_CSB2_GPIO_Port /* PB2 = physical SPI2_CS     */
-#define BOARD_IDAC_CS_PIN     SPI3_CSB2_Pin
+/* SPI3_CSB2 (PB2) drove the DAC8775 CS; FW-12 removed the last reference to
+ * it in board_init_frontend() below. Left configured in CubeMX rather than
+ * repurposed - that's a hardware-config decision, not a firmware one. */
 #define BOARD_HV_DAC_CS_PORT  I2C2_CS_GPIO_Port   /* PC2 placeholder (CS_ISO); VERIFY */
 #define BOARD_HV_DAC_CS_PIN   I2C2_CS_Pin
 
@@ -255,17 +259,17 @@ static HAL_StatusTypeDef board_init_ads124s08(void)
 
 /**
   * @brief  Instantiate and bind the Control-Card analogue front end.
-  * @note   Fills a ControlFrontendCfg_t from the board pin map (IDAC on SPI2,
-  *         control ADC on SPI3, OPT0_CNTR select GPIO, vref) and initialises
-  *         the front end, which comes up in continuity mode.
+  * @note   Fills a ControlFrontendCfg_t from the board pin map (control ADC on
+  *         SPI3, OPT0_CNTR select GPIO, vref) and initialises the front end,
+  *         which comes up in continuity mode. FW-12: no longer configures an
+  *         IDAC here - the DAC8775 is gone from the schematic (see
+  *         Doc/idac_current_source.md); Kelvin excitation is now the
+  *         ADS124S08's own IDAC, configured in test/kelvin.c.
   * @retval HAL status from Frontend_Init().
   */
 static HAL_StatusTypeDef board_init_frontend(void)
 {
   ControlFrontendCfg_t cfg;
-  cfg.idac_spi     = BOARD_IDAC_SPI;
-  cfg.idac_cs_port = BOARD_IDAC_CS_PORT;
-  cfg.idac_cs_pin  = BOARD_IDAC_CS_PIN;
   cfg.adc_spi      = BOARD_ADC_SPI;
   cfg.adc_cs_port  = BOARD_ADC_CS_PORT;
   cfg.adc_cs_pin   = BOARD_ADC_CS_PIN;
