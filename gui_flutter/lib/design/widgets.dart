@@ -1136,3 +1136,86 @@ class _HoverRowState extends State<HoverRow> {
     );
   }
 }
+
+// ---------------------------------------------------------------------------
+// text input
+// ---------------------------------------------------------------------------
+
+/// A single-line free-text field — `EditableText` directly, styled to match
+/// the rest of the design system, since this project deliberately carries no
+/// Material dependency (`pubspec.yaml`: `uses-material-design: false`) and
+/// `TextField` is Material-only. First real free-text input in the app
+/// (everything else is a `Btn`/`Seg`/`HtSlider`), for the DUT ID/Operator
+/// fields the `required_format` test reports need (`AppState.dutId`/
+/// `operatorName`) — nothing upstream (netlist, calibration, limits) is
+/// ever operator-typed text, only picked/measured.
+class TextInput extends StatefulWidget {
+  final String value;
+  final ValueChanged<String> onChanged;
+  final double width;
+
+  const TextInput({
+    super.key,
+    required this.value,
+    required this.onChanged,
+    this.width = 110,
+  });
+
+  @override
+  State<TextInput> createState() => _TextInputState();
+}
+
+class _TextInputState extends State<TextInput> {
+  late final TextEditingController _controller =
+      TextEditingController(text: widget.value);
+  late final FocusNode _focus = FocusNode()..addListener(_onFocusChange);
+
+  void _onFocusChange() => setState(() {});
+
+  @override
+  void didUpdateWidget(covariant TextInput old) {
+    super.didUpdateWidget(old);
+    // External changes (e.g. AppState reset) win, unless the operator is
+    // actively typing - never stomp on a value mid-edit.
+    if (!_focus.hasFocus && widget.value != _controller.text) {
+      _controller.text = widget.value;
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    _focus.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    final t = context.type;
+    return MouseRegion(
+      cursor: SystemMouseCursors.text,
+      child: GestureDetector(
+        onTap: () => _focus.requestFocus(),
+        child: Container(
+          width: widget.width,
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+          decoration: BoxDecoration(
+            color: c.sunk,
+            border: Border.all(color: _focus.hasFocus ? c.accent : c.line),
+            borderRadius: BorderRadius.circular(kRadius),
+          ),
+          child: EditableText(
+            controller: _controller,
+            focusNode: _focus,
+            style: t.mono(size: 12, color: c.ink),
+            cursorColor: c.accent,
+            backgroundCursorColor: c.sunk,
+            maxLines: 1,
+            onChanged: widget.onChanged,
+          ),
+        ),
+      ),
+    );
+  }
+}

@@ -40,6 +40,10 @@ class ContView extends StatelessWidget {
       Netbar(s: s, dom: 'mtx', useKey: 'cont'),
       Netbar(s: s, dom: 'fix', useKey: 'cont'),
       _ModeSelect(s: s),
+      // MOCK: Connector/Switching/Stimulus/Sense/Threshold are fixed
+      // hardware-doc text, not read from the instrument - "CD4067" is also
+      // stale (mux is CD74HC4051 since the Matrix Card rework). Only "Scan
+      // scope" is real (computed from s.cmode).
       Band([
         const BandItem('Connector', Conn('J-MTX')),
         BandItem('Switching',
@@ -69,10 +73,56 @@ class ContView extends StatelessWidget {
                 TallyItem('Unexpected · F07', s.ctExtra, 'bad'),
               ]),
       ),
-      _WiringPanel(s: s),
+      // GUI-11: cross/discovery mode has no known connector identity for
+      // any pin yet (that is the entire point of a scan) - nothing real to
+      // draw as a connector face, so the diagram is net-mode only.
+      // _DiscoveryPanel (a plain Side-A/Side-B pin-pair table, below) is the
+      // sole result surface for cross mode instead.
+      if (!cross) _WiringPanel(s: s),
+      if (!cross) _ConnectionResults(s: s),
       _ThreeUp(s: s),
       if (cross) _DiscoveryPanel(s: s),
     ]);
+  }
+}
+
+/// The "all connections in one table" view for netlist-mode continuity
+/// (GUI-11) — there was no per-pin result table here before, only the
+/// wiring diagram and pass/fail tallies.
+class _ConnectionResults extends StatelessWidget {
+  final AppState s;
+  const _ConnectionResults({required this.s});
+
+  @override
+  Widget build(BuildContext context) {
+    return HtPanel(
+      header: const [
+        PanelTitle('Connection results'),
+        FlexSpacer(),
+        Lbl('every pin under test'),
+      ],
+      child: ConnectionResultsTable(
+        columns: const [
+          'Test #', 'Src Conn', 'Src Pin', 'Dst Conn', 'Dst Pin', 'Status', //
+        ],
+        rows: [
+          for (final r in s.contRowsLive)
+            ConnectionResultRow(
+              cells: [
+                '${r.testNum}',
+                r.srcConnId,
+                r.srcPinLabel,
+                r.dstConnId,
+                r.dstPinLabel,
+              ],
+              bad: r.status != 'CONNECTED',
+              statusLabel: r.status == 'CONNECTED' ? 'Connected' : 'Open',
+            ),
+        ],
+        emptyMessage:
+            'No results yet — run continuity to populate this table.',
+      ),
+    );
   }
 }
 
@@ -702,7 +752,11 @@ class _DiscoveredNetlist extends StatelessWidget {
                   variant: BtnVariant.primary,
                   disabled: !s.saveNlEnabled,
                   onTap: s.saveNlEnabled ? s.saveDiscoveredNetlist : null),
-              Btn('Export CSV', onTap: () {}),
+              Btn('Export CSV',
+                  disabled: !s.saveNlEnabled,
+                  onTap: s.saveNlEnabled
+                      ? () => s.exportDiscoveredNetlistCsv()
+                      : null),
             ]),
           ],
         ),

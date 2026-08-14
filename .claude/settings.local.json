@@ -35,7 +35,11 @@
       "Bash(python -c \"import re;h=open\\('ht_arch.html',encoding='utf8'\\).read\\(\\);m=re.search\\(r'<script>\\(.*\\)</script>',h,re.S\\);open\\('_c.js','w',encoding='utf8'\\).write\\(m.group\\(1\\)\\)\")",
       "Bash(node --check _c.js)",
       "Bash(node -e ' *)",
-      "Bash(python edit_doc3.py)"
+      "Bash(python edit_doc3.py)",
+      "Bash(dart run *)",
+      "Bash(flutter analyze *)",
+      "Bash(flutter test *)",
+      "Bash(dart --version)"
     ],
     "additionalDirectories": [
       "c:\\Users\\psoni\\STM32CubeIDE\\workspace_1.19.0\\HT_MK1"

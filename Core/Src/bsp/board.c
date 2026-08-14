@@ -37,6 +37,11 @@ ControlFrontend_t g_frontend;
 HvCard_t          g_hv[BOARD_HV_COUNT];
 ADS124S08_t       g_ads124s08;
 
+/* Set by Board_Init() on its way out; see Board_IsReady(). Starts 0 so any
+ * hardware command that runs before Board_Init() is even called (should not
+ * happen, but costs nothing to cover) is refused rather than assumed safe. */
+static uint8_t s_board_ready = 0U;
+
 /* ---------------------------------------------------------------------------
  * Bus assignment - corrected against the Doc/ schematics (2026-07):
  *   SPI1 = Matrix-Card ADS124S08 (U68, HI_SENSE/LO_SENSE + its own IDAC)
@@ -373,5 +378,11 @@ HAL_StatusTypeDef Board_Init(void)
       return st;
     }
   }
+  s_board_ready = 1U;
   return HAL_OK;
+}
+
+uint8_t Board_IsReady(void)
+{
+  return s_board_ready;
 }

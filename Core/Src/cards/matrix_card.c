@@ -19,10 +19,16 @@
   *         except U21) share an I2C bus with the HV cards, all at the same
   *         0x20..0x27, so exactly one card's segment may be live at a time.
   * @param  m : [in] instance; must be non-NULL, en_port must be configured.
-  * @retval None (GPIO writes do not fail).
+  * @retval None (GPIO writes do not fail). No-op if @p m or en_port is NULL -
+  *         an un-initialised card (Board_Init() failed before MatrixCard_Init()
+  *         ran) leaves en_port NULL, and writing through it would HardFault.
   */
 void MatrixCard_BusClaim(MatrixCard_t *m)
 {
+  if (m == NULL || m->en_port == NULL)
+  {
+    return;
+  }
   HAL_GPIO_WritePin(m->en_port, m->en_pin, GPIO_PIN_SET);
   HAL_Delay(MATRIX_BUS_EN_SETTLE_MS);
 }
@@ -30,10 +36,14 @@ void MatrixCard_BusClaim(MatrixCard_t *m)
 /**
   * @brief  Take the Matrix Card back off the shared bus.
   * @param  m : [in] instance; must be non-NULL, en_port must be configured.
-  * @retval None
+  * @retval None. No-op if @p m or en_port is NULL - see MatrixCard_BusClaim().
   */
 void MatrixCard_BusRelease(MatrixCard_t *m)
 {
+  if (m == NULL || m->en_port == NULL)
+  {
+    return;
+  }
   HAL_GPIO_WritePin(m->en_port, m->en_pin, GPIO_PIN_RESET);
 }
 

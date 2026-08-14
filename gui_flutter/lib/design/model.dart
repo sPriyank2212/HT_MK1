@@ -103,30 +103,94 @@ class FixtureDef {
   });
 }
 
-final FixtureDef kFix = FixtureDef(
-  name: 'FX-880-C.fixture',
-  rev: 'C',
-  connectors: [
-    ConnectorDef(id: 'J1', label: 'Engine bay', type: ConnType.dsub, pins: 37, side: 'L', base: 0),
-    ConnectorDef(id: 'J2', label: 'Airframe', type: ConnType.dsub, pins: 37, side: 'L', base: 37),
-    ConnectorDef(id: 'J3', label: 'Sensors', type: ConnType.circ, pins: 24, side: 'L', base: 74),
-    ConnectorDef(id: 'J4', label: 'Power', type: ConnType.rect, pins: 30, side: 'L', base: 98),
-    ConnectorDef(id: 'J5', label: 'Avionics A', type: ConnType.dsub, pins: 25, side: 'R', base: 0),
-    ConnectorDef(id: 'J6', label: 'Avionics B', type: ConnType.dsub, pins: 25, side: 'R', base: 25),
-    ConnectorDef(id: 'J7', label: 'Lighting', type: ConnType.circ, pins: 19, side: 'R', base: 50),
-    ConnectorDef(id: 'J8', label: 'Main bundle', type: ConnType.rect, pins: 59, side: 'R', base: 69),
-  ],
-);
+/// Builds a [FixtureDef] with one continuous `base` sequence across *every*
+/// connector, covering the full flat pin space (`J1` gets pins `1..N1`, `J2`
+/// gets `N1+1..N1+N2`, and so on) rather than two independent per-side
+/// halves — this is what the wire protocol actually addresses (`NETLIST ADD
+/// <hi> <lo>`, one flat `1..256` space; `matrix_card.h`'s HI/LO banks are
+/// separate mux trees, not separate pin-numbering spaces) and what a real
+/// `required_format` netlist's `Src Pin #`/`Dst Pin #` columns already do
+/// (confirmed 2026-08-14, GUI-08/CL-41: `DB15-1`→1..15, `DB15-2`→16..30,
+/// `DB9`→31..39, sequential by connector order).
+///
+/// `side` is assigned by list-half (first half `L`, second half `R`) purely
+/// for wiring-diagram layout balance (which half of the canvas a connector
+/// face is drawn on) — it carries no electrical or pin-numbering meaning,
+/// unlike `base`. List-half rather than alternating: alternating can badly
+/// unbalance the two sides' *pin* totals when connector sizes vary widely
+/// (a real regression caught by test — an 8-connector 37/37/24/30/25/25/
+/// 19/59-pin split alternated down to a 105/151 pin imbalance instead of
+/// the intended 128/128), whereas list-half reproduces the original
+/// hand-authored demo fixture's own L/R split exactly.
+FixtureDef buildFixture({
+  required String name,
+  required String rev,
+  required List<({String id, String label, ConnType type, int pins})> defs,
+}) {
+  final connectors = <ConnectorDef>[];
+  var base = 0;
+  final leftCount = (defs.length / 2).ceil();
+  for (var i = 0; i < defs.length; i++) {
+    final d = defs[i];
+    connectors.add(ConnectorDef(
+      id: d.id,
+      label: d.label,
+      type: d.type,
+      pins: d.pins,
+      side: i < leftCount ? 'L' : 'R',
+      base: base,
+    ));
+    base += d.pins;
+  }
+  return FixtureDef(name: name, rev: rev, connectors: connectors);
+}
 
-final Map<String, ConnectorDef> kConn = {
-  for (final c in kFix.connectors) c.id: c
-};
-final List<ConnectorDef> kConnsL =
+/// The demo/placeholder 8-connector layout — the fixture in effect before
+/// any real netlist has ever been loaded, and what [kFix] starts out as.
+/// Factored out (not just inlined into the `kFix` initializer below) so
+/// tests that call [setActiveFixture] can restore it afterward, since
+/// `kFix` is process-global mutable state now, not a per-instance one.
+FixtureDef buildDefaultFixture() => buildFixture(
+      name: 'FX-880-C.fixture',
+      rev: 'C',
+      defs: [
+        (id: 'J1', label: 'Engine bay', type: ConnType.dsub, pins: 37),
+        (id: 'J2', label: 'Airframe', type: ConnType.dsub, pins: 37),
+        (id: 'J3', label: 'Sensors', type: ConnType.circ, pins: 24),
+        (id: 'J4', label: 'Power', type: ConnType.rect, pins: 30),
+        (id: 'J5', label: 'Avionics A', type: ConnType.dsub, pins: 25),
+        (id: 'J6', label: 'Avionics B', type: ConnType.dsub, pins: 25),
+        (id: 'J7', label: 'Lighting', type: ConnType.circ, pins: 19),
+        (id: 'J8', label: 'Main bundle', type: ConnType.rect, pins: 59),
+      ],
+    );
+
+/// The active fixture. Mutable (not `const`/`final`) — [setActiveFixture]
+/// swaps it (and the four derived bindings below) at runtime once a real
+/// netlist's connector layout has been inferred and confirmed
+/// (`AppState`).
+FixtureDef kFix = buildDefaultFixture();
+
+Map<String, ConnectorDef> kConn = {for (final c in kFix.connectors) c.id: c};
+List<ConnectorDef> kConnsL =
     kFix.connectors.where((c) => c.side == 'L').toList();
-final List<ConnectorDef> kConnsR =
+List<ConnectorDef> kConnsR =
     kFix.connectors.where((c) => c.side == 'R').toList();
-final int kFixPins =
-    kFix.connectors.fold<int>(0, (a, c) => a + c.pins);
+int kFixPins = kFix.connectors.fold<int>(0, (a, c) => a + c.pins);
+
+/// Swaps the active fixture. Every consumer (`layoutFixture`/`connSize`/
+/// `pinXY` below, `painters.dart`, `cont_view.dart`, `app_state.dart`)
+/// reads `kFix`/`kConn`/`kConnsL`/`kConnsR`/`kFixPins` by name, so
+/// reassigning these five bindings and relaying out is everything needed —
+/// no parameter threading through the geometry/paint code.
+void setActiveFixture(FixtureDef next) {
+  kFix = next;
+  kConn = {for (final c in kFix.connectors) c.id: c};
+  kConnsL = kFix.connectors.where((c) => c.side == 'L').toList();
+  kConnsR = kFix.connectors.where((c) => c.side == 'R').toList();
+  kFixPins = kFix.connectors.fold<int>(0, (a, c) => a + c.pins);
+  layoutFixture();
+}
 
 // ---------------------------------------------------------------------------
 // NETS
@@ -180,6 +244,11 @@ class Net {
   int card;
   int relay;
 
+  /// Set by [AppState._onInsul] from a real `!INSUL ... fail` result. No
+  /// "marginal" tier exists here (unlike the resistance ranked table) -
+  /// InsulStatus on the wire is pass/fail only, see htproto/codec.dart.
+  bool insFail;
+
   /// Set by [rebuildNets] only: the instrument's own 1..256 pin numbers.
   int? pinHi;
   int? pinLo;
@@ -200,6 +269,7 @@ class Net {
     this.open = false,
     this.card = 0,
     this.relay = 0,
+    this.insFail = false,
     this.pinHi,
     this.pinLo,
   });
@@ -282,10 +352,14 @@ List<Net> buildNets() {
     if (i < nets.length && nets[i].dsts.length == 1) nets[i].joint = 'I';
   }
 
-  // HV relay assignment follows the source connector order
+  // HV relay assignment is a direct function of the source pin's own flat
+  // board position (`hs`, already 0-based) - not the net's position in this
+  // list. VERIFY: mirrors the same 64-pins-per-card sequential-block pattern
+  // the connector allocation above uses, not yet confirmed against real HV
+  // harness wiring/schematics (see BU- bring-up items in PROJECT_LOG.md).
   for (var i = 0; i < nets.length; i++) {
-    nets[i].card = i ~/ 64;
-    nets[i].relay = i % 64;
+    nets[i].card = nets[i].hs ~/ 64;
+    nets[i].relay = nets[i].hs % 64;
   }
 
   // seeded faults
@@ -491,8 +565,15 @@ const double kCanvasW = 1060;
 const double kCanvasH = 440;
 
 void layoutFixture() {
-  final lw = kConnsL.map((c) => connSize(c).w).reduce(math.max);
-  final rw = kConnsR.map((c) => connSize(c).w).reduce(math.max);
+  // `side` is now just a layout-balance hint (see buildFixture) - a
+  // configured fixture can legitimately have every connector land on one
+  // side, so guard the empty case rather than let .reduce() throw.
+  final lw = kConnsL.isEmpty
+      ? 0.0
+      : kConnsL.map((c) => connSize(c).w).reduce(math.max);
+  final rw = kConnsR.isEmpty
+      ? 0.0
+      : kConnsR.map((c) => connSize(c).w).reduce(math.max);
   final lh =
       kConnsL.fold<double>(-18, (a, c) => a + connSize(c).h + 18);
   final rh =

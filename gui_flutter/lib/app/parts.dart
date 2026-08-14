@@ -389,15 +389,18 @@ class FixtureFlow extends StatelessWidget {
     //                           .gate{flex-direction:row;padding:8px 0}}
     final narrow = MediaQuery.sizeOf(context).width <= kMediumBreak;
 
+    // MOCK: state/pill are real; the "tests" description text is a fixed
+    // hardware-doc string and doesn't track the schematic.
     final box1 = _StageBox(
       number: '1',
       state: s.sb1S,
       conn: const Conn('J-MTX'),
       pill: s.sb1Pill,
-      tests: 'Matrix Card rev 6 · 256 HS + 256 LS · CD4067\n'
+      tests: 'Matrix Card rev 8 · 256 HS + 256 LS · CD74HC4051\n'
           'Continuity → Resistance · one shared netlist',
     );
     final gate = _Gate(armed: s.gateArmed, horizontal: narrow);
+    // MOCK: same as box1 - fixed text apart from the real s.stack interpolation.
     final box2 = _StageBox(
       number: '2',
       state: s.sb2S,
@@ -1111,3 +1114,67 @@ class LockOverlay extends StatelessWidget {
 /// `filter:blur(2px)` — CSS blur radius is 2× the Gaussian sigma.
 ImageFilter cssBlur(double cssPx) =>
     ImageFilter.blur(sigmaX: cssPx / 2, sigmaY: cssPx / 2);
+
+// ---------------------------------------------------------------------------
+// connection results — shared across Continuity/Resistance/HV (GUI-11)
+// ---------------------------------------------------------------------------
+
+/// One already-formatted row for [ConnectionResultsTable]. The table itself
+/// does not know continuity from resistance from insulation — each view
+/// converts its own report row shape (`app/report.dart`'s `ContReportRow`/
+/// `ResReportRow`/`InsulReportRow`) into these, so the table stays generic
+/// instead of three near-duplicate widgets.
+class ConnectionResultRow {
+  final List<String> cells;
+  final bool bad;
+  final String statusLabel;
+  const ConnectionResultRow({
+    required this.cells,
+    required this.bad,
+    required this.statusLabel,
+  });
+}
+
+/// The "all connections in one table" result view (GUI-11) — used by
+/// Continuity's netlist-verify mode (which had no per-pin table at all
+/// before this, only the wiring diagram + pass/fail tallies), and to extend
+/// Resistance's `_RankedTable` / HV's `_NetResults` with connector columns.
+/// Cross-continuity/discovery deliberately does not use this: there is no
+/// known connector identity for any pin during a scan, so `_DiscoveryPanel`
+/// (`cont_view.dart`) — a plain Side-A/Side-B pin-pair table, no connector
+/// column — stays the result surface for that mode instead.
+class ConnectionResultsTable extends StatelessWidget {
+  final List<String> columns;
+  final List<ConnectionResultRow> rows;
+  final String emptyMessage;
+
+  const ConnectionResultsTable({
+    super.key,
+    required this.columns,
+    required this.rows,
+    this.emptyMessage = 'No results yet — run the test to populate this table.',
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (rows.isEmpty) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 22),
+        child: Text(emptyMessage,
+            style: context.type.td.copyWith(color: context.colors.ink3),
+            textAlign: TextAlign.center),
+      );
+    }
+    return HtTable(
+      minWidth: 640,
+      columns: [for (final label in columns) HtCol(label)],
+      rows: [
+        for (final r in rows)
+          [
+            for (final cell in r.cells) Td(cell),
+            Tag(r.bad ? TagVariant.bad : TagVariant.ok, r.statusLabel),
+          ],
+      ],
+    );
+  }
+}

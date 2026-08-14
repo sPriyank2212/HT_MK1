@@ -38,6 +38,8 @@ import '../htproto/codec.dart' as proto;
 import '../htproto/connection.dart';
 import '../htproto/messages.dart' as msg;
 import '../htproto/netlist_file.dart';
+import 'report.dart';
+import 'report_pdf.dart';
 import 'run_history.dart';
 
 /// matches PROTO_HV_LIVE_MV in the firmware
@@ -78,6 +80,10 @@ class PortEntry {
 }
 
 /// `const HV_FILES=[...]`, sized from the generated harness.
+// MOCK: three fixed example filenames shown in the HV-netlist picker modal,
+// sized only off netc (itself possibly the demo-seed net count). Real file
+// browsing exists separately ("Browse the file system…" in modals.dart) -
+// this canned list is decoration alongside it, not a real file listing.
 List<HvFile> hvFilesFor(int netc) => [
       HvFile('AV-880_HV_3card.hnl', 3, netc, '$netc nets · 3-card map'),
       HvFile('AV-880_HV_4card.hnl', 4, netc + 42,
@@ -90,15 +96,26 @@ class AppState extends ChangeNotifier {
   // the design's model
   // -------------------------------------------------------------------------
 
+  // MOCK: buildNets() is a 118-net fake "AV-880" demo harness (design/model.dart).
+  // rebuildNets() only replaces it with the real loaded netlist when NETLIST GET
+  // returns a non-empty list - and the instrument's netlist is RAM-only, empty on
+  // every boot. So on a freshly-connected real instrument this demo harness is
+  // what actually drives the wiring diagram, resistance histogram/ranked table
+  // and net inspector, even though nlMtx.loaded correctly reads false. Real once
+  // a netlist is uploaded; fake by default otherwise. See "GUI Reality Check", cause A.
   List<Net> nets = buildNets();
   late Map<String, Net> netAt = buildNetAt(nets);
   late int netc = nets.length;
 
   late MtxNetlist nlMtx;
   late HvNetlist nlHv;
-  late FixNetlist nlFix;
+  late FixNetlist nlFix; // MOCK: kFix (design/model.dart) - permanently static fixture
+  // geometry, no protocol command exists to read it back from the instrument.
 
   /// HV cards detected on I2C2
+  // MOCK: nothing detects this. `stack` is set only by the operator's own Seg
+  // control (pickStack/setStack) - there is no protocol field carrying a real
+  // I2C2-detected card count, despite the doc comment and the UI text above it.
   int stack = 3;
 
   /// "net" | "cross"
@@ -198,6 +215,8 @@ class AppState extends ChangeNotifier {
   String auCols = '—';
 
   // -- HV rail --
+  // All six below are REAL, updated live from HvEvent.millivolts (rail) and
+  // the last-tested net's !INSUL result (leakage) in paintLink().
   int gRail = 0;
   double gTrack = 0;
   String mLeak = '0.000';
@@ -244,6 +263,27 @@ class AppState extends ChangeNotifier {
   int totalCount = 0;
   msg.LimitsReply? limits;
   msg.CalReply? cal;
+
+  /// From `>ID`, fetched once on connect. Null until then - the status bar
+  /// falls back to a "not yet known" label rather than a guessed version.
+  String? fwVersion;
+
+  /// Operator-entered, session-scoped (not persisted) — set once on the
+  /// status bar, carried into every `required_format` test report generated
+  /// after that (see `report.dart`). Both blank by default, same as the
+  /// real `required_format` samples' `Operator` field.
+  String dutId = '';
+  String operatorName = '';
+
+  void setDutId(String v) {
+    dutId = v;
+    notifyListeners();
+  }
+
+  void setOperatorName(String v) {
+    operatorName = v;
+    notifyListeners();
+  }
 
   final ConnectionManager cm;
 
@@ -359,16 +399,12 @@ class AppState extends ChangeNotifier {
     _bootLog();
   }
 
+  /// Printed at app startup, before any connection exists - so it can only
+  /// state what is actually true at that point (nothing has been scanned or
+  /// read from an instrument yet), not describe a bus scan or netlist load
+  /// that hasn't happened.
   void _bootLog() {
-    log('info', 'bsp', 'Board_Init complete — idle state safe');
-    log('info', 'bsp',
-        'I2C3 scan: 0x20 0x21 0x23 0x24 0x25 — 5 devices on J-MTX');
-    log('info', 'bsp', 'I2C2 scan — 3-card HV stack detected');
-    log('warn', 'spi',
-        'SPI1 ADS124S08 device-ID read failed — CS unrouted (HW-01)');
-    log('ok', 'prog',
-        'MTX netlist loaded: AV-880_RevC.hnl — $netc nets across ${kFix.connectors.length} connectors');
-    log('warn', 'prog', 'no HV netlist loaded — HV test will ask for one');
+    log('info', 'app', 'HT_MK1 console started — not yet connected');
   }
 
   // -------------------------------------------------------------------------
@@ -715,11 +751,94 @@ class AppState extends ChangeNotifier {
       return;
     }
     mdMtxOpen = false;
+    // GUI-11: if the file had Conn ID/Part Number columns, apply the
+    // guessed connector layout immediately (so the wiring diagram/tables
+    // reflect it right away) and open the confirmation panel so the
+    // operator can fix a wrong shape guess or a pin count that came up
+    // short (see _fixtureFromGuess) before relying on it. Remembers the
+    // previous fixture so cancelling reverts cleanly.
+    final guess = parsed.fixture;
+    if (guess != null && guess.isNotEmpty) {
+      fixtureBeforeGuess = kFix;
+      setActiveFixture(_fixtureFromGuess(guess, parsed.pairs));
+      mdFixtureOpen = true;
+      log('info', 'nl',
+          'connector layout guessed from $name — ${guess.length} connectors, review before running');
+    }
     await _uploadNetlistPairs(
       [for (final p in parsed.pairs) (p.hi, p.lo)],
       name: name,
       origin: 'file',
     );
+  }
+
+  /// Builds a real [FixtureDef] from a netlist file's guessed connector
+  /// layout ([GuessedConnector], `netlist_file.dart`) — translates the
+  /// file-parsing layer's plain-string shape guess into a real [ConnType]
+  /// (that layer stays independent of `design/model.dart`, same as the
+  /// rest of `htproto/`), and extends the last connector to cover every
+  /// pin the netlist itself references even if `Conn ID` was blank on some
+  /// rows or a connector's trailing pins were never wired (e.g.
+  /// `required_format`'s own sample only wires 6 of DB9's real 9 pins) —
+  /// every pin the uploaded netlist can reference must resolve to some
+  /// connector, not just the ones a guess happened to observe.
+  FixtureDef _fixtureFromGuess(
+      List<GuessedConnector> guess, List<ParsedNetPair> pairs) {
+    final maxPin =
+        pairs.fold<int>(0, (m, p) => math.max(m, math.max(p.hi, p.lo)));
+    final connectors = <ConnectorDef>[];
+    var base = 0;
+    // List-half, not alternating - see buildFixture()'s note in
+    // design/model.dart on why alternating can badly unbalance the two
+    // sides' pin totals.
+    final leftCount = (guess.length / 2).ceil();
+    for (var i = 0; i < guess.length; i++) {
+      final g = guess[i];
+      final isLast = i == guess.length - 1;
+      final pins = isLast ? math.max(g.pins, maxPin - base) : g.pins;
+      connectors.add(ConnectorDef(
+        id: g.id,
+        label: g.partNumber.isEmpty ? g.id : g.partNumber,
+        type: switch (g.shapeGuess) {
+          'dsub' => ConnType.dsub,
+          'circ' => ConnType.circ,
+          _ => ConnType.rect,
+        },
+        pins: pins,
+        side: i < leftCount ? 'L' : 'R',
+        base: base,
+      ));
+      base += pins;
+    }
+    return FixtureDef(
+        name: 'guessed from netlist', rev: '—', connectors: connectors);
+  }
+
+  /// The fixture that was active right before a netlist-derived guess was
+  /// applied ([browseMtxNetlist]) — restored by [cancelFixtureGuess]. Null
+  /// once there is nothing to revert to (no guess pending).
+  FixtureDef? fixtureBeforeGuess;
+  bool mdFixtureOpen = false;
+
+  /// The connector-layout confirmation panel's "Apply" — the operator may
+  /// have edited shape/label (pin counts/ids/bases stay fixed, they come
+  /// from the netlist itself, not from operator guesswork).
+  void confirmFixtureGuess(List<ConnectorDef> edited) {
+    setActiveFixture(
+        FixtureDef(name: kFix.name, rev: kFix.rev, connectors: edited));
+    mdFixtureOpen = false;
+    fixtureBeforeGuess = null;
+    notifyListeners();
+  }
+
+  /// The connector-layout confirmation panel's "Cancel" — reverts to
+  /// whatever fixture was active before the guess.
+  void cancelFixtureGuess() {
+    final prev = fixtureBeforeGuess;
+    if (prev != null) setActiveFixture(prev);
+    mdFixtureOpen = false;
+    fixtureBeforeGuess = null;
+    notifyListeners();
   }
 
   void setFilter(String f) {
@@ -748,6 +867,12 @@ class AppState extends ChangeNotifier {
   // faults — `const ALL` and `renderFaults()`
   // -------------------------------------------------------------------------
 
+  // MOCK (partially): faultsOn['f06'/'f08'/'f04'] are real - only set when
+  // _onCont/_onRes/_onInsul actually see a failure - so this panel correctly
+  // stays empty on a clean run. But every displayed detail below is fabricated:
+  // always nets[4]/nets[5]/nets[2] by fixed index, and fixed values ('3.281 V',
+  // '4.812 Ω', '3.2 MΩ') regardless of which net actually failed or what its
+  // real measured value was. See "GUI Reality Check", cause A.
   List<({String code, String title, String detail, String value, bool hot, String go, int net})>
       get faultList {
     final out = <({
@@ -1011,6 +1136,13 @@ class AppState extends ChangeNotifier {
   }
 
   /// The five rows of `#mdVChecks`.
+  // PARTIAL/MOCK: rows 1, 2 and 4's `state`/`value` are real (R['cont'],
+  // R['res'], stackMatch()) - but row 2's `detail` ("worst margin +0.09 Ω ·
+  // 1.84 mA excitation") is a fixed literal, not the real worst-margin net or
+  // current (and 1.84 mA is stale besides - the IDAC forces a fixed 2 mA,
+  // FW-12). Rows 3 and 5 ("Harness moved…confirmed", "Interlock closed…safe")
+  // are unconditional `state: 'ok'` literals - nothing is actually checked
+  // for either; row 3 in particular claims a transfer that was never verified.
   List<({String state, String title, String detail, String value})>
       get verifyChecks => [
             (
@@ -1027,10 +1159,15 @@ class AppState extends ChangeNotifier {
               value: R['res'] == 'pass' ? '0 out of limit' : 'not passed',
             ),
             (
-              state: 'ok',
+              // Real: onHv reflects the instrument's own !FIXTURE report
+              // (or the optimistic set right after `FIXTURE hv` is sent -
+              // see requestHv()), not just an operator claim.
+              state: onHv ? 'ok' : 'warn',
               title: 'Harness moved to ${hvConnName()}',
-              detail: 'operator confirmed the transfer',
-              value: 'confirmed',
+              detail: onHv
+                  ? 'instrument reports fixture = hv'
+                  : 'instrument has not confirmed the harness moved',
+              value: onHv ? 'confirmed' : 'not confirmed',
             ),
             (
               state: stackMatch() ? 'ok' : 'warn',
@@ -1042,10 +1179,12 @@ class AppState extends ChangeNotifier {
                   : '${(nlHv.cards - stack) * 64} nets unreachable',
             ),
             (
-              state: 'ok',
+              // No protocol field reports interlock state at all - honestly
+              // unverified rather than an unconditional "safe".
+              state: 'warn',
               title: 'Interlock closed',
-              detail: 'cold-switched relays · 200 ms discharge',
-              value: 'safe',
+              detail: 'not reported by the instrument - unverified',
+              value: 'unverified',
             ),
           ];
 
@@ -1148,7 +1287,34 @@ class AppState extends ChangeNotifier {
             ? 'J-MTX · stage 1'
             : 'no fixture declared';
     hzRail = '${(hvMv / 1000).toStringAsFixed(0)} V';
+    final railVolts = hvMv / 1000.0;
+    gRail = (hvMv / 1000).round();
+    // HV_Sense ADC (U301) reads the rail through the R3002/R3004 divider -
+    // same 0.00049 ratio the meter's own "range" label already documents
+    // (res_hv_views.dart _HvRailPanel), just not applied to a live value
+    // until now.
+    mSense = (railVolts * 0.00049).toStringAsFixed(3);
+    // Leakage ADC (U302) sits across R3004 in that same divider, in series
+    // with whatever insulation resistance the harness presents - real once a
+    // real net has actually been tested (relayNet is set from a live
+    // !INSUL result by _onInsul); 0 V with nothing under test, same as the
+    // idle state before this fix.
+    final leakVolts = _leakVoltsFor(relayNet?.ins);
+    mLeak = leakVolts.toStringAsFixed(3);
+    mLeakBad = leakVolts >= 0.045;
+    hzLeak = '$mLeak V';
     notifyListeners();
+  }
+
+  /// Leakage ADC (U302) estimate for a net with the given insulation
+  /// resistance, at the current live rail voltage - see the note on `mLeak`
+  /// in `paintLink()`. Shared with the per-net report rows in `_onInsul` so
+  /// the report and the live meter never disagree on the formula.
+  double _leakVoltsFor(double? insMohm) {
+    final railVolts = hvMv / 1000.0;
+    if (railVolts <= 0 || insMohm == null || insMohm <= 0) return 0.0;
+    const r3002Ohm = 1.0e6, r3004Ohm = 1.0e3;
+    return railVolts * r3004Ohm / (r3002Ohm + insMohm * 1.0e6 + r3004Ohm);
   }
 
   // -------------------------------------------------------------------------
@@ -1162,6 +1328,14 @@ class AppState extends ChangeNotifier {
     doneCount = 0;
     totalCount = 0;
     R[kind == 'insul' ? 'hv' : kind] = null;
+    switch (kind) {
+      case 'cont':
+        _contRows.clear();
+      case 'res':
+        _resRows.clear();
+      case 'insul':
+        _insulRows.clear();
+    }
     _setDom(domSel, 'run');
     vTitle = 'RUNNING';
     vStage = label;
@@ -1255,6 +1429,27 @@ class AppState extends ChangeNotifier {
   int _countPass = 0;
   int _countFail = 0;
 
+  /// Per-row detail for the report the current (or just-finished) run would
+  /// produce — see `report.dart`. Cleared at the start of each run
+  /// (`_beginRun`), snapshotted into `lastXReport` at `_onDone`. Not
+  /// persisted: a report is a live-generated artifact of the run that just
+  /// finished, not part of run history.
+  final List<ContReportRow> _contRows = [];
+  final List<ResReportRow> _resRows = [];
+  final List<InsulReportRow> _insulRows = [];
+
+  /// Read-only views onto the accumulating row buffers, for the on-screen
+  /// connection-results tables (GUI-11) — unlike `lastXReport`, these fill
+  /// in live while a run is still executing, not only once `!DONE` snapshots
+  /// them.
+  List<ContReportRow> get contRowsLive => List.unmodifiable(_contRows);
+  List<ResReportRow> get resRowsLive => List.unmodifiable(_resRows);
+  List<InsulReportRow> get insulRowsLive => List.unmodifiable(_insulRows);
+
+  ContReport? lastContReport;
+  ResReport? lastResReport;
+  InsulReport? lastInsulReport;
+
   /// Pairs found by the current (or last completed) cross-continuity scan —
   /// only ever the passing ones. The real firmware's discover loop already
   /// only emits `!CONT ... pass` (it does not walk 65,536 points to report
@@ -1284,10 +1479,20 @@ class AppState extends ChangeNotifier {
     return null;
   }
 
+  /// `!INSUL <net> ...` carries only the pin under test (see Proto_EvtInsul,
+  /// tasks.c) - no return pin, unlike `!CONT`/`!RES`.
+  Net? _netByHiPin(int hi) {
+    for (final n in nets) {
+      if (n.pinHi == hi) return n;
+    }
+    return null;
+  }
+
   void _onCont(msg.ContResult m) {
     final n = _netByPins(m.hi, m.lo);
     if (n != null) n.open = m.status != proto.ContStatus.pass;
-    if (m.status == proto.ContStatus.pass) {
+    final pass = m.status == proto.ContStatus.pass;
+    if (pass) {
       _countPass++;
     } else {
       _countFail++;
@@ -1296,11 +1501,21 @@ class AppState extends ChangeNotifier {
     ctFound = '$_countPass';
     ctMiss = '$_countFail';
     if (_countFail > 0) faultsOn['f06'] = true;
-    if (runKind == 'cont' &&
-        cmode == 'cross' &&
-        m.status == proto.ContStatus.pass) {
+    if (runKind == 'cont' && cmode == 'cross' && pass) {
       _discovered.add((m.hi, m.lo));
       _updateDiscoveryTallies();
+    }
+    if (runKind == 'cont' && cmode == 'net') {
+      _contRows.add(ContReportRow(
+        testNum: _contRows.length + 1,
+        srcPin: m.hi,
+        dstPin: m.lo,
+        status: pass ? 'CONNECTED' : 'NOT CONNECTED',
+        srcConnId: n?.src.c ?? '—',
+        srcPinLabel: n == null ? null : 'Pin ${n.src.p}',
+        dstConnId: n?.dsts[0].c ?? '—',
+        dstPinLabel: n == null ? null : 'Pin ${n.dsts[0].p}',
+      ));
     }
     notifyListeners();
   }
@@ -1315,17 +1530,49 @@ class AppState extends ChangeNotifier {
     }
     drN = '$_countFail';
     if (_countFail > 0) faultsOn['f08'] = true;
+    _resRows.add(ResReportRow(
+      testNum: _resRows.length + 1,
+      srcPin: m.hi,
+      dstPin: m.lo,
+      resistanceMohm: m.milliohms.toDouble(),
+      status: m.status.wire.toUpperCase(),
+      srcConnId: n?.src.c ?? '—',
+      srcPinLabel: n == null ? null : 'Pin ${n.src.p}',
+      dstConnId: n?.dsts[0].c ?? '—',
+      dstPinLabel: n == null ? null : 'Pin ${n.dsts[0].p}',
+    ));
     notifyListeners();
   }
 
   void _onInsul(msg.InsulResult m) {
-    if (m.status == proto.InsulStatus.pass) {
+    final pass = m.status == proto.InsulStatus.pass;
+    if (pass) {
       _countPass++;
     } else {
       _countFail++;
     }
     dhN = '$_countFail';
     if (_countFail > 0) faultsOn['f04'] = true;
+    // Wire mΩ (see Proto_EvtInsul, tasks.c: MΩ estimate x1e9) back to MΩ for
+    // display, and light up the relay grid on whichever net was actually
+    // under test - this only resolves once a real netlist is loaded
+    // (pinHi is null on the demo harness, see buildNets()).
+    final n = _netByHiPin(m.net);
+    if (n != null) {
+      n.ins = m.leakMohm / 1.0e9;
+      n.insFail = !pass;
+      setRelays(n, !pass);
+    }
+    final insMohm = m.leakMohm / 1.0e9;
+    _insulRows.add(InsulReportRow(
+      testNum: _insulRows.length + 1,
+      net: n?.name ?? '—',
+      hvCard: n != null ? 'H${n.card + 1}' : '—',
+      hsPin: n != null ? 'HS-${pad(n.relay, 2)}' : '—',
+      leakV: _leakVoltsFor(insMohm),
+      insulationMohm: insMohm,
+      status: pass ? 'PASS' : 'FAIL',
+    ));
     notifyListeners();
   }
 
@@ -1368,6 +1615,38 @@ class AppState extends ChangeNotifier {
       return;
     }
     final pass = m.failed == 0;
+    final reportMeta = ReportMeta(
+      dutId: dutId,
+      operatorName: operatorName,
+      netlistName: nlMtx.loaded ? nlMtx.name : null,
+      pass: pass,
+      when: DateTime.now(),
+    );
+    switch (kind) {
+      case 'cont':
+        lastContReport =
+            _contRows.isEmpty ? null : ContReport(reportMeta, List.of(_contRows));
+      case 'res':
+        lastResReport = _resRows.isEmpty
+            ? null
+            : ResReport(
+                reportMeta,
+                cal != null ? (cal!.currentUa / 1000.0).toStringAsFixed(3) : '—',
+                limits != null ? '${limits!.rMaxMohm}' : '—',
+                List.of(_resRows),
+              );
+      case 'insul':
+        lastInsulReport = _insulRows.isEmpty
+            ? null
+            : InsulReport(
+                reportMeta,
+                '500',
+                limits != null
+                    ? (limits!.insMinMohm / 1.0e9).toStringAsFixed(1)
+                    : '—',
+                List.of(_insulRows),
+              );
+    }
     // GUI-05: one history row per completed run, whatever the netlist
     // context was at the moment it finished. There is no "build"/serial
     // number concept in the protocol to group cont+res+insul together, so
@@ -1590,6 +1869,10 @@ class AppState extends ChangeNotifier {
     log('ok', 'link',
         'connected — state ${st.state.wire}, fixture ${st.fixture.wire}');
 
+    final idRes = await _cmd(proto.commands.identify());
+    if (idRes.ok && idRes.reply is msg.IdReply) {
+      fwVersion = (idRes.reply as msg.IdReply).fw;
+    }
     final calRes = await _cmd(proto.commands.calGet());
     if (calRes.ok && calRes.reply is msg.CalReply) {
       cal = calRes.reply as msg.CalReply;
@@ -1635,16 +1918,41 @@ class AppState extends ChangeNotifier {
   /// pairs. The fixture map — which connector each board pin lands on — is a
   /// GUI-side artifact; the instrument only ever talks in pins 1..256.
   void rebuildNets(List<msg.NetEntry> pairs) {
-    final slotL = <PinRef>[];
-    final slotR = <PinRef>[];
-    for (final c in kFix.connectors) {
-      for (var p = 1; p <= c.pins; p++) {
-        (c.side == 'L' ? slotL : slotR).add(PinRef(c.id, p));
-      }
+    // The active fixture (whatever setActiveFixture() last set - the demo
+    // placeholder, or a netlist-derived guess, see _fixtureFromGuess and
+    // browseMtxNetlist()) might not cover every pin THIS netlist references
+    // - e.g. a real NETLIST GET from the instrument can differ from
+    // whatever file was last used to guess a layout. Extend it with a
+    // synthetic trailing connector rather than let a pin resolve to nothing
+    // - every PinRef this method creates must have a real entry in kConn,
+    // since painters.dart/cont_view.dart look it up unconditionally.
+    final maxPin =
+        pairs.fold<int>(0, (m, p) => math.max(m, math.max(p.hi, p.lo)));
+    if (maxPin > kFixPins) {
+      final extended = List<ConnectorDef>.from(kFix.connectors)
+        ..add(ConnectorDef(
+          id: '?',
+          label: 'Unassigned',
+          type: ConnType.rect,
+          pins: maxPin - kFixPins,
+          side: kFix.connectors.length.isEven ? 'L' : 'R',
+          base: kFixPins,
+        ));
+      setActiveFixture(
+          FixtureDef(name: kFix.name, rev: kFix.rev, connectors: extended));
     }
-    PinRef pinNode(int pin, String side) {
-      final arr = side == 'L' ? slotL : slotR;
-      return arr[(pin - 1) % arr.length];
+
+    // Real per-connector lookup against the (now guaranteed-covering)
+    // active fixture (GUI-11) - used to modulo-wrap every pin onto a
+    // same-side pool regardless of which connector it actually belonged
+    // to, fabricating the mapping for any real (uploaded/read) netlist.
+    PinRef pinNode(int pin) {
+      for (final c in kFix.connectors) {
+        if (pin > c.base && pin <= c.base + c.pins) {
+          return PinRef(c.id, pin - c.base);
+        }
+      }
+      return PinRef('?', pin); // unreachable after the extension above
     }
 
     nets = <Net>[];
@@ -1652,8 +1960,8 @@ class AppState extends ChangeNotifier {
       final pr = pairs[i];
       nets.add(Net(
         name: 'NET_${pad(i + 1, 3)}',
-        src: pinNode(pr.hi, 'L'),
-        dsts: [pinNode(pr.lo, 'R')],
+        src: pinNode(pr.hi),
+        dsts: [pinNode(pr.lo)],
         joint: null,
         hs: pr.hi - 1,
         ls: pr.lo - 1,
@@ -1666,8 +1974,12 @@ class AppState extends ChangeNotifier {
         rmax: 2.00,
         wire: '—',
         open: false,
-        card: i ~/ 64,
-        relay: i % 64,
+        // HV relay assignment is a direct function of the source pin's own
+        // flat position, not this loop's index - see the matching note in
+        // design/model.dart's buildNets(). VERIFY against real HV harness
+        // wiring at bring-up (PROJECT_LOG.md BU- items).
+        card: (pr.hi - 1) ~/ 64,
+        relay: (pr.hi - 1) % 64,
       ));
     }
     netc = nets.length;
@@ -1752,6 +2064,31 @@ class AppState extends ChangeNotifier {
     return true;
   }
 
+  /// "Export CSV" next to "Save as MTX netlist" (Continuity view, cross
+  /// mode) - writes the pairs the last cross-continuity scan found,
+  /// independent of whether they have also been pushed to the instrument.
+  /// Same save-dialog/no-op-on-cancel pattern as [exportHistoryCsv].
+  Future<bool> exportDiscoveredNetlistCsv() async {
+    if (_discovered.isEmpty) {
+      log('warn', 'nl', 'no discovered netlist to export yet');
+      return false;
+    }
+    final path = await pickSavePath(
+      dialogTitle: 'Export discovered netlist',
+      fileName: 'discovered_netlist_${_csvStamp(DateTime.now())}.csv',
+      allowedExtensions: ['csv'],
+    );
+    if (path == null) return false; // operator cancelled
+
+    final buf = StringBuffer('HS pin,LS pin\n');
+    for (final p in _discovered) {
+      buf.writeln('${p.$1},${p.$2}');
+    }
+    await File(path).writeAsString(buf.toString());
+    log('ok', 'nl', 'discovered netlist exported to $path');
+    return true;
+  }
+
   static String _csvStamp(DateTime t) {
     String two(int n) => n.toString().padLeft(2, '0');
     return '${t.year}${two(t.month)}${two(t.day)}-'
@@ -1764,6 +2101,97 @@ class AppState extends ChangeNotifier {
       return '"${s.replaceAll('"', '""')}"';
     }
     return s;
+  }
+
+  /// `required_format`-shaped test reports (`report.dart`) — one CSV/PDF
+  /// pair per completed run, generated from `lastContReport`/`lastResReport`/
+  /// `lastInsulReport`. Each stays available until the next run of the same
+  /// kind starts (see `_beginRun`), not persisted across a restart.
+  Future<String?> _pickReportPath(String kind, String ext) {
+    final stamp = _csvStamp(DateTime.now());
+    return pickSavePath(
+      dialogTitle: 'Export $kind report',
+      fileName: 'report_${stamp}_$kind.$ext',
+      allowedExtensions: [ext],
+    );
+  }
+
+  Future<bool> exportContReportCsv() async {
+    final r = lastContReport;
+    if (r == null) {
+      log('warn', 'rpt', 'no continuity report to export yet');
+      return false;
+    }
+    final path = await _pickReportPath('continuity', 'csv');
+    if (path == null) return false;
+    await File(path).writeAsString(r.toCsv());
+    log('ok', 'rpt', 'continuity report exported to $path');
+    return true;
+  }
+
+  Future<bool> exportContReportPdf() async {
+    final r = lastContReport;
+    if (r == null) {
+      log('warn', 'rpt', 'no continuity report to export yet');
+      return false;
+    }
+    final path = await _pickReportPath('continuity', 'pdf');
+    if (path == null) return false;
+    await File(path).writeAsBytes(await buildContReportPdf(r));
+    log('ok', 'rpt', 'continuity report exported to $path');
+    return true;
+  }
+
+  Future<bool> exportResReportCsv() async {
+    final r = lastResReport;
+    if (r == null) {
+      log('warn', 'rpt', 'no resistance report to export yet');
+      return false;
+    }
+    final path = await _pickReportPath('resistance', 'csv');
+    if (path == null) return false;
+    await File(path).writeAsString(r.toCsv());
+    log('ok', 'rpt', 'resistance report exported to $path');
+    return true;
+  }
+
+  Future<bool> exportResReportPdf() async {
+    final r = lastResReport;
+    if (r == null) {
+      log('warn', 'rpt', 'no resistance report to export yet');
+      return false;
+    }
+    final path = await _pickReportPath('resistance', 'pdf');
+    if (path == null) return false;
+    await File(path).writeAsBytes(await buildResReportPdf(r));
+    log('ok', 'rpt', 'resistance report exported to $path');
+    return true;
+  }
+
+  Future<bool> exportInsulReportCsv() async {
+    final r = lastInsulReport;
+    if (r == null) {
+      log('warn', 'rpt', 'no insulation report to export yet');
+      return false;
+    }
+    final path = await _pickReportPath('insulation', 'csv');
+    if (path == null) return false;
+    await File(path).writeAsString(r.toCsv());
+    log('ok', 'rpt', 'insulation report exported to $path');
+    return true;
+  }
+
+  Future<bool> exportInsulReportPdf() async {
+    final r = lastInsulReport;
+    if (r == null) {
+      log('warn', 'rpt', 'no insulation report to export yet');
+      return false;
+    }
+    final path = await _pickReportPath('insulation', 'pdf');
+    if (path == null) return false;
+    await File(path).writeAsBytes(await buildInsulReportPdf(r));
+    log('ok', 'rpt', 'insulation report exported to $path');
+    return true;
   }
 
   /// Diagnostics — "Close path": `MANUAL PATH`, energising exactly the one
@@ -1867,6 +2295,10 @@ class AppState extends ChangeNotifier {
 
   /// Escape key.
   void escape() {
+    if (mdFixtureOpen) {
+      cancelFixtureGuess(); // same as Cancel - reverts the applied guess
+      return;
+    }
     if (mdNlOpen || mdVerifyOpen || mdMtxOpen) {
       mdNlOpen = false;
       mdVerifyOpen = false;

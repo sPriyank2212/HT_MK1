@@ -517,6 +517,7 @@ class _HtHomeState extends State<HtHome> {
               if (s.mdNlOpen) HvNetlistModal(s: s),
               if (s.mdVerifyOpen) VerifyModal(s: s),
               if (s.mdMtxOpen) MtxNetlistModal(s: s),
+              if (s.mdFixtureOpen) FixtureGuessModal(s: s),
             ],
           ),
         );

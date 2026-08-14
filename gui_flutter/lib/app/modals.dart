@@ -516,3 +516,118 @@ class _AckBox extends StatelessWidget {
     );
   }
 }
+
+// ---------------------------------------------------------------------------
+// MODAL · confirm a netlist-guessed connector layout (GUI-11)
+// ---------------------------------------------------------------------------
+
+/// Shown right after [AppState.browseMtxNetlist] applies a connector layout
+/// guessed from the netlist file's `Conn ID`/`Part Number` columns
+/// (`GuessedConnector`, `htproto/netlist_file.dart`) — lets the operator fix
+/// a wrong shape guess, or give a connector a friendlier name, before
+/// relying on it for the wiring diagram and the connection-results tables.
+/// Pin count/id/order are not editable here — they come from the netlist
+/// itself, not from operator guesswork (a short count usually means the
+/// connector's trailing pins were never wired in this particular netlist,
+/// not that the guess picked the wrong number).
+class FixtureGuessModal extends StatefulWidget {
+  final AppState s;
+  const FixtureGuessModal({super.key, required this.s});
+
+  @override
+  State<FixtureGuessModal> createState() => _FixtureGuessModalState();
+}
+
+class _FixtureGuessModalState extends State<FixtureGuessModal> {
+  // kFix.connectors is exactly the applied guess at the moment this modal
+  // opens (AppState.browseMtxNetlist applies it before showing this) —
+  // edits stay local until Apply.
+  late final List<ConnType> _types = [
+    for (final c in kFix.connectors) c.type,
+  ];
+  late final List<String> _labels = [
+    for (final c in kFix.connectors) c.label,
+  ];
+
+  static const _shapeOptions = ['D-sub', 'Circular', 'Rect'];
+  static const _shapeValues = [ConnType.dsub, ConnType.circ, ConnType.rect];
+
+  void _confirm() {
+    final edited = <ConnectorDef>[];
+    for (var i = 0; i < kFix.connectors.length; i++) {
+      final c = kFix.connectors[i];
+      final label = _labels[i].trim();
+      edited.add(ConnectorDef(
+        id: c.id,
+        label: label.isEmpty ? c.id : label,
+        type: _types[i],
+        pins: c.pins,
+        side: c.side,
+        base: c.base,
+      ));
+    }
+    widget.s.confirmFixtureGuess(edited);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    final t = context.type;
+    final connectors = kFix.connectors;
+
+    return ModalScrim(
+      onDismiss: widget.s.cancelFixtureGuess,
+      child: MBox(
+        icon: HtIcons.doc,
+        hot: false,
+        title: 'Confirm the connector layout',
+        subtitle: Text(
+          'Guessed from the netlist file\'s Conn ID / Part Number columns. '
+          'Pin counts come from the file itself — fix the shape or name '
+          'before relying on it in the wiring diagram and result tables.',
+          style: t.modalP,
+        ),
+        body: [
+          for (var i = 0; i < connectors.length; i++)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  SizedBox(
+                    width: 62,
+                    child: Text('${connectors[i].id} · ${connectors[i].pins}p',
+                        style: t.mono(size: 12, color: c.ink)),
+                  ),
+                  const SizedBox(width: 8),
+                  Seg(
+                    options: _shapeOptions,
+                    selected: _shapeValues.indexOf(_types[i]),
+                    onSelect: (v) =>
+                        setState(() => _types[i] = _shapeValues[v]),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: TextInput(
+                      value: _labels[i],
+                      onChanged: (v) => _labels[i] = v,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          Text(
+            'A connector with fewer pins than expected usually means its '
+            'trailing pins were never wired in this file, not a wrong guess '
+            '— that is expected, not an error to fix here.',
+            style: t.mono(size: 11.5, color: c.ink3, height: 1.55),
+          ),
+        ],
+        footer: [
+          Btn('Cancel', onTap: widget.s.cancelFixtureGuess),
+          Btn('Apply', variant: BtnVariant.primary, onTap: _confirm),
+        ],
+      ),
+    );
+  }
+}

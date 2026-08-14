@@ -25,12 +25,22 @@ environment:
 # - excel. Pure Dart .xlsx reader (no native/platform code) for
 #   lib/htproto/netlist_file.dart - operators have a real spreadsheet netlist
 #   long before they have a harness to run cross-continuity discovery on.
+# - archive. Already pulled in transitively by excel; declared directly too
+#   because netlist_file.dart uses it to pre-patch relationship XML the excel
+#   package's parser mishandles (see _normalizeRelationshipTargets) - an
+#   already-present transitive dependency, not a new one, but relying on it
+#   without declaring it is fragile if excel ever stops needing it itself.
+# - pdf. Pure Dart PDF generation (no native/platform code, no Material
+#   dependency) for lib/app/report_pdf.dart - required_format's PDF test
+#   reports (continuity/resistance/insulation). Used by exactly one file.
 dependencies:
+  archive: ^3.6.1
   excel: ^4.0.6
   file_picker: ^11.0.3
   flutter:
     sdk: flutter
   flutter_libserialport: ^0.4.0
+  pdf: ^3.12.0
 
 dev_dependencies:
   flutter_test:

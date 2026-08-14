@@ -10,6 +10,7 @@
 #include "app/proto.h"
 #include "app/tasks.h"
 #include "app/log.h"
+#include "bsp/board.h"
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -364,6 +365,28 @@ static void proto_post(TestCmdType_t t, uint16_t a, uint16_t b)
 }
 
 /**
+  * @brief  Refuse a hardware command with a clean ERR EHW if Board_Init() did
+  *         not fully succeed.
+  * @note   A card that failed to come up (unseated, missing, or faulty)
+  *         leaves its driver instance un-initialised; hv_bus_claim() and
+  *         MatrixCard_BusClaim() are NULL-guarded against writing through it
+  *         (see hv_card.c/matrix_card.c), so nothing crashes any more, but a
+  *         RUN or SAFE that silently does nothing against dead hardware is
+  *         still worse than one that says why. Checked once per command here
+  *         rather than in every driver call.
+  * @retval Non-zero if the caller should proceed, 0 if ERR EHW was already sent.
+  */
+static int proto_hw_ready(void)
+{
+  if (Board_IsReady() == 0U)
+  {
+    proto_err("EHW", "board init failed - card missing or unseated");
+    return 0;
+  }
+  return 1;
+}
+
+/**
   * @brief  Post a whole-run command, refusing if one is already executing.
   * @note   The sequencer queue would happily accept a second run and execute it
   *         afterwards, which looks like success to the GUI and then behaves
@@ -420,7 +443,7 @@ static void proto_exec(char *line)
   }
   else if (strcmp(t[0], "SAFE") == 0)
   {
-    proto_post(CMD_FORCE_SAFE, 0U, 0U);
+    if (proto_hw_ready() != 0) { proto_post(CMD_FORCE_SAFE, 0U, 0U); }
   }
   else if (strcmp(t[0], "ABORT") == 0)
   {
@@ -502,12 +525,18 @@ static void proto_exec(char *line)
     if (strcmp(t[2], "verify") == 0)
     {
       if (s_net_count == 0U) { proto_err("ERANGE", "no netlist"); }
-      else { Proto_SetFixture(PROTO_FIXTURE_MTX); proto_post_run(CMD_CONT_RUN, 0U); }
+      else if (proto_hw_ready() != 0)
+      {
+        Proto_SetFixture(PROTO_FIXTURE_MTX); proto_post_run(CMD_CONT_RUN, 0U);
+      }
     }
     else if (strcmp(t[2], "discover") == 0)
     {
-      Proto_SetFixture(PROTO_FIXTURE_MTX);
-      proto_post_run(CMD_CONT_RUN, 1U);
+      if (proto_hw_ready() != 0)
+      {
+        Proto_SetFixture(PROTO_FIXTURE_MTX);
+        proto_post_run(CMD_CONT_RUN, 1U);
+      }
     }
     else
     {
@@ -517,7 +546,10 @@ static void proto_exec(char *line)
   else if (strcmp(t[0], "RES") == 0 && n >= 2U && strcmp(t[1], "RUN") == 0)
   {
     if (s_net_count == 0U) { proto_err("ERANGE", "no netlist"); }
-    else { Proto_SetFixture(PROTO_FIXTURE_MTX); proto_post_run(CMD_RES_RUN, 0U); }
+    else if (proto_hw_ready() != 0)
+    {
+      Proto_SetFixture(PROTO_FIXTURE_MTX); proto_post_run(CMD_RES_RUN, 0U);
+    }
   }
   else if (strcmp(t[0], "INSUL") == 0 && n >= 2U)
   {
@@ -539,7 +571,7 @@ static void proto_exec(char *line)
     else if (strcmp(t[1], "RUN") == 0)
     {
       if (s_armed == 0U) { proto_err("ENOTARMED", "INSUL ARM first"); }
-      else               { proto_post_run(CMD_INSUL_RUN, 0U); }
+      else if (proto_hw_ready() != 0) { proto_post_run(CMD_INSUL_RUN, 0U); }
     }
     else
     {

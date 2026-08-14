@@ -60,6 +60,17 @@ extern ADS124S08_t       g_ads124s08;   /* Matrix Card U68, SPI1 - see HW-12  */
 HAL_StatusTypeDef Board_Init(void);
 
 /**
+  * @brief  Query whether Board_Init() has run and every sub-init succeeded.
+  * @note   Returns 0 before Board_Init() is called at all. The sequencer
+  *         (proto.c) checks this before CONT/RES/INSUL RUN and >SAFE so a
+  *         card that failed to bring up (unseated/missing/faulty) gets a
+  *         clean ERR EHW instead of the run silently doing nothing against
+  *         un-initialised card state.
+  * @retval Non-zero if Board_Init() returned HAL_OK, 0 otherwise.
+  */
+uint8_t Board_IsReady(void);
+
+/**
   * @brief  Wait for hardware to settle, yielding the CPU if the RTOS is running.
   * @note   Use this instead of HAL_Delay() anywhere inside a test. HAL_Delay
   *         busy-spins, so a settle inside a run held the CPU at sequencer

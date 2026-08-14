@@ -21,6 +21,11 @@ AppState newState() {
 }
 
 void main() {
+  // kFix (design/model.dart) is process-global mutable state now
+  // (setActiveFixture, GUI-11) — reset it after every test so one test's
+  // fixture never leaks into the next.
+  tearDown(() => setActiveFixture(buildDefaultFixture()));
+
   // =========================================================================
   group('mulberry32 matches the page bit for bit', () {
     test('the first values of seed 880 are stable', () {
@@ -71,10 +76,11 @@ void main() {
       // six Y joints, four I joints
       expect(nets.where((n) => n.joint == 'Y').length, 6);
       expect(nets.where((n) => n.joint == 'I').length, 4);
-      // HV relay assignment follows source order
-      for (var i = 0; i < nets.length; i++) {
-        expect(nets[i].card, i ~/ 64);
-        expect(nets[i].relay, i % 64);
+      // HV relay assignment is a direct function of the source pin's own
+      // flat board position (GUI-11), not this list's order.
+      for (final n in nets) {
+        expect(n.card, n.hs ~/ 64);
+        expect(n.relay, n.hs % 64);
       }
     });
 
@@ -321,8 +327,14 @@ void main() {
       expect(s.nlMtx.nets, 2);
       expect(s.nets[0].pinHi, 1);
       expect(s.nets[0].pinLo, 2);
-      expect(kConn[s.nets[0].src.c]!.side, 'L');
-      expect(kConn[s.nets[0].dsts[0].c]!.side, 'R');
+      // GUI-11: pins 1 and 2 both land on the same physical connector (J1,
+      // base 0, 37 pins in the default demo fixture) - real per-connector
+      // lookup, not the old "hi always L-side pool, lo always R-side pool"
+      // fabrication. `side` no longer implies which role a pin plays.
+      expect(s.nets[0].src.c, 'J1');
+      expect(s.nets[0].src.p, 1);
+      expect(s.nets[0].dsts[0].c, 'J1');
+      expect(s.nets[0].dsts[0].p, 2);
       expect(s.nets[1].name, 'NET_002');
     });
 

@@ -44,7 +44,15 @@ class StatusBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = context.colors;
     final t = context.type;
-    final narrow = MediaQuery.sizeOf(context).width <= kNarrow;
+    final width = MediaQuery.sizeOf(context).width;
+    final narrow = width <= kNarrow;
+    // DUT ID/Operator are the least safety-relevant thing in this bar - the
+    // first to give way once the bar is tight, rather than fighting the
+    // existing slots (or the conditional Clear Fault button, which can
+    // appear at any time) for space. 1600 rather than kMediumBreak (1080):
+    // measured this bar overflowing at the 1480px "default" test width with
+    // Clear Fault showing, so kMediumBreak alone left no real margin.
+    final showOperatorFields = width > 1600;
 
     final children = <Widget>[
       // .mark
@@ -72,7 +80,9 @@ class StatusBar extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text('HT_MK1 Console', style: t.markName),
-                Text('fw 0.9.3 · g474', style: t.markSub),
+                // Real: fetched via >ID on connect (AppState._connect()).
+                // Null until then, or if never connected this session.
+                Text('fw ${s.fwVersion ?? "—"} · g474', style: t.markSub),
               ],
             ),
           ],
@@ -93,6 +103,33 @@ class StatusBar extends StatelessWidget {
       ),
       const SizedBox(width: 18),
       _Slot(label: 'Connected to', value: s.stFix, flex: !narrow),
+      // Session-scoped, not persisted - carried into every test report
+      // generated after being set (AppState.dutId/operatorName, report.dart).
+      // Hidden below the medium breakpoint: the least safety-relevant thing
+      // in this bar, so the first to give way when it's tight, rather than
+      // fighting the slots above for space down to the 860px scroll point.
+      if (showOperatorFields) ...[
+        const SizedBox(width: 18),
+        Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Lbl('DUT ID'),
+            const SizedBox(height: 3),
+            TextInput(value: s.dutId, onChanged: s.setDutId, width: 90),
+          ],
+        ),
+        const SizedBox(width: 18),
+        Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Lbl('Operator'),
+            const SizedBox(height: 3),
+            TextInput(value: s.operatorName, onChanged: s.setOperatorName, width: 110),
+          ],
+        ),
+      ],
       const SizedBox(width: 18),
       if (!narrow) const FlexSpacer(),
       ThemeBtn(onTap: onToggleTheme),
@@ -529,9 +566,9 @@ class _HazardBarState extends State<HazardBar>
               ),
               const FlexSpacer(),
               const SizedBox(width: 14),
-              _HazardSlot(label: 'Rail', value: s.hzRail),
+              _HazardSlot(label: 'Rail', value: s.hzRail), // REAL - live hvMv.
               const SizedBox(width: 14),
-              _HazardSlot(label: 'Leakage', value: s.hzLeak),
+              _HazardSlot(label: 'Leakage', value: s.hzLeak), // REAL - paintLink().
               const SizedBox(width: 14),
               Btn('Abort & discharge',
                   variant: BtnVariant.ghostHv, onTap: s.abort),

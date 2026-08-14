@@ -32,7 +32,12 @@ Core/Src/app/proto.o: ../Core/Src/app/proto.c ../Core/Inc/app/proto.h \
  ../Drivers/STM32G4xx_HAL_Driver/Inc/stm32g4xx_hal_tim_ex.h \
  ../Drivers/STM32G4xx_HAL_Driver/Inc/stm32g4xx_hal_uart.h \
  ../Drivers/STM32G4xx_HAL_Driver/Inc/stm32g4xx_hal_uart_ex.h \
- ../Core/Inc/app/tasks.h ../Core/Inc/app/log.h
+ ../Core/Inc/app/tasks.h ../Core/Inc/app/log.h ../Core/Inc/bsp/board.h \
+ ../Core/Inc/i2c.h ../Core/Inc/main.h ../Core/Inc/spi.h \
+ ../Core/Inc/cards/matrix_card.h ../Core/Inc/drivers/mcp23017.h \
+ ../Core/Inc/cards/control_frontend.h ../Core/Inc/drivers/ad7476.h \
+ ../Core/Inc/cards/hv_card.h ../Core/Inc/drivers/dac8830.h \
+ ../Core/Inc/drivers/ads124s08.h
 ../Core/Inc/app/proto.h:
 ../Core/Inc/main.h:
 ../Drivers/STM32G4xx_HAL_Driver/Inc/stm32g4xx_hal.h:
@@ -70,3 +75,14 @@ Core/Src/app/proto.o: ../Core/Src/app/proto.c ../Core/Inc/app/proto.h \
 ../Drivers/STM32G4xx_HAL_Driver/Inc/stm32g4xx_hal_uart_ex.h:
 ../Core/Inc/app/tasks.h:
 ../Core/Inc/app/log.h:
+../Core/Inc/bsp/board.h:
+../Core/Inc/i2c.h:
+../Core/Inc/main.h:
+../Core/Inc/spi.h:
+../Core/Inc/cards/matrix_card.h:
+../Core/Inc/drivers/mcp23017.h:
+../Core/Inc/cards/control_frontend.h:
+../Core/Inc/drivers/ad7476.h:
+../Core/Inc/cards/hv_card.h:
+../Core/Inc/drivers/dac8830.h:
+../Core/Inc/drivers/ads124s08.h:

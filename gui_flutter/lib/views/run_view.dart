@@ -77,6 +77,9 @@ class _Domains extends StatelessWidget {
         title: 'Resistance',
         stage: 'S1 · MTX',
         state: s.dResS,
+        // MOCK: literal string, never updates. Doesn't reflect the IDAC's
+        // actual 2 mA excitation (FW-12) or the real PGA gain/offset that
+        // Diagnostics' Calibration panel already reads from CAL GET.
         cond: '1.84 mA · 4-wire\n'
             'ADS124S08 U68 · SPI1 · PGA ×16\n'
             'OPTO_CNTR = HIGH',
@@ -285,6 +288,9 @@ class _StackPanel extends StatelessWidget {
         Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            // MOCK: "Detected on I2C2" is false - s.stack is a manual Seg
+            // pick (pickStack, below), not read from the instrument. No
+            // protocol field for a real detected card count exists.
             Text(
               'Detected on I2C2. The HV netlist must match the fitted stack — '
               'a 4-card netlist on a 3-card stack leaves 64 nets unreachable.',

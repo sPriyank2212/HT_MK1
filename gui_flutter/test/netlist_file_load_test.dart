@@ -19,6 +19,7 @@ import 'dart:typed_data';
 import 'package:excel/excel.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ht_mk1_gui/app/app_state.dart';
+import 'package:ht_mk1_gui/design/model.dart';
 import 'package:ht_mk1_gui/htproto/connection.dart';
 
 Uint8List _workbook(List<List<CellValue?>> rows) {
@@ -77,6 +78,11 @@ class _FakeTransport implements Transport {
 }
 
 void main() {
+  // kFix (design/model.dart) is process-global mutable state now
+  // (setActiveFixture, GUI-11) — reset it after every test so one test's
+  // fixture guess never leaks into the next.
+  tearDown(() => setActiveFixture(buildDefaultFixture()));
+
   group('browseMtxNetlist', () {
     late _FakeTransport t;
     late AppState s;
@@ -128,6 +134,82 @@ void main() {
       expect(s.nlMtx.origin, 'file');
       expect(s.nets.length, 2);
       expect(s.mdMtxOpen, isFalse);
+    });
+
+    test('GUI-11: a file with Conn ID/Part Number columns applies a guessed '
+        'connector layout and opens the confirmation panel', () async {
+      final bytes = _workbook([
+        [
+          TextCellValue('NET'), TextCellValue('Conn ID'),
+          TextCellValue('Part Number'), TextCellValue('HI'),
+          TextCellValue('LO'), TextCellValue('Conn ID B'),
+          TextCellValue('Part Number B'),
+        ],
+        [
+          TextCellValue('A'), TextCellValue('J1'), TextCellValue('DB9-M'),
+          IntCellValue(1), IntCellValue(1), TextCellValue('J1'),
+          TextCellValue('DB9-M'),
+        ],
+        [
+          TextCellValue('B'), TextCellValue('J1'), TextCellValue('DB9-M'),
+          IntCellValue(2), IntCellValue(10), TextCellValue('J2'),
+          TextCellValue('MS3116-Circular'),
+        ],
+      ]);
+      await boot(pickNetlistFile: () async => ('guessed.xlsx', bytes));
+      final before = kFix;
+
+      await s.browseMtxNetlist();
+
+      expect(s.mdFixtureOpen, isTrue);
+      expect(s.fixtureBeforeGuess, same(before));
+      expect(kFix.connectors.map((c) => c.id), ['J1', 'J2']);
+      expect(kFix.connectors[0].type, ConnType.dsub);
+      expect(kFix.connectors[1].type, ConnType.circ);
+      // Applied optimistically - real per-pin lookup already resolves
+      // against it, not the old modulo fabrication.
+      expect(s.nets[0].src.c, 'J1');
+
+      // Cancel reverts to the fixture that was active before the guess.
+      s.cancelFixtureGuess();
+      expect(kFix, same(before));
+      expect(s.mdFixtureOpen, isFalse);
+      expect(s.fixtureBeforeGuess, isNull);
+    });
+
+    test('GUI-11: confirming the guess with edits applies the edited '
+        'connectors, not the raw guess', () async {
+      final bytes = _workbook([
+        [
+          TextCellValue('Conn ID'), TextCellValue('Part Number'),
+          TextCellValue('HI'), TextCellValue('LO'), TextCellValue('Conn ID B'),
+          TextCellValue('Part Number B'),
+        ],
+        [
+          TextCellValue('P1'), TextCellValue('AMP-9'), IntCellValue(1),
+          IntCellValue(2), TextCellValue('P1'), TextCellValue('AMP-9'),
+        ],
+      ]);
+      await boot(pickNetlistFile: () async => ('guessed2.xlsx', bytes));
+      await s.browseMtxNetlist();
+      expect(kFix.connectors.single.type, ConnType.rect); // raw guess
+
+      final edited = kFix.connectors
+          .map((c) => ConnectorDef(
+                id: c.id,
+                label: 'Operator label',
+                type: ConnType.dsub, // operator corrected the shape
+                pins: c.pins,
+                side: c.side,
+                base: c.base,
+              ))
+          .toList();
+      s.confirmFixtureGuess(edited);
+
+      expect(s.mdFixtureOpen, isFalse);
+      expect(s.fixtureBeforeGuess, isNull);
+      expect(kFix.connectors.single.type, ConnType.dsub);
+      expect(kFix.connectors.single.label, 'Operator label');
     });
 
     test('operator cancelling the file dialog sends nothing and changes '

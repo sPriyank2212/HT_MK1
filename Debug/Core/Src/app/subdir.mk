@@ -7,17 +7,17 @@
 C_SRCS += \
 ../Core/Src/app/log.c \
 ../Core/Src/app/proto.c \
-../Core/Src/app/tasks.c
+../Core/Src/app/tasks.c 
 
 OBJS += \
 ./Core/Src/app/log.o \
 ./Core/Src/app/proto.o \
-./Core/Src/app/tasks.o
+./Core/Src/app/tasks.o 
 
 C_DEPS += \
 ./Core/Src/app/log.d \
 ./Core/Src/app/proto.d \
-./Core/Src/app/tasks.d
+./Core/Src/app/tasks.d 
 
 
 # Each subdirectory must supply rules for building sources it contributes

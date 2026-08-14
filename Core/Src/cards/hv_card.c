@@ -27,10 +27,16 @@
   *         must bracket the transfer with claim/release; nothing else may run
   *         between them.
   * @param  hv : [in] instance; must be non-NULL, en_port must be configured.
-  * @retval None (GPIO writes do not fail).
+  * @retval None (GPIO writes do not fail). No-op if @p hv or en_port is NULL -
+  *         an un-initialised card (Board_Init() failed or never ran for it)
+  *         leaves en_port NULL, and writing through it would HardFault.
   */
 static void hv_bus_claim(HvCard_t *hv)
 {
+  if (hv == NULL || hv->cfg.en_port == NULL)
+  {
+    return;
+  }
   HAL_GPIO_WritePin(hv->cfg.en_port, hv->cfg.en_pin, GPIO_PIN_SET);
   HAL_Delay(HV_BUS_ENABLE_SETTLE_MS);
 }
@@ -41,10 +47,14 @@ static void hv_bus_claim(HvCard_t *hv)
   *         board's addresses collide with the Matrix Card's - deassert on
   *         every exit path, including error returns.
   * @param  hv : [in] instance; must be non-NULL, en_port must be configured.
-  * @retval None
+  * @retval None. No-op if @p hv or en_port is NULL - see hv_bus_claim().
   */
 static void hv_bus_release(HvCard_t *hv)
 {
+  if (hv == NULL || hv->cfg.en_port == NULL)
+  {
+    return;
+  }
   HAL_GPIO_WritePin(hv->cfg.en_port, hv->cfg.en_pin, GPIO_PIN_RESET);
 }
 

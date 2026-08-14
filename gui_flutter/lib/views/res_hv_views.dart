@@ -67,6 +67,10 @@ class ResView extends StatelessWidget {
             onTap: canRun ? () => s.runTest('res') : null),
       ]),
       Netbar(s: s, dom: 'mtx', useKey: 'res'),
+      // MOCK: Excitation/Gain/Offset cal are fixed text. These numbers
+      // duplicate (and can silently disagree with) the real cal.currentUa/
+      // gain the Diagnostics Calibration panel reads from CAL GET. Only
+      // "Scope" (nlMtx) and "Connector" are real.
       Band([
         const BandItem('Connector', Conn('J-MTX')),
         BandItem(
@@ -74,8 +78,10 @@ class ResView extends StatelessWidget {
           Text(s.nlMtx.loaded ? '${s.nlMtx.nets} declared pairs' : 'no netlist',
               style: t.bandV),
         ),
+        // FW-12: excitation is the ADS124S08's own IDAC1, fixed at 2 mA,
+        // routed to AIN9 (= HI_COM) - not the (removed) DAC8775.
         BandItem('Excitation',
-            Text('1.84 mA · DAC8775 ch A', style: t.bandV)),
+            Text('2 mA · ADS124S08 IDAC1 → AIN9', style: t.bandV)),
         BandItem(
             'Sense', Text('ADS124S08 U68 · SPI1', style: t.bandV)),
         BandItem('Gain', Text('PGA ×16 · 20 SPS', style: t.bandV)),
@@ -102,8 +108,12 @@ class ResView extends StatelessWidget {
             ),
           ),
           _RankedTable(s: s),
+          _ResConnectionResults(s: s),
         ]),
         side: Cols([
+          // MOCK: every row except "Limits from" is fixed text (Mode/Set
+          // current/Measured/Compliance/Resolution) - none of it reflects a
+          // real measurement or the real CAL GET reply.
           HtPanel(
             header: const [PanelTitle('Measurement conditions')],
             child: PanelPad(Kv([
@@ -133,13 +143,17 @@ class ResView extends StatelessWidget {
               ),
             ])),
           ),
+          // MOCK: static documentation diagram - device list/values are
+          // fixed text, not read from the instrument.
           HtPanel(
             header: const [PanelTitle('Sense path')],
             child: PanelPad(PathBox(const [
-              PathSpan('DAC8775 ch A → I_OUT → '),
-              PathSpan('Opto U3', bold: true),
-              PathSpan(' (OPTO_CNTR=HIGH)\n'
-                  '→ HI_COM → HI mux → HS → harness → LS\n→ LO mux → LO_COM → '),
+              // FW-12: excitation is the ADS124S08's own IDAC1, routed
+              // directly to AIN9 (= HI_COM) - the DAC8775/Opto U3 path is
+              // gone from the schematic.
+              PathSpan('ADS124S08 IDAC1 → AIN9 → '),
+              PathSpan('HI_COM', bold: true),
+              PathSpan(' → HI mux → HS → harness → LS\n→ LO mux → LO_COM → '),
               PathSpan('R131 100 Ω 0.01 %', bold: true),
               PathSpan(' → GND\nsense: HI_SENSE − LO_SENSE → '),
               PathSpan('ADS124S08 AIN0/AIN1', bold: true),
@@ -155,7 +169,9 @@ class ResView extends StatelessWidget {
               Btn('Re-measure worst',
                   disabled: !canRun,
                   onTap: canRun ? () => s.runTest('res') : null),
-              Btn('Auto-range PGA', disabled: true, onTap: null),
+              // MOCK/OFF: deliberately kept off the operator surface - a
+              // bench-characterization step, not a run-time command. See
+              // Doc/GUI_protocol_proposed_commands.md, "Compliance sweep".
               Btn('Compliance sweep', disabled: true, onTap: null),
             ])),
           ),
@@ -229,6 +245,53 @@ class _RankedTable extends StatelessWidget {
               ];
             }(),
         ],
+      ),
+    );
+  }
+}
+
+/// "All connections in one table" for resistance (GUI-11) — `_RankedTable`
+/// above only ever shows the worst 8 nets by margin; this shows every real
+/// `!RES` result the current run has produced, connector-qualified.
+class _ResConnectionResults extends StatelessWidget {
+  final AppState s;
+  const _ResConnectionResults({required this.s});
+
+  @override
+  Widget build(BuildContext context) {
+    return HtPanel(
+      header: const [
+        PanelTitle('Connection results'),
+        FlexSpacer(),
+        Lbl('every pin under test'),
+      ],
+      child: ConnectionResultsTable(
+        columns: const [
+          'Test #', 'Src Conn', 'Src Pin', 'Dst Conn', 'Dst Pin',
+          'R (mΩ)', 'Status', //
+        ],
+        rows: [
+          for (final r in s.resRowsLive)
+            ConnectionResultRow(
+              cells: [
+                '${r.testNum}',
+                r.srcConnId,
+                r.srcPinLabel,
+                r.dstConnId,
+                r.dstPinLabel,
+                r.resistanceMohm.toStringAsFixed(1),
+              ],
+              bad: r.status != 'PASS',
+              statusLabel: switch (r.status) {
+                'PASS' => 'Pass',
+                'FAIL_HIGH' => 'F08 high',
+                'FAIL_LOW' => 'F08 low',
+                _ => r.status,
+              },
+            ),
+        ],
+        emptyMessage:
+            'No results yet — run resistance to populate this table.',
       ),
     );
   }
@@ -343,6 +406,9 @@ class HvView extends StatelessWidget {
             style: t.bandV,
           ),
         ),
+        // MOCK: Stimulus/Sense/Return/Limit are fixed hardware-doc text.
+        // "Stack" is real-ish (see s.stack's own mock note in app_state.dart
+        // - it's operator-picked, not detected).
         BandItem(
           'Stimulus',
           Text('500 V DC · R3002 1 MΩ',
@@ -359,9 +425,14 @@ class HvView extends StatelessWidget {
         main: Cols([
           _RelayPanel(s: s),
           _NetResults(s: s),
+          _InsulConnectionResults(s: s),
         ]),
         side: Cols([
           _HvRailPanel(s: s),
+          // MOCK: static documentation diagram - accurate to the schematic
+          // (DAC8830/CA05P-5/R3002/R3004 unaffected by FW-12, unlike the
+          // Resistance view's stale DAC8775 references), but still fixed
+          // text, not derived from a real run.
           HtPanel(
             header: const [PanelTitle('Leakage loop')],
             child: PanelPad(PathBox(
@@ -386,6 +457,9 @@ class HvView extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Kv([
+                  // MOCK: unconditional literal - always reads "closed /
+                  // safe" regardless of any real interlock state (there is
+                  // no protocol field for this at all).
                   KvRow(
                     'Interlock',
                     KvInline([
@@ -430,6 +504,11 @@ class HvView extends StatelessWidget {
 }
 
 /// `#hvCards` — `buildCards()` and `setRelays()`
+// MOCK: setRelays() is never called from a real INSUL RUN - AppState._onInsul
+// discards the real per-net m.net/m.leakMohm data it receives and only tallies
+// pass/fail (see the MOCK comment on _onInsul in app_state.dart). This grid
+// only ever lights up if the operator clicks the canned F04 fault card
+// (openFault()); it never reflects an actual HV test in progress.
 class _RelayPanel extends StatelessWidget {
   final AppState s;
   const _RelayPanel({required this.s});
@@ -612,22 +691,20 @@ class _RelayRow extends StatelessWidget {
       );
 }
 
-/// The static "Net results" table from the markup.
+/// The "Net results" table — ranked from real `!INSUL` results as they
+/// stream in (see AppState._onInsul), same live-ranking pattern as
+/// _RankedTable above. Worst (lowest insulation resistance) first. Resolves
+/// to real data once a real netlist is loaded (pinHi is null on the demo
+/// harness, so _onInsul has nothing to match against until then).
 class _NetResults extends StatelessWidget {
   final AppState s;
   const _NetResults({required this.s});
 
   @override
   Widget build(BuildContext context) {
-    const rows = [
-      ('GND_RET', 'H1', 'HS-03', '0.052', '3.2 MΩ', TagVariant.bad, 'Fail'),
-      ('PWR_28V_A', 'H1', 'HS-01', '0.021', '11.4 MΩ', TagVariant.warn,
-          'Marginal'),
-      ('LAMP_RET', 'H2', 'HS-19', '0.014', '18.6 MΩ', TagVariant.ok, 'Pass'),
-      ('ARINC_A_LO', 'H1', 'HS-15', '0.006', '46.2 MΩ', TagVariant.ok, 'Pass'),
-      ('SENSE_RTD_1', 'H3', 'HS-11', '0.004', '72.1 MΩ', TagVariant.ok, 'Pass'),
-      ('PWR_28V_B', 'H1', 'HS-02', '0.003', '98.4 MΩ', TagVariant.ok, 'Pass'),
-    ];
+    final c = context.colors;
+    final ranked = [...s.nets]..sort((a, b) => a.ins.compareTo(b.ins));
+    final rows = ranked.take(6).toList();
 
     return HtPanel(
       header: const [
@@ -638,23 +715,68 @@ class _NetResults extends StatelessWidget {
       child: HtTable(
         columns: const [
           HtCol('Net'),
+          HtCol('Conn'),
           HtCol('Card'),
           HtCol('HS relay'),
-          HtCol('Leak V', right: true),
           HtCol('Insulation', right: true),
           HtCol('Result'),
         ],
         rows: [
-          for (final r in rows)
+          for (final n in rows)
             [
-              Td(r.$1),
-              Td(r.$2, numeric: true),
-              Td(r.$3, numeric: true),
-              Td(r.$4, numeric: true),
-              Td(r.$5, numeric: true),
-              Tag(r.$6, r.$7),
+              Td(n.name),
+              // GUI-11: real connector once a real netlist is loaded (the
+              // demo/placeholder harness has one too, just not tied to any
+              // actual instrument data).
+              Td(n.src.c),
+              Td('H${n.card + 1}', numeric: true),
+              Td('HS-${pad(n.relay, 2)}', numeric: true),
+              Td('${n.ins.toStringAsFixed(1)} MΩ',
+                  numeric: true, color: n.insFail ? c.fail : null),
+              Tag(n.insFail ? TagVariant.bad : TagVariant.ok,
+                  n.insFail ? 'Fail' : 'Pass'),
             ],
         ],
+      ),
+    );
+  }
+}
+
+/// "All connections in one table" for insulation (GUI-11) — `_NetResults`
+/// above only ever shows the worst 6 nets by insulation resistance; this
+/// shows every real `!INSUL` result the current run has produced.
+class _InsulConnectionResults extends StatelessWidget {
+  final AppState s;
+  const _InsulConnectionResults({required this.s});
+
+  @override
+  Widget build(BuildContext context) {
+    return HtPanel(
+      header: const [
+        PanelTitle('Connection results'),
+        FlexSpacer(),
+        Lbl('every net under test'),
+      ],
+      child: ConnectionResultsTable(
+        columns: const [
+          'Test #', 'Net', 'HV Card', 'HS Pin', 'Insulation (MΩ)', //
+        ],
+        rows: [
+          for (final r in s.insulRowsLive)
+            ConnectionResultRow(
+              cells: [
+                '${r.testNum}',
+                r.net,
+                r.hvCard,
+                r.hsPin,
+                r.insulationMohm.toStringAsFixed(1),
+              ],
+              bad: r.status != 'PASS',
+              statusLabel: r.status == 'PASS' ? 'Pass' : 'Fail',
+            ),
+        ],
+        emptyMessage:
+            'No results yet — run insulation to populate this table.',
       ),
     );
   }
@@ -680,7 +802,8 @@ class _HvRailPanel extends StatelessWidget {
         Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // .hvgauge
+            // .hvgauge - both s.gRail and the track bar below (s.gTrack) are
+            // real, driven from the live HvEvent.millivolts in paintLink().
             Row(
               children: [
                 Text.rich(
@@ -723,7 +846,9 @@ class _HvRailPanel extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 12),
-            // .meters
+            // .meters - both s.mLeak and s.mSense are real, computed in
+            // paintLink() from live hvMv and the last-tested net's !INSUL
+            // result via the R3002/R3004 sense divider.
             Container(
               decoration: BoxDecoration(
                 border: Border.all(color: c.lineSoft),

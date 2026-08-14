@@ -64,6 +64,9 @@ class ProgramView extends StatelessWidget {
           }),
         ),
       ),
+      // MOCK: _mtxRows (below) is a static const array, completely
+      // disconnected from whatever MTX netlist file is actually loaded -
+      // "showing 8" is hardcoded too, not "8 of N".
       HtPanel(
         header: const [
           PanelTitle('MTX nets'),
@@ -95,6 +98,10 @@ class ProgramView extends StatelessWidget {
           ],
         ),
       ),
+      // PARTIAL: the "loaded"/"not loaded" gate and "Reachable" column (below)
+      // are real (nlHv.loaded, s.stack), but _hvRows itself is a static const
+      // array - the 7 rows shown have nothing to do with the actual HV
+      // netlist file's contents.
       HtPanel(
         header: [
           const PanelTitle('HV nets'),
@@ -152,6 +159,8 @@ class ProgramView extends StatelessWidget {
         ],
       );
 
+  // MOCK: invented example data (part numbers, wire gauges, pin refs) - see
+  // the MOCK comment on the "MTX nets" panel above.
   static const List<(String, String, String, String, String, String, TagVariant, String)>
       _mtxRows = [
     ('PWR_28V_A', '14 AWG', 'J1-01 / 001', 'J3-14 / 142', '0.02', '0.35',
@@ -172,6 +181,8 @@ class ProgramView extends StatelessWidget {
         TagVariant.mut, '1:1'),
   ];
 
+  // MOCK: same as _mtxRows above - invented example data, unrelated to any
+  // real HV netlist file.
   static const List<(String, int, int)> _hvRows = [
     ('GND_RET', 0, 3),
     ('PWR_28V_A', 0, 1),
@@ -194,6 +205,9 @@ class ResultsView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Cols([
+      // MOCK: SparkPainter.data is a fixed 24-value array (design/painters.dart)
+      // and the "78 %" pill is a literal string - neither is derived from
+      // AppState.history, despite Run history (below) now being real (GUI-05).
       HtPanel(
         header: const [
           PanelTitle('First-pass yield · last 24 builds'),
@@ -225,6 +239,9 @@ class ResultsView extends StatelessWidget {
         ],
         child: _runHistoryTable(context, s),
       ),
+      _testReports(context, s),
+      // MOCK: _pareto (below) is a static const array - no shift data exists
+      // anywhere in the protocol to compute this from.
       HtPanel(
         header: const [PanelTitle('Fault pareto · this shift')],
         child: HtTable(
@@ -291,6 +308,65 @@ class ResultsView extends StatelessWidget {
                 e.pass ? 'Pass' : 'Fail'),
           ],
       ],
+    );
+  }
+
+  /// `required_format`-shaped test reports (`report.dart`) — one row per
+  /// kind, only for the ones that have actually run this session, each
+  /// available until that kind's next run starts (`AppState._beginRun`
+  /// clears the row buffer a report is built from). Separate from "Run
+  /// history" above: history is a running per-run summary table, a report is
+  /// the full per-pin/per-net detail of one specific finished run.
+  Widget _testReports(BuildContext context, AppState s) {
+    final rows = <(String, bool, VoidCallback, VoidCallback)>[
+      if (s.lastContReport != null)
+        (
+          'Continuity',
+          s.lastContReport!.meta.pass,
+          () => s.exportContReportCsv(),
+          () => s.exportContReportPdf(),
+        ),
+      if (s.lastResReport != null)
+        (
+          'Resistance',
+          s.lastResReport!.meta.pass,
+          () => s.exportResReportCsv(),
+          () => s.exportResReportPdf(),
+        ),
+      if (s.lastInsulReport != null)
+        (
+          'Insulation',
+          s.lastInsulReport!.meta.pass,
+          () => s.exportInsulReportCsv(),
+          () => s.exportInsulReportPdf(),
+        ),
+    ];
+    return HtPanel(
+      header: const [
+        PanelTitle('Test reports'),
+        FlexSpacer(),
+        Lbl('required_format · CSV + PDF'),
+      ],
+      child: PanelPad(rows.isEmpty
+          ? Text('No completed run this session to report on yet.',
+              style: context.type.td.copyWith(color: context.colors.ink3))
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                for (final r in rows)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 6),
+                    child: RowWrap([
+                      Tag(r.$2 ? TagVariant.ok : TagVariant.bad,
+                          r.$2 ? 'Pass' : 'Fail'),
+                      Text(r.$1, style: context.type.td),
+                      const FlexSpacer(),
+                      Btn('Export CSV', onTap: r.$3),
+                      Btn('Export PDF', onTap: r.$4),
+                    ]),
+                  ),
+              ],
+            )),
     );
   }
 
@@ -395,6 +471,12 @@ class _DiagViewState extends State<DiagView> {
     ]);
   }
 
+  // MOCK: pill state and clock speed are still fixed text, not read from
+  // firmware (there is no bus-enumeration command at all, see "Rescan"
+  // below) - but the device list is now current against the schematic and
+  // spi.c/board.c: SPI1 carries only the ADS124S08 (U33/AD7476 removed,
+  // FW-01/FW-02) with CS/RESET/START/DRDY through U69 over I2C, not an
+  // unrouted CS; SPI2 no longer lists DAC8775 (removed, FW-12).
   Widget _busMap(BuildContext context, AppState s) {
     final rows = <(String, PillVariant, String, String, String)>[
       (
@@ -413,16 +495,16 @@ class _DiagViewState extends State<DiagView> {
       ),
       (
         'SPI1',
-        PillVariant.bad,
-        'Fault',
-        'AD7476 U33 · ADS124S08 U68 — CS unrouted',
-        '16 MHz'
+        PillVariant.ok,
+        'OK',
+        'ADS124S08 U68 · CS/RESET/START/DRDY via U69 (I2C)',
+        '8 MHz'
       ),
       (
         'SPI2',
         PillVariant.ok,
         'OK',
-        'DAC8775 · DAC8830 · HV AD7476 ×2 · isolated',
+        'DAC8830 · HV AD7476 ×2 · isolated',
         '8 MHz'
       ),
       ('SPI3', PillVariant.ok, 'OK', 'Control AD7476 U4 · ADC_IN', '16 MHz'),
@@ -475,6 +557,11 @@ class _DiagViewState extends State<DiagView> {
   }
 
   /// `#cardBody` — rebuilt by `setStack()`
+  // PARTIAL: fitted/empty state and card presence for H1-H4 use the real
+  // (but operator-set, not detected - see s.stack) stack count. Everything
+  // else is fixed: Control/Matrix rows are always "Ready"/"Degraded", and
+  // every rail voltage (including the HV rows' "(4.98 + i*0.004)") is a
+  // fabricated formula, not a real reading.
   Widget _cards(BuildContext context, AppState s) {
     return HtPanel(
       header: const [PanelTitle('Cards'), FlexSpacer(), Lbl('by stage')],
@@ -612,6 +699,11 @@ class _DiagViewState extends State<DiagView> {
       child: PanelPad(Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          // MOCK: Card/HS relay/Set voltage below are local-only UI state
+          // (setState, no AppState/protocol call) - firmware refuses
+          // single-relay HV control by design (MANUAL RELAY -> ERR EHW), so
+          // these sliders exist to compose the "Discharge" action's context
+          // but never actually send a relay-close command themselves.
           _CtlRow(
             label: 'Card',
             control: Seg(
@@ -736,9 +828,14 @@ class _DiagViewState extends State<DiagView> {
           ),
           const SizedBox(height: 14),
           RowWrap([
-            // No protocol command exists for any of these three — see
-            // Doc/GUI_protocol_command_coverage.md §4 (self-cal, compliance
-            // sweep) and §5 (certificate needs a PDF-export dependency).
+            // No protocol command exists for any of these three yet.
+            // "Run self-cal" was blocked on hardware reachability - FW-02
+            // closed that gap, so it's buildable now (scope still open, see
+            // PROJECT_LOG.md GUI-06 and "CAL RUN, revisited" in
+            // Doc/GUI_protocol_proposed_commands.md). Compliance sweep is
+            // deliberately staying a bench tool, not becoming a command.
+            // Cal certificate needs a PDF-export dependency this project
+            // doesn't have. See Doc/GUI_protocol_command_coverage.md §4/§5.
             Btn('Run self-cal',
                 variant: BtnVariant.primary, disabled: true, onTap: null),
             Btn('Compliance sweep', disabled: true, onTap: null),
@@ -834,17 +931,16 @@ class _DiagViewState extends State<DiagView> {
     );
   }
 
+  // MOCK/STALE: static known-issues reference, not live diagnostic data. The
+  // header tag ("1 blocking · 2 pending" below) is a hardcoded literal, not
+  // computed from this list. HW-01 (ADS124S08 unreachable, 2-wire AD7476
+  // fallback) is gone from the list outright - FW-01/FW-02 wired the
+  // ADS124S08 in for real and RES RUN now measures 4-wire through it
+  // (U33/the AD7476 fallback path don't exist anymore either).
   Widget _limits(BuildContext context) {
     final c = context.colors;
     final t = context.type;
     const blockers = [
-      (
-        'HW-01',
-        'Kelvin path offline — resistance only.',
-        ' ADS124S08 control lines do not reach the card connector. Resistance '
-            'falls back to the 2-wire AD7476 path; milliohm resolution '
-            'unavailable. Continuity and HV are unaffected.'
-      ),
       (
         'HW-02',
         'Sense array cannot switch — resistance only.',
@@ -872,7 +968,7 @@ class _DiagViewState extends State<DiagView> {
       header: const [
         PanelTitle('Instrument limits'),
         FlexSpacer(),
-        Tag(TagVariant.warn, '2 blocking · 2 pending'),
+        Tag(TagVariant.warn, '1 blocking · 2 pending'),
       ],
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
