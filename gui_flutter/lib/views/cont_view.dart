@@ -102,18 +102,33 @@ class _ConnectionResults extends StatelessWidget {
         Lbl('every pin under test'),
       ],
       child: ConnectionResultsTable(
+        // Same field set as required_format's Results table (report.dart's
+        // ContReport.toCsv()/buildContReportPdf()) — Part Number is real
+        // (the netlist file's own Part Number/Part Number B column,
+        // ConnectorDef.partNumber) once GUI-11's connector mapping
+        // resolves the pin; Source/Destination stay blank, the wire
+        // protocol never carries that free-text metadata and it isn't
+        // parsed from the netlist file either (see ContReportRow).
         columns: const [
-          'Test #', 'Src Conn', 'Src Pin', 'Dst Conn', 'Dst Pin', 'Status', //
+          'Test #', 'Source', 'Part Number', 'Conn ID', 'Src Pin Label',
+          'Src Pin #', 'Dst Pin #', 'Dst Pin Label', 'Conn ID',
+          'Part Number', 'Destination', 'Status', //
         ],
         rows: [
           for (final r in s.contRowsLive)
             ConnectionResultRow(
               cells: [
                 '${r.testNum}',
+                '',
+                r.srcPartNumber,
                 r.srcConnId,
                 r.srcPinLabel,
-                r.dstConnId,
+                '${r.srcPin}',
+                '${r.dstPin}',
                 r.dstPinLabel,
+                r.dstConnId,
+                r.dstPartNumber,
+                '',
               ],
               bad: r.status != 'CONNECTED',
               statusLabel: r.status == 'CONNECTED' ? 'Connected' : 'Open',

@@ -489,6 +489,7 @@ class _FixtureGuessModalState extends State<FixtureGuessModal> {
       edited.add(ConnectorDef(
         id: c.id,
         label: label.isEmpty ? c.id : label,
+        partNumber: c.partNumber,
         type: _types[i],
         pins: c.pins,
         side: c.side,

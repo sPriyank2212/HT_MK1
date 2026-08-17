@@ -69,11 +69,24 @@ class GuessedConnector {
   final String shapeGuess;
   final String partNumber;
 
+  /// 'src' | 'dst' | null — which side of the netlist (`Conn ID` vs `Conn ID
+  /// B`) this id was observed under, so `AppState._fixtureFromGuess` can put
+  /// every Source connector on one half of the wiring diagram and every
+  /// Destination connector on the other, instead of an arbitrary sorted-list
+  /// split. Null when the id showed up under both columns across different
+  /// rows — the ordinary case for a symmetric male/female connector pair
+  /// that reuses one designator for both mating halves (e.g.
+  /// `example_netlist27072026.xlsx`'s `DB15-1` on both `Conn ID` and `Conn
+  /// ID B`) — there the two "sides" are the same physical connector, not two
+  /// different ones, so there is no real src/dst distinction to report.
+  final String? side;
+
   const GuessedConnector({
     required this.id,
     required this.pins,
     required this.shapeGuess,
     required this.partNumber,
+    this.side,
   });
 }
 
@@ -225,18 +238,24 @@ ParsedNetlist _parse(Uint8List bytes, String fileName) {
   final pairs = <ParsedNetPair>[];
   int? cards;
   final connObs = <String, _ConnObs>{};
-  void observe(int? col, int? partCol, List<Data?> row, int pin) {
+  void observe(int? col, int? partCol, List<Data?> row, int pin,
+      {required bool isSrc}) {
     if (col == null) return;
     final id = _cellText(at(row, col));
     if (id == null) return;
     final partNumber = partCol == null ? null : _cellText(at(row, partCol));
     final o = connObs[id];
     if (o == null) {
-      connObs[id] = _ConnObs(pin, pin, partNumber);
+      connObs[id] = _ConnObs(pin, pin, partNumber, isSrc: isSrc);
     } else {
       if (pin < o.minPin) o.minPin = pin;
       if (pin > o.maxPin) o.maxPin = pin;
       o.partNumber ??= partNumber;
+      if (isSrc) {
+        o.seenSrc = true;
+      } else {
+        o.seenDst = true;
+      }
     }
   }
 
@@ -257,8 +276,8 @@ ParsedNetlist _parse(Uint8List bytes, String fileName) {
       final n = _cellInt(at(row, cardCol));
       if (n != null) cards = cards == null ? n : math.max(cards, n);
     }
-    observe(connACol, partACol, row, hi);
-    observe(connBCol, partBCol, row, lo);
+    observe(connACol, partACol, row, hi, isSrc: true);
+    observe(connBCol, partBCol, row, lo, isSrc: false);
     pairs.add(ParsedNetPair(hi, lo, name));
   }
 
@@ -280,12 +299,19 @@ ParsedNetlist _parse(Uint8List bytes, String fileName) {
 
 /// Running (min pin, max pin, first-seen part number) for one `Conn ID`
 /// seen while scanning rows — [_guessFixture] turns this into a
-/// [GuessedConnector] once every row has been visited.
+/// [GuessedConnector] once every row has been visited. [seenSrc]/[seenDst]
+/// track whether this id ever showed up under `Conn ID` (source column) or
+/// `Conn ID B` (destination column) — both can end up true for one id (a
+/// symmetric connector pair reusing one designator on both mating halves).
 class _ConnObs {
   int minPin;
   int maxPin;
   String? partNumber;
-  _ConnObs(this.minPin, this.maxPin, this.partNumber);
+  bool seenSrc;
+  bool seenDst;
+  _ConnObs(this.minPin, this.maxPin, this.partNumber, {required bool isSrc})
+      : seenSrc = isSrc,
+        seenDst = !isSrc;
 }
 
 /// Turns per-connector pin observations into an ordered connector list.
@@ -314,6 +340,7 @@ List<GuessedConnector>? _guessFixture(Map<String, _ConnObs> connObs) {
       pins: pins,
       shapeGuess: _guessShape(o.partNumber),
       partNumber: o.partNumber ?? '',
+      side: o.seenSrc == o.seenDst ? null : (o.seenSrc ? 'src' : 'dst'),
     ));
   }
   return out;

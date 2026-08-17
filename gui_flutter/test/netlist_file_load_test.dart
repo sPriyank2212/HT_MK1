@@ -177,6 +177,90 @@ void main() {
       expect(s.fixtureBeforeGuess, isNull);
     });
 
+    test('GUI-18: distinct Conn ID / Conn ID B ids split L/R by side, not by '
+        'sorted order — Source connectors land left, Destination land right '
+        '(wiring-diagram legibility fix)', () async {
+      // Two Source connectors (A1/A2) and two Destination connectors
+      // (B1/B2), each pair straight-through, mirroring
+      // required_format/netlist_full_256x256.xlsx's convention (distinct
+      // ids per side, unlike example_netlist27072026.xlsx which reuses one
+      // id for both mating halves). Sorted by minPin the guess order is
+      // A1, B1, A2, B2 — a blind list-half split would put A1/B1 on the
+      // left and A2/B2 on the right, mixing Source and Destination
+      // connectors on both sides of the diagram instead of keeping every
+      // Source connector on the left and every Destination connector on
+      // the right.
+      final bytes = _workbook([
+        [
+          TextCellValue('Conn ID'), TextCellValue('HI'), TextCellValue('LO'),
+          TextCellValue('Conn ID B'),
+        ],
+        [TextCellValue('A1'), IntCellValue(1), IntCellValue(1), TextCellValue('B1')],
+        [TextCellValue('A1'), IntCellValue(2), IntCellValue(2), TextCellValue('B1')],
+        [TextCellValue('A2'), IntCellValue(3), IntCellValue(3), TextCellValue('B2')],
+        [TextCellValue('A2'), IntCellValue(4), IntCellValue(4), TextCellValue('B2')],
+      ]);
+      await boot(pickNetlistFile: () async => ('sided.xlsx', bytes));
+
+      await s.browseMtxNetlist();
+
+      final byId = {for (final c in kFix.connectors) c.id: c};
+      expect(byId['A1']!.side, 'L');
+      expect(byId['A2']!.side, 'L');
+      expect(byId['B1']!.side, 'R');
+      expect(byId['B2']!.side, 'R');
+    });
+
+    test('GUI-23: a straight-through net resolves src and dst to DIFFERENT '
+        'connectors, not the same one on both ends', () async {
+      // The real bug report: with distinct Source/Destination ids and
+      // straight-through wiring (Src Pin # == Dst Pin #, the ordinary case
+      // per GUI-08), every net in netlist_full_256x256.xlsx showed
+      // "MTX-A1 pin 5" on *both* ends instead of "MTX-A1 pin 5" ->
+      // "MTX-B1 pin 5" - rebuildNets's pinNode searched the same flat
+      // connector list for both hi and lo, and HI/LO are independently
+      // 1..256, so equal pin numbers always landed in the same block.
+      // Two 3-pin connectors per side, crossing a block boundary (pin 4 is
+      // the first pin of the *second* connector on each side) to prove the
+      // fix holds past the first connector too, not just by coincidence at
+      // low pin numbers.
+      final bytes = _workbook([
+        [
+          TextCellValue('Conn ID'), TextCellValue('HI'), TextCellValue('LO'),
+          TextCellValue('Conn ID B'),
+        ],
+        [TextCellValue('A1'), IntCellValue(1), IntCellValue(1), TextCellValue('B1')],
+        [TextCellValue('A1'), IntCellValue(2), IntCellValue(2), TextCellValue('B1')],
+        [TextCellValue('A1'), IntCellValue(3), IntCellValue(3), TextCellValue('B1')],
+        [TextCellValue('A2'), IntCellValue(4), IntCellValue(4), TextCellValue('B2')],
+        [TextCellValue('A2'), IntCellValue(5), IntCellValue(5), TextCellValue('B2')],
+      ]);
+      await boot(pickNetlistFile: () async => ('sided2.xlsx', bytes));
+
+      await s.browseMtxNetlist();
+
+      expect(s.nets.length, 5);
+      for (final n in s.nets) {
+        expect(n.src.c, isNot(n.dsts[0].c),
+            reason: 'net ${n.name}: src and dst must be different '
+                'connectors (Source vs Destination), not the same one');
+      }
+      // Pin 1-3 -> A1/B1, offset 1-3 within each; pin 4-5 -> A2/B2, offset
+      // 1-2 within each (base restarts per connector, not a running total).
+      expect(s.nets[0].src.c, 'A1');
+      expect(s.nets[0].src.p, 1);
+      expect(s.nets[0].dsts[0].c, 'B1');
+      expect(s.nets[0].dsts[0].p, 1);
+      expect(s.nets[3].src.c, 'A2');
+      expect(s.nets[3].src.p, 1);
+      expect(s.nets[3].dsts[0].c, 'B2');
+      expect(s.nets[3].dsts[0].p, 1);
+      expect(s.nets[4].src.c, 'A2');
+      expect(s.nets[4].src.p, 2);
+      expect(s.nets[4].dsts[0].c, 'B2');
+      expect(s.nets[4].dsts[0].p, 2);
+    });
+
     test('GUI-11: confirming the guess with edits applies the edited '
         'connectors, not the raw guess', () async {
       final bytes = _workbook([

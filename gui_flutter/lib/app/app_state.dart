@@ -778,31 +778,91 @@ class AppState extends ChangeNotifier {
   /// connector, not just the ones a guess happened to observe.
   FixtureDef _fixtureFromGuess(
       List<GuessedConnector> guess, List<ParsedNetPair> pairs) {
-    final maxPin =
-        pairs.fold<int>(0, (m, p) => math.max(m, math.max(p.hi, p.lo)));
+    final maxHi = pairs.fold<int>(0, (m, p) => math.max(m, p.hi));
+    final maxLo = pairs.fold<int>(0, (m, p) => math.max(m, p.lo));
     final connectors = <ConnectorDef>[];
-    var base = 0;
-    // List-half, not alternating - see buildFixture()'s note in
-    // design/model.dart on why alternating can badly unbalance the two
-    // sides' pin totals.
+    // Prefer the netlist's own Conn ID (source) / Conn ID B (destination)
+    // distinction when every connector has one — puts every Source
+    // connector on the wiring diagram's left column and every Destination
+    // connector on the right (`GuessedConnector.side`, netlist_file.dart),
+    // so a straight-through net's wire is a short, roughly horizontal line
+    // between matching rows instead of crossing wherever a plain minPin
+    // sort happened to place things. Falls back to the old list-half split
+    // — not alternating, see buildFixture()'s note in design/model.dart on
+    // why alternating can badly unbalance the two sides' pin totals — when
+    // any connector's side is ambiguous: e.g.
+    // example_netlist27072026.xlsx reuses one id for both mating halves of
+    // a symmetric connector pair, so there is no real src/dst distinction
+    // to key off for that file.
+    final allSided = guess.every((g) => g.side != null);
     final leftCount = (guess.length / 2).ceil();
+
+    // GUI-23: when allSided, `base` must be two SEPARATE running offsets —
+    // one for Source/'L' connectors, one for Destination/'R' — not one
+    // shared sequence. HI and LO are the real instrument's two
+    // independently-addressed 1..256 spaces (matrix_card.h), so a
+    // straight-through net's `hi`/`lo` (equal pin numbers, the ordinary
+    // case — see GUI-08) must resolve against each side's *own* pin-count
+    // sequence, or the same numeric pin always lands on whichever
+    // connector happens to own that sub-range in a single combined 0..512
+    // list — which for `netlist_full_256x256.xlsx`'s MTX-A1/A2 (Source,
+    // 128 pins each) and MTX-B1/B2 (Destination, 128 pins each) meant every
+    // net's *source and destination pin both resolved to the same
+    // Source-side connector* (`AppState.rebuildNets`'s `pinNode` searches
+    // the same list for both), not Source on one connector and Destination
+    // on the other. `base` restarts at 0 for the Destination side too when
+    // ambiguous is false; stays one shared sequence (unchanged behaviour)
+    // when it's true, matching the single real address space a symmetric
+    // connector pair actually has.
+    int lastLIndex = -1, lastRIndex = -1;
+    if (allSided) {
+      for (var i = 0; i < guess.length; i++) {
+        if (guess[i].side == 'src') {
+          lastLIndex = i;
+        } else {
+          lastRIndex = i;
+        }
+      }
+    }
+    var baseL = 0, baseR = 0, base = 0;
     for (var i = 0; i < guess.length; i++) {
       final g = guess[i];
-      final isLast = i == guess.length - 1;
-      final pins = isLast ? math.max(g.pins, maxPin - base) : g.pins;
+      final side = allSided
+          ? (g.side == 'src' ? 'L' : 'R')
+          : (i < leftCount ? 'L' : 'R');
+      final connBase = allSided ? (side == 'L' ? baseL : baseR) : base;
+      final int pins;
+      if (allSided) {
+        final isLastOnSide = side == 'L' ? i == lastLIndex : i == lastRIndex;
+        final sideMax = side == 'L' ? maxHi : maxLo;
+        pins = isLastOnSide ? math.max(g.pins, sideMax - connBase) : g.pins;
+      } else {
+        final isLast = i == guess.length - 1;
+        final maxPin = math.max(maxHi, maxLo);
+        pins = isLast ? math.max(g.pins, maxPin - connBase) : g.pins;
+      }
       connectors.add(ConnectorDef(
         id: g.id,
         label: g.partNumber.isEmpty ? g.id : g.partNumber,
+        partNumber: g.partNumber,
         type: switch (g.shapeGuess) {
           'dsub' => ConnType.dsub,
           'circ' => ConnType.circ,
           _ => ConnType.rect,
         },
         pins: pins,
-        side: i < leftCount ? 'L' : 'R',
-        base: base,
+        side: side,
+        base: connBase,
       ));
-      base += pins;
+      if (allSided) {
+        if (side == 'L') {
+          baseL += pins;
+        } else {
+          baseR += pins;
+        }
+      } else {
+        base += pins;
+      }
     }
     return FixtureDef(
         name: 'guessed from netlist', rev: '—', connectors: connectors);
@@ -1336,8 +1396,13 @@ class AppState extends ChangeNotifier {
   // LIVE LAYER — the three runs, driven by the instrument
   // -------------------------------------------------------------------------
 
+  /// Wall-clock start of the run in progress — `_onDone` turns this into
+  /// `ReportMeta.testDuration`, the PDF report's "Test Duration" row.
+  DateTime? _runStart;
+
   /// `function beginRun(kind, domSel, label, sub)`
   void _beginRun(String kind, String domSel, String label, String sub) {
+    _runStart = DateTime.now();
     running = kind;
     runKind = kind;
     doneCount = 0;
@@ -1528,8 +1593,11 @@ class AppState extends ChangeNotifier {
         status: pass ? 'CONNECTED' : 'NOT CONNECTED',
         srcConnId: n?.src.c ?? '—',
         srcPinLabel: n == null ? null : 'Pin ${n.src.p}',
+        srcPartNumber: n == null ? '' : (kConn[n.src.c]?.partNumber ?? ''),
         dstConnId: n?.dsts[0].c ?? '—',
         dstPinLabel: n == null ? null : 'Pin ${n.dsts[0].p}',
+        dstPartNumber:
+            n == null ? '' : (kConn[n.dsts[0].c]?.partNumber ?? ''),
       ));
     }
     notifyListeners();
@@ -1553,8 +1621,10 @@ class AppState extends ChangeNotifier {
       status: m.status.wire.toUpperCase(),
       srcConnId: n?.src.c ?? '—',
       srcPinLabel: n == null ? null : 'Pin ${n.src.p}',
+      srcPartNumber: n == null ? '' : (kConn[n.src.c]?.partNumber ?? ''),
       dstConnId: n?.dsts[0].c ?? '—',
       dstPinLabel: n == null ? null : 'Pin ${n.dsts[0].p}',
+      dstPartNumber: n == null ? '' : (kConn[n.dsts[0].c]?.partNumber ?? ''),
     ));
     notifyListeners();
   }
@@ -1630,12 +1700,14 @@ class AppState extends ChangeNotifier {
       return;
     }
     final pass = m.failed == 0;
+    final start = _runStart;
     final reportMeta = ReportMeta(
       dutId: dutId,
       operatorName: operatorName,
       netlistName: nlMtx.loaded ? nlMtx.name : null,
       pass: pass,
       when: DateTime.now(),
+      testDuration: start == null ? null : DateTime.now().difference(start),
     );
     switch (kind) {
       case 'cont':
@@ -1937,31 +2009,94 @@ class AppState extends ChangeNotifier {
     // placeholder, or a netlist-derived guess, see _fixtureFromGuess and
     // browseMtxNetlist()) might not cover every pin THIS netlist references
     // - e.g. a real NETLIST GET from the instrument can differ from
-    // whatever file was last used to guess a layout. Extend it with a
-    // synthetic trailing connector rather than let a pin resolve to nothing
-    // - every PinRef this method creates must have a real entry in kConn,
-    // since painters.dart/cont_view.dart look it up unconditionally.
-    final maxPin =
-        pairs.fold<int>(0, (m, p) => math.max(m, math.max(p.hi, p.lo)));
-    if (maxPin > kFixPins) {
-      final extended = List<ConnectorDef>.from(kFix.connectors)
-        ..add(ConnectorDef(
-          id: '?',
+    // whatever file was last used to guess a layout. Extend it rather than
+    // let a pin resolve to nothing - every PinRef this method creates must
+    // have a real entry in kConn, since painters.dart/cont_view.dart look
+    // it up unconditionally.
+    //
+    // GUI-23: HI and LO are the instrument's two independently-addressed
+    // 1..256 spaces (matrix_card.h), not one shared flat range - pinNode
+    // below searches Source ('L') connectors first for `hi` and
+    // Destination ('R') first for `lo`, falling back to any connector, so
+    // "does this pin already resolve" has to run that exact same
+    // side-then-fallback search (`coversPin`) rather than compare against
+    // a precomputed per-side boundary - a fixture can be in either of two
+    // base schemes (_fixtureFromGuess): L and R each restarting their own
+    // base at 0 (a real Source/Destination distinction) or one shared
+    // sequence where R continues right after L ends (the demo fixture, or
+    // a guess with no real src/dst distinction to key off, e.g. a
+    // symmetric connector pair reusing one id for both mating halves) -
+    // and only running the real search, not a numeric shortcut, gets both
+    // right without needing to know which scheme is active.
+    final maxHi = pairs.fold<int>(0, (m, p) => math.max(m, p.hi));
+    final maxLo = pairs.fold<int>(0, (m, p) => math.max(m, p.lo));
+    bool coversPin(int pin, String preferSide) {
+      for (final c in kFix.connectors) {
+        if (c.side == preferSide && pin > c.base && pin <= c.base + c.pins) {
+          return true;
+        }
+      }
+      return kFix.connectors
+          .any((c) => pin > c.base && pin <= c.base + c.pins);
+    }
+
+    final needL = !coversPin(maxHi, 'L');
+    final needR = !coversPin(maxLo, 'R');
+    if (needL || needR) {
+      // Neither the preferred side nor the fallback covers it, so the pin
+      // is past every connector currently in the fixture - safe to plant
+      // the extension right after the highest base+pins seen anywhere,
+      // regardless of which scheme produced it.
+      final reach = kFix.connectors.isEmpty
+          ? 0
+          : kFix.connectors.map((c) => c.base + c.pins).reduce(math.max);
+      final extended = List<ConnectorDef>.from(kFix.connectors);
+      if (needL) {
+        extended.add(ConnectorDef(
+          id: '?L',
           label: 'Unassigned',
           type: ConnType.rect,
-          pins: maxPin - kFixPins,
-          side: kFix.connectors.length.isEven ? 'L' : 'R',
-          base: kFixPins,
+          pins: maxHi - reach,
+          side: 'L',
+          base: reach,
         ));
+      }
+      if (needR) {
+        extended.add(ConnectorDef(
+          id: '?R',
+          label: 'Unassigned',
+          type: ConnType.rect,
+          pins: maxLo - reach,
+          side: 'R',
+          base: reach,
+        ));
+      }
       setActiveFixture(
           FixtureDef(name: kFix.name, rev: kFix.rev, connectors: extended));
     }
 
     // Real per-connector lookup against the (now guaranteed-covering)
-    // active fixture (GUI-11) - used to modulo-wrap every pin onto a
-    // same-side pool regardless of which connector it actually belonged
-    // to, fabricating the mapping for any real (uploaded/read) netlist.
-    PinRef pinNode(int pin) {
+    // active fixture (GUI-11). `isSrc` restricts the search to the
+    // matching side first (Source connectors for `hi`, Destination for
+    // `lo`) - side is real provenance for a guessed fixture with distinct
+    // Conn ID/Conn ID B ids (GUI-19's `GuessedConnector.side`), a cosmetic
+    // list-half split otherwise - falling back to the unrestricted search
+    // in that case keeps today's existing (best-effort, unchanged)
+    // behaviour rather than guessing at a distinction that isn't really
+    // there. Before GUI-23, this searched the *same* full list for both
+    // `hi` and `lo` regardless of side, so a straight-through net (equal
+    // pin numbers, the ordinary case per GUI-08) always resolved src and
+    // dst to the same connector whenever that number fell inside one
+    // connector's range - e.g. every net in `netlist_full_256x256.xlsx`
+    // showing "MTX-A1 pin 5" on *both* ends instead of "MTX-A1 pin 5" ->
+    // "MTX-B1 pin 5".
+    PinRef pinNode(int pin, {required bool isSrc}) {
+      final side = isSrc ? 'L' : 'R';
+      for (final c in kFix.connectors) {
+        if (c.side == side && pin > c.base && pin <= c.base + c.pins) {
+          return PinRef(c.id, pin - c.base);
+        }
+      }
       for (final c in kFix.connectors) {
         if (pin > c.base && pin <= c.base + c.pins) {
           return PinRef(c.id, pin - c.base);
@@ -1975,8 +2110,8 @@ class AppState extends ChangeNotifier {
       final pr = pairs[i];
       nets.add(Net(
         name: 'NET_${pad(i + 1, 3)}',
-        src: pinNode(pr.hi),
-        dsts: [pinNode(pr.lo)],
+        src: pinNode(pr.hi, isSrc: true),
+        dsts: [pinNode(pr.lo, isSrc: false)],
         joint: null,
         hs: pr.hi - 1,
         ls: pr.lo - 1,

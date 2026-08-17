@@ -27,6 +27,22 @@ Future<void> waitUntil(bool Function() cond,
 }
 
 void main() {
+  group('ReportMeta.stampDuration', () {
+    test('sub-second durations print as milliseconds', () {
+      expect(ReportMeta.stampDuration(const Duration(milliseconds: 248)),
+          '248 ms');
+    });
+
+    test('one second and above prints as seconds, one decimal', () {
+      expect(ReportMeta.stampDuration(const Duration(milliseconds: 6400)),
+          '6.4 s');
+      expect(ReportMeta.stampDuration(const Duration(milliseconds: 64200)),
+          '64.2 s');
+      expect(
+          ReportMeta.stampDuration(const Duration(seconds: 1)), '1.0 s');
+    });
+  });
+
   group('ContReport.toCsv', () {
     test('matches the required_format column shape', () {
       final meta = ReportMeta(
@@ -231,6 +247,11 @@ void main() {
       // fixture (which spans the full 1..256 range) - not the '—' fallback.
       expect(r.rows.every((row) => row.srcConnId != '—'), isTrue);
       expect(r.rows.every((row) => row.dstConnId != '—'), isTrue);
+      // Real wall-clock elapsed time (_beginRun to _onDone), not the
+      // fabricated "Test Duration" the required_format PDF samples had no
+      // real backing for before this.
+      expect(r.meta.testDuration, isNotNull);
+      expect(r.meta.testDuration!.inMicroseconds, greaterThanOrEqualTo(0));
     });
 
     test('resistance: lastResReport carries real milliohm readings',

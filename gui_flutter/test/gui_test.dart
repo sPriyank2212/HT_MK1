@@ -114,6 +114,46 @@ void main() {
       // Left connectors sit left of right connectors.
       expect(kConnsL.first.x, lessThan(kConnsR.first.x));
     });
+
+    test('GUI-18: pins lay out as a single vertical column, and a '
+        'high-pin-count connector grows the canvas taller rather than '
+        'overlapping its neighbour — the wiring-diagram legibility fix', () {
+      // Two 128-pin connectors per side, same shape
+      // required_format/netlist_full_256x256.xlsx produces — the case that
+      // used to render as a ~860px-wide two-row D-sub shell, wide enough to
+      // overlap the next connector stacked below it.
+      setActiveFixture(buildFixture(
+        name: 'big',
+        rev: '1',
+        defs: [
+          (id: 'A1', label: 'A1', type: ConnType.circ, pins: 128),
+          (id: 'A2', label: 'A2', type: ConnType.circ, pins: 128),
+          (id: 'B1', label: 'B1', type: ConnType.circ, pins: 128),
+          (id: 'B2', label: 'B2', type: ConnType.circ, pins: 128),
+        ],
+      ));
+
+      for (final c in kFix.connectors) {
+        // Every pin in one connector shares an x (a column), one row per
+        // pin at kPitch spacing — not the old per-shape footprint.
+        final xs = c.pts.map((p) => p.x).toSet();
+        expect(xs.length, 1, reason: '${c.id} pins should share one x');
+        for (var i = 1; i < c.pts.length; i++) {
+          expect(c.pts[i].y - c.pts[i - 1].y, closeTo(kPitch, 0.01));
+        }
+        // Narrow — nowhere near wide enough to reach the opposite column.
+        expect(c.w, lessThan(150));
+      }
+
+      // Two 128-pin connectors stacked in one column don't overlap: the
+      // second's y is at or past the first's bottom edge.
+      final left = kConnsL..sort((a, b) => a.y.compareTo(b.y));
+      expect(left[1].y, greaterThanOrEqualTo(left[0].y + left[0].h));
+
+      // The canvas grew to fit instead of squeezing everything into the
+      // original fixed 440px.
+      expect(kCanvasH, greaterThan(440));
+    });
   });
 
   // =========================================================================

@@ -264,20 +264,35 @@ class _ResConnectionResults extends StatelessWidget {
         Lbl('every pin under test'),
       ],
       child: ConnectionResultsTable(
+        // Same field set as required_format's Results table (report.dart's
+        // ResReport.toCsv()/buildResReportPdf()) — Part Number is real
+        // (ConnectorDef.partNumber, from the netlist's own Part Number/
+        // Part Number B column), same as continuity's table; Source/
+        // Destination stay blank, the wire protocol never carries that
+        // free-text metadata.
         columns: const [
-          'Test #', 'Src Conn', 'Src Pin', 'Dst Conn', 'Dst Pin',
-          'R (mΩ)', 'Status', //
+          'Test #', 'Source', 'Part Number', 'Conn ID', 'Src Pin Label',
+          'Src Pin #', 'R (mOhm)', 'Limit (mOhm)', 'Dst Pin #',
+          'Dst Pin Label', 'Conn ID', 'Part Number', 'Destination',
+          'Status', //
         ],
         rows: [
           for (final r in s.resRowsLive)
             ConnectionResultRow(
               cells: [
                 '${r.testNum}',
+                '',
+                r.srcPartNumber,
                 r.srcConnId,
                 r.srcPinLabel,
-                r.dstConnId,
-                r.dstPinLabel,
+                '${r.srcPin}',
                 r.resistanceMohm.toStringAsFixed(1),
+                s.limits != null ? '${s.limits!.rMaxMohm}' : '—',
+                '${r.dstPin}',
+                r.dstPinLabel,
+                r.dstConnId,
+                r.dstPartNumber,
+                '',
               ],
               bad: r.status != 'PASS',
               statusLabel: switch (r.status) {
@@ -761,8 +776,11 @@ class _InsulConnectionResults extends StatelessWidget {
         Lbl('every net under test'),
       ],
       child: ConnectionResultsTable(
+        // Same field set as required_format's Results table (report.dart's
+        // InsulReport.toCsv()/buildInsulReportPdf()).
         columns: const [
-          'Test #', 'Net', 'HV Card', 'HS Pin', 'Insulation (MΩ)', //
+          'Test #', 'Net', 'HV Card', 'HS Pin', 'Leak V',
+          'Insulation (MΩ)', 'Limit (MΩ)', 'Status', //
         ],
         rows: [
           for (final r in s.insulRowsLive)
@@ -772,7 +790,11 @@ class _InsulConnectionResults extends StatelessWidget {
                 r.net,
                 r.hvCard,
                 r.hsPin,
+                r.leakV.toStringAsFixed(3),
                 r.insulationMohm.toStringAsFixed(1),
+                s.limits != null
+                    ? (s.limits!.insMinMohm / 1.0e9).toStringAsFixed(1)
+                    : '—',
               ],
               bad: r.status != 'PASS',
               statusLabel: r.status == 'PASS' ? 'Pass' : 'Fail',

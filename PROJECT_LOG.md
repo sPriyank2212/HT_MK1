@@ -13,17 +13,216 @@ ID prefixes: `HW-` schematic/hardware · `FW-` firmware · `BU-` bring-up/verify
 
 ---
 
-## Status snapshot — 2026-08-17 (GUI-16: demo/simulator now heartbeats — idle demo connections no longer die at ~5 s)
+## Status snapshot — 2026-08-17 (GUI-23: continuity's src/dst connector resolution was a real bug — every straight-through net showed the same connector on both ends; Part Number is real now too)
 
 | Category | Count |
 |---|---|
 | Blocking — firmware cannot proceed | **0** |
 | Agreed, awaiting schematic edit | 3 |
-| Awaiting a decision | 2 |
+| Awaiting a decision | 3 |
 | Firmware work queued | 1 |
 | Awaiting the GUI side | 1 |
 | Verify at bring-up | 9 |
-| Closed to date | 50 |
+| Closed to date | 57 |
+
+**GUI-23 (CL-57): two real bugs found from one user report — src/dst pin resolution, and a Part**
+**Number column that had data available but was never wired up.** User reported the continuity
+wiring diagram/results looked wrong: "Connector A pin 1 and pin 2 are connected" when it should
+read "Connector A pin 1 -- Connector B pin 1." Traced to `AppState.rebuildNets`'s `pinNode` —
+it searched the *same* flat connector list for both `hi` and `lo`. HI and LO are the
+instrument's two independently-addressed 1..256 spaces (matrix_card.h) — not a shared range — so
+a straight-through net (`Src Pin # == Dst Pin #`, the ordinary case per GUI-08) always resolved
+src and dst to whichever connector happened to own that numeric sub-range, regardless of which
+side (`Conn ID` vs `Conn ID B`) it actually came from. Every net in `netlist_full_256x256.xlsx`
+showed "MTX-A1 pin 5" on *both* ends instead of "MTX-A1 pin 5" -> "MTX-B1 pin 5" — confirmed with
+a diagnostic probe against the real file before touching any code. This had been broken since
+GUI-11 shipped (2026-08-14); it slipped through because the only existing coverage checked
+`srcConnId != dstConnId` never got asserted, just `!= '—'` (not blank), and the demo's own seeded
+harness (`buildNets()`) bypasses `pinNode` entirely so it never exercised the bug. Fixed two
+things together: **(1)** `_fixtureFromGuess` now computes `base` as two *separate* running
+offsets (Source and Destination each restart at 0) whenever a guess has real per-connector
+side provenance (`GuessedConnector.side`, GUI-19), instead of one combined sequence across all
+four — falls back to the old combined sequence when side is ambiguous (a symmetric connector
+pair reusing one id for both mating halves, e.g. `example_netlist27072026.xlsx`, unchanged).
+**(2)** `pinNode` now takes `isSrc` and searches Source-side connectors first for `hi`,
+Destination-side first for `lo`, falling back to the unrestricted search only when the
+side-specific one comes up empty — which also required rewriting `rebuildNets`'s "extend the
+fixture to cover an unmatched pin" fallback to run that *same* side-then-fallback search
+(`coversPin`) rather than compare against a precomputed numeric boundary, since a fixture can be
+in either base scheme and only the real search gets both right. Second bug, found investigating
+the first: the report/GUI's "Part Number" column was hardcoded blank in `report.dart`/
+`report_pdf.dart`/the GUI's `ConnectionResultsTable` even though the netlist file's own `Part
+Number`/`Part Number B` columns were already parsed (`GuessedConnector.partNumber`) — the value
+just dead-ended at `_fixtureFromGuess`, folded into `ConnectorDef.label` (a display name, not a
+part number — the demo fixture's own labels are things like "Engine bay") instead of kept
+separate. Added a real `ConnectorDef.partNumber` field (default `''`, so `buildFixture`'s demo
+defs and other call sites are unaffected), threaded through `_fixtureFromGuess`,
+`FixtureGuessModal`'s confirm step (so editing shape/label doesn't wipe it), `_onCont`/`_onRes`
+(`ContReportRow`/`ResReportRow` gained `srcPartNumber`/`dstPartNumber`), and every place that
+previously hardcoded `''` for that column — CSV, PDF, and the GUI's "Connection results" tables.
+`Source`/`Destination` (the free-text labels, distinct from Part Number) stay blank still — genuinely
+not parsed from the file anywhere, unlike Part Number, so left alone rather than half-fixed.
+Verified end to end against a real `SimulatorServer` and a real uploaded netlist, not just by
+reading the code: new `test/pin_resolution_test.dart` (src/dst resolve to different connectors,
+real part numbers flow through to the CSV, blank stays blank when the netlist has none — not
+fabricated), plus a new `netlist_file_load_test.dart` case pinning the fix at the parser/guess
+layer directly. `flutter analyze`: 0 issues. `flutter test`: 228/228.
+
+**GUI-22 (CL-56): untested ("idle") wires in the wiring diagram were nearly invisible — a real
+contrast bug exposed by the taller vertical diagram, not a rendering failure.** User loaded a
+netlist, saw pin dots and connector shells clearly, but no lines between them at all.
+`painters.dart`'s `_paintWires` drew idle (not-yet-tested) nets in `c.gridEmpty` at .55 alpha —
+`gridEmpty` (`0xFF1B282D` dark theme) is meant for *empty grid cells*, barely different from the
+canvas background `c.sunk` (`0xFF0E171A`); at reduced alpha over a thin 1.5px stroke it's
+essentially invisible. On the old compact 8-connector canvas the wires were short diagonal
+curves, faint enough not to matter; GUI-19's vertical ladder can run an idle wire most of the
+canvas's 1060px width, at which point "barely visible" became "not visible" — confirmed by
+rendering the exact idle state to a PNG and inspecting it pixel by pixel, not just reading the
+code. Meanwhile the pin *dots* for the same untested nets were already drawing in `c.ink3` (a
+much lighter grey, `0xFF6E878F`), so the inconsistency was really "dots visible, wires using a
+different, much darker colour for the same 'present but untested' meaning." Fixed: idle wires
+now use `c.ink3` (matching the dots) and a slightly higher alpha (.55 → .7). Verified by
+re-rendering the same idle state — wires clearly visible now, still visually subdued relative to
+pass (green)/fail (red)/hovered (accent), which is the intended hierarchy. `flutter analyze`: 0
+issues. `flutter test`: 225/225 (no behavioural change to test — this is a colour choice, not
+logic — verified visually via the PNG render instead).
+
+**GUI-21 (CL-55): reverses GUI-20's "real hardware only" call — the demo simulator now honours
+whatever netlist gets uploaded, not just its own baked-in pairing.** User pushed back: the file
+should "strictly pass" in the demo, not be carved out as real-hardware-only. Root cause (from
+GUI-20's trace) was `htproto/simulator.dart`'s `_runCont`/`_runRes` comparing an uploaded `(hi,
+lo)` pair against the scenario's fixed `_goodNets()` pairing (`1↔2, 3↔4, 5↔6, …`) *by literal
+value* — any netlist using a different, equally-valid pairing (real hardware's straight-through
+`Src Pin # == Dst Pin #`) could never match. Fixed at the actual root instead of working around
+it with a second file: new `InstrumentSim._effectiveNets(netlist)` reuses the scenario's
+scripted pass/fail/open/short pattern *positionally* — row `i` of whatever was uploaded gets row
+`i`'s scripted outcome, with rows past the scenario's own length defaulting to pass — instead of
+matching by literal pin value. Falls back to the scenario's fixed nets unchanged when nothing's
+been uploaded, so demo-without-a-netlist behaviour is untouched. Applied to both `_runCont`'s
+verify path and `_runRes` (resistance shares the MTX netlist with continuity on real hardware);
+left `_runInsul` alone — there is no wire-protocol netlist upload for HV at all (`NETLIST` is
+MTX-only), so it has nothing to defer to. **Side effect, verified separately**: this also
+resolves the older "`--nets` must match the loaded file's net count or CONT RUN FAILs"
+constraint (`test_netlists/README.md`) for verify-mode runs generally, not just this one file —
+a 20-row netlist now passes fully against a simulator booted with the 12-net default, confirmed
+with a throwaway probe test before writing the permanent one. New
+`test/simulator_pairing_test.dart`: a straight-through netlist passes end to end against a real
+`SimulatorServer`, `opens_shorts` still injects faults positionally rather than by literal pin
+match, and a bigger-than-`--nets` netlist passes fully. `required_format/README.md` and
+`test_netlists/README.md` corrected — the "real hardware only" language GUI-20 added is now
+"passes against `--sim` too," and `test_netlists/README.md`'s `--nets`-matching instructions
+rewritten to describe the new (much simpler) reality. `flutter analyze`: 0 issues. `flutter
+test`: 224/224.
+
+**GUI-20 (CL-54): `netlist_full_256x256.xlsx` (GUI-18) shows 0 pass against the customer demo — traced,
+confirmed expected, not a bug.** User reported `CONT RUN verify` reading 0 pass with this file
+loaded in the customer demo build. `htproto/simulator.dart`'s fake harness is a fixed internal
+model set at launch (`_goodNets()`: pin 1↔2, 3↔4, 5↔6, …), completely independent of whatever
+netlist actually gets uploaded afterward — `_runCont`'s verify path looks up each uploaded
+`(hi, lo)` pair against that fixed model and reports NOT CONNECTED for anything not in it.
+`test_netlists/`'s three `AV-880_MTX_*.xlsx` files work in the demo only because they were
+*generated* to already match that 1-2/3-4 pattern (`test_netlists/README.md` says so directly);
+`--nets` only ever needed to match their net *count*. `netlist_full_256x256.xlsx` uses the real
+instrument's straight-through addressing instead (`Src Pin # == Dst Pin #` — HI and LO are
+separate independently-addressed banks, `matrix_card.h`), which never matches the simulator's
+fixed 1↔2/3↔4 model at any `--nets` value — 0 pass is the simulator working as designed, not a
+netlist or parser defect. Asked the user how to proceed (real-hardware-only vs. a demo-safe
+variant vs. teaching the simulator to accept any uploaded pairing); **decided: real hardware
+only** — no code change. `required_format/README.md` and `test_netlists/README.md` both updated
+with an explicit "does not pass against `--sim` at any `--nets` value, use `--serial`" note so
+this doesn't get re-discovered as a bug.
+
+**GUI-19 (CL-53): the wiring diagram redrawn as a vertical pin ladder, and a real bug in how
+Source/Destination connectors get assigned to each side.** User loaded GUI-18's
+`netlist_full_256x256.xlsx`, screenshotted the result, and called it out directly: the diagram
+was unreadable, connector shells overlapping each other. Root cause was `design/model.dart`'s
+per-shape connector footprint (`connSize`/`layoutConn`) — a D-sub's pins are laid out as two
+staggered rows, which scales *width* with pin count; at 128 pins that's ~860px, nearly the whole
+1060px canvas, so two such shells stacked in the same column visually collided. Fixed by
+replacing the three per-type footprints (D-sub two-row, circular concentric rings, rect grid)
+with one layout for every connector: a single vertical column, pin 1 at the top, one row per pin
+— scales to any pin count by getting taller, never wider. `kCanvasH` (`design/model.dart`) is no
+longer a fixed `440` const; `layoutFixture()` now grows it to fit whatever the current fixture
+actually needs (floor of 440, so the original 8-connector demo fixture's canvas is unchanged).
+`painters.dart`'s `_paintConnectors` drops the D-sub/circular-specific shell geometry for one
+plain rounded-rect shell, and now draws a pin-number label in the space freed up next to each
+dot. **Found a second, independent bug tracing why the layout looked wrong even before the
+overlap**: `AppState._fixtureFromGuess` split connectors left/right by blind list-half of a
+minPin-sorted list, with no concept of which side of the netlist (`Conn ID` vs `Conn ID B`) a
+connector actually came from — fine for `example_netlist27072026.xlsx` (which reuses one id for
+both mating halves of a symmetric pair), but for GUI-18's file (distinct ids per side, e.g.
+`MTX-A1`/`MTX-B1`), the sorted order interleaves Source and Destination ids, so the "left/right"
+split scattered one harness end's connectors across both visual halves instead of keeping
+Source on the left and Destination on the right. Fixed: `GuessedConnector` (`netlist_file.dart`)
+now records `side` ('src'/'dst'/null — null when an id genuinely appears on both columns, the
+symmetric-pair case), and `_fixtureFromGuess` uses it to split left/right whenever every
+connector in the guess has one, falling back to the old list-half heuristic otherwise (keeps
+`example_netlist27072026.xlsx`'s existing behaviour exactly). Verified by rendering the actual
+`netlist_full_256x256.xlsx` fixture through the real `DiagramPainter` to a PNG (not just
+inferred from code): Side-A's two 128-pin blocks and Side-B's two 128-pin blocks land at
+identical y-coordinates, straight-through nets draw as short horizontal lines row-for-row, zero
+overlap. New tests: `netlist_file_test.dart` (`GuessedConnector.side` src/dst/null),
+`netlist_file_load_test.dart` (end-to-end: a distinct-id file splits L/R by side, not sort
+order), `gui_test.dart` (vertical single-column pin geometry, no overlap between two stacked
+128-pin connectors, canvas grows past the 440px floor). `flutter analyze`: 0 issues. `flutter
+test`: 222/222.
+
+**GUI-18 (CL-52): a full-scale netlist covering every one of the instrument's 256 HI/256 LO
+pins, plus a draft physical connector layout for the fixture body.** User asked for "one proper
+netlist and also the fixture file," then clarified: 256 pins on each side (512 total —
+`matrix_card.h`'s `hi_en[]`/`hi_sns[]` vs `lo_en[]`/`lo_sns[]`, each independently addressed
+1..256), and asked how those land on real physical connectors mounted on the tester body,
+floating a few options (two DB37s, a single high-pin-count Amphenol, or two 128-pin connectors
+per side). Checked `fw_status.txt`/`Doc/` first — `J-MTX`/`J-HV` are named throughout but no
+physical fixture connector part number is decided anywhere in this repo, so there was no real
+answer to defer to; this is a draft proposal, not a recorded hardware fact, and every part
+number in the new files is marked accordingly. New `required_format/netlist_full_256x256.xlsx`
+— the same `required_format` netlist columns as `example_netlist27072026.xlsx`, one row per pin
+1..256, straight-through (`Src Pin # == Dst Pin #`, same convention GUI-08 established), `Conn
+ID` grouped into four 128-pin blocks (`MTX-A1`/`A2` Side-A, `MTX-B1`/`B2` Side-B — 128 x 2 per
+side, the cleanest round split of 256, one of the user's own suggested options). `Part Number`
+reads `AMPHENOL-128CKT (TBD)` throughout, not a fabricated real catalog number. A working copy
+also lives in `test_netlists/` so it loads through the GUI's real netlist picker (`--nets 256`
+on the simulator to match it). New `required_format/fixture_connector_layout_256x256.xlsx` — a
+plain reference table (not read by any code) of the same four-connector breakdown for
+mechanical/procurement: `Side`, `Conn ID`, `Part Number`, `Connector Type`, pin range, pin
+count, mounting location, mates-with, notes. `netlist_file_test.dart` gained a real end-to-end
+regression test against the new file (256 pairs, all straight-through, four 128-pin connectors
+guessed correctly), same pattern as the existing `example_netlist27072026.xlsx` test. `flutter
+analyze`: 0 issues. `flutter test`: 219/219. **Left open**: the exact connector part
+number/shell size is still a placeholder — see the new "Awaiting a decision" row below.
+
+**GUI-17 (CL-51): `required_format`'s two samples reconciled for real.** User pointed at
+`example_netlist27072026.xlsx` (netlist in) and `report_20260725_184312_HT-0004.pdf` (report
+out) and asked for both to be the format going forward. The netlist side was already done
+(GUI-08/CL-41) — confirmed still matching, `netlist_file_test.dart`'s real-file test still
+passes, no code change needed. The PDF side had drifted from its own docstring's claim: GUI-10
+said the PDF matched "the same column set as the CSV twin," but `buildContReportPdf`'s Results
+table only ever had 6 of the CSV's 12 columns — `Conn ID` (real since GUI-11) was silently
+dropped, along with the always-blank `Source`/`Part Number`/`Destination` the sample keeps for
+shape. Rebuilt `report_pdf.dart`: full column set on every Results table (continuity/
+resistance/insulation), dark-header-band + green/red row tinting by status (matching the
+sample's colour language, via `TableHelper.fromTextArray`'s `cellDecoration`), and the bundled
+`company_logo.jpeg` (new `assets/`, declared in `pubspec.yaml`, loaded through `rootBundle` —
+degrades to no logo rather than throwing if the asset is ever missing, so a report is never
+blocked on branding). Two of the sample's metadata rows got different treatment: **"Test
+Duration"** is now real — new `AppState._runStart` (set in `_beginRun`) feeds
+`ReportMeta.testDuration` at `_onDone`, PDF-only (not part of the CSV shape, same as the
+sample). **"Profile" was deliberately left out** — there is no profile/preset concept anywhere
+in this app to draw a real value from, and printing a field that looks real but isn't is exactly
+what "GUI Reality Check" (GUI-09/GUI-12/GUI-13) spent two sessions removing elsewhere; the
+sample's own PDF docstring already flagged both rows as tracking nothing this app had before
+this fix. Caught one real rendering bug along the way: the `pdf` package's default Helvetica
+core font has no glyph for the em dash (`—`, `report.dart`'s "connector unknown" placeholder) —
+adding the `Conn ID` column would have printed missing-glyph boxes for every unresolved
+connector, so PDF cell text runs through a `_pdfSafe()` substitution (plain hyphen) while the
+CSV/GUI keep the em dash Flutter renders fine. GUI-11's shared `ConnectionResultsTable`
+(Continuity/Resistance/HV "Connection results" panels) got the same full-field-set treatment on
+screen, plus two real fields the HV table was missing entirely (`Leak V`, `Limit (MΩ)` — already
+computed, just never displayed). New `test/report_pdf_smoke_test.dart` (PDF bytes non-empty,
+logo loads under `TestWidgetsFlutterBinding`, no glyph warnings); `report_test.dart` gained
+`ReportMeta.stampDuration` unit coverage and asserts `testDuration` is real on a live-simulator
+run. `flutter analyze`: 0 issues. `flutter test`: 218/218.
 
 **GUI-16 (CL-50): the demo build's simulator now heartbeats every 2 s, like real firmware
 does — an idle demo connection used to "link lost" at ~5 s.** User rebuilt all four exes and
@@ -350,6 +549,7 @@ window and nothing downstream can be finalised without it.
 
 | ID | Item | Raised |
 |---|---|---|
+| GUI-18b | **Fixture connector part number/shell size not decided.** `required_format/netlist_full_256x256.xlsx` and `fixture_connector_layout_256x256.xlsx` (GUI-18/CL-52) draft a 4-connector layout (128 pins x 2 per side) with `Part Number` = `AMPHENOL-128CKT (TBD)` on every row — a placeholder, not a real catalog number. Needs an actual Amphenol (or equivalent) part number and shell size from mechanical/procurement, or a different split entirely (the user also floated DB37 x N or one large connector) before this becomes the real fixture spec. | 2026-08-17 |
 | HW-09 | **Four card slots, five cards — left open at the user's request 2026-08-12.** The Control card has 50-pin connectors J1–J4 (confirmed by reading `Control_Card 1.pdf`'s `/Connector/` sheet directly, pin by pin — J1 is not a separate 5th connector as this row previously assumed; J5 on that sheet is the power barrel jack, not a card slot). J1 carries the Matrix Card's own signals (`LO_S1-4`/`HI_S1-4`/`IN`/`SPI1_*`) plus an apparently-unused `ISO_HV_Card_1.0-3` nibble and its own `EN1` (already claimed for Matrix bus gating) — the plan discussed is a 5th physical HV connector fed by spare/unused J1 pins via a new harness branch, but the exact mechanism is still being worked out. Also noted: `Matrix_Card-8.pdf`'s `J101` does not use matching pin numbers for the same signals as `Control_Card 1.pdf`'s `J1` — consistent with this project's established pattern (BU-06) of harness-level, not schematic-level, signal mapping. | 2026-07-27 |
 | GUI-06 | **Seven proposed protocol commands** awaiting a firmware-side yes/no: `BUS SCAN`, `MANUAL READ`, `MANUAL SWEEP`, self-cal, PGA auto-range, compliance sweep, relay self-test. Full command-by-command writeup with size estimates in `Doc/GUI_protocol_proposed_commands.md` (2026-08-08, pre-FW-02/FW-12) — two (auto-range PGA, compliance sweep) are recommended against as separate commands at all. **Feasibility re-checked against the current firmware 2026-08-12 — see the note below the table.** Still awaiting the actual per-command yes/no. | 2026-08-08 |
 | ~~GUI-08~~ | **DONE 2026-08-14 — see CL-41.** Turned out not to be a decision at all: (1) `netlist_file.dart`'s `hi == lo` guard wrongly rejected the file's straight-through rows — HI and LO are separate mux banks in `matrix_card.h`, so a matching pin number on both sides is not a collision, and the file's pin numbers are already globally flat by connector order, not per-connector-relative as originally assumed; (2) the file also could not be decoded at all — it's `openpyxl`-generated, and `openpyxl`'s default writer emits a package-absolute relationship target the `excel` package (4.0.6) can't resolve. Both fixed; the real `required_format/example_netlist27072026.xlsx` now loads end to end (20 pairs, regression-tested off disk). | 2026-08-10 |
@@ -421,6 +621,13 @@ primary build** — new items are filed against it. GUI-03 is against the now-su
 
 | ID | Closed | Item | Resolution |
 |---|---|---|---|
+| CL-57 | 2026-08-17 | GUI-23 src/dst connector resolution bug + Part Number wired up | User reported continuity showing "Connector A pin 1 -- Connector A pin 2" instead of crossing to Connector B. Traced to `AppState.rebuildNets`'s `pinNode` searching the same flat connector list for both `hi` and `lo` — HI/LO are independently-addressed 1..256 spaces (matrix_card.h), so a straight-through net always resolved src and dst to whichever connector owned that numeric range, regardless of actual side. Broken since GUI-11 (2026-08-14); existing tests only checked `!= '—'`, never that src/dst differ, and the demo's seeded harness bypasses `pinNode` entirely. Fixed: `_fixtureFromGuess` computes `base` as two separate per-side offsets when a guess has real Source/Destination provenance (`GuessedConnector.side`, GUI-19), falling back to the old combined sequence for ambiguous/symmetric files; `pinNode` takes `isSrc` and searches the matching side first, falling back to unrestricted search — required rewriting `rebuildNets`'s fixture-extension fallback to run that same search (`coversPin`) rather than a precomputed numeric boundary. Second bug found in the same investigation: "Part Number" was hardcoded blank everywhere (CSV/PDF/GUI table) even though the netlist file's own Part Number columns were already parsed and just never threaded through — added a real `ConnectorDef.partNumber` field (separate from `label`, which is a display name/id fallback, not a part number) and wired it through `_fixtureFromGuess`, the fixture-guess confirm step, `_onCont`/`_onRes`, and every report/GUI surface. `Source`/`Destination` free-text columns stay blank — genuinely not parsed anywhere, left alone rather than half-fixed. New `test/pin_resolution_test.dart` (real `SimulatorServer`, real uploaded netlist) plus a `netlist_file_load_test.dart` case at the parser/guess layer. `flutter analyze`: 0 issues. `flutter test`: 228/228. |
+| CL-56 | 2026-08-17 | GUI-22 idle wires in the wiring diagram were nearly invisible | User loaded a netlist and saw pin dots/connector shells but no wires between them. Traced to `painters.dart`'s `_paintWires` drawing untested ("idle") nets in `c.gridEmpty` (`0xFF1B282D` dark theme, meant for empty grid cells) at .55 alpha — barely different from the canvas background `c.sunk` (`0xFF0E171A`), tolerably faint on the old compact 8-connector canvas's short diagonal wires but effectively invisible once GUI-19's vertical ladder made idle wires run most of the canvas's 1060px width. Confirmed by rendering the exact idle state to a PNG and inspecting it, not just reading the code. The pin dots for the same untested nets already used `c.ink3` (a much lighter grey) for the same "present but untested" meaning — fixed the inconsistency by switching idle wires to `c.ink3` too, and bumping alpha .55 → .7. Verified by re-rendering: clearly visible now, still visually subdued relative to pass/fail/hovered. `flutter analyze`: 0 issues. `flutter test`: 225/225 (no test added — a colour choice, verified visually). |
+| CL-55 | 2026-08-17 | GUI-21 demo simulator now honours any uploaded netlist's own pairing convention | Reverses GUI-20's "real hardware only" call — user pushed back that the file should pass in the demo, not be carved out. Root cause: `htproto/simulator.dart`'s `_runCont`/`_runRes` compared an uploaded `(hi, lo)` pair against the scenario's fixed `_goodNets()` pairing (`1↔2, 3↔4, 5↔6, …`) by literal value, so any netlist using a different pairing (real hardware's straight-through `Src Pin # == Dst Pin #`) could never match. Fixed at the root: new `InstrumentSim._effectiveNets(netlist)` reuses the scenario's scripted pass/fail/open/short pattern positionally (row `i` of whatever was uploaded gets row `i`'s scripted outcome, rows past the scenario's own length default to pass) instead of matching by literal pin value; falls back to the scenario's fixed nets unchanged when nothing's uploaded. Applied to `_runCont` verify and `_runRes` (shares the MTX netlist with continuity); `_runInsul` untouched — no wire-protocol netlist upload exists for HV. Side effect, verified: also resolves the older "`--nets` must match the loaded file's net count" constraint for verify-mode runs generally — a 20-row netlist now passes fully against a 12-net-default simulator. New `test/simulator_pairing_test.dart` (straight-through pass, positional fault injection, bigger-than-`--nets` file). `required_format/README.md` and `test_netlists/README.md` corrected. `flutter analyze`: 0 issues. `flutter test`: 224/224. |
+| CL-54 | 2026-08-17 | GUI-20 `netlist_full_256x256.xlsx` 0-pass-in-demo traced and decided | User reported `CONT RUN verify` reading 0 pass with `netlist_full_256x256.xlsx` (GUI-18) loaded in the customer demo build. Traced to `htproto/simulator.dart`'s fake harness being a fixed internal model set at launch (`_goodNets()`: pin 1↔2, 3↔4, 5↔6, …), independent of whatever netlist gets uploaded afterward. `test_netlists/`'s three `AV-880_MTX_*.xlsx` files only work in the demo because they were generated to already match that 1-2/3-4 pattern; `--nets` only ever needed to match their net count. `netlist_full_256x256.xlsx` uses the real instrument's straight-through addressing (`Src Pin # == Dst Pin #`) instead, which never matches the simulator's fixed model at any `--nets` value — 0 pass is expected, not a defect. Asked the user how to proceed; decided real-hardware-only, no code change. `required_format/README.md` and `test_netlists/README.md` updated with an explicit "does not pass against `--sim`, use `--serial`" note. |
+| CL-53 | 2026-08-17 | GUI-19 wiring diagram redrawn vertical, Source/Destination L/R split fixed | User screenshotted GUI-18's 256-pin fixture in the wiring diagram — connector shells overlapping, unreadable — and asked for a vertical layout instead of horizontal. Root cause: `design/model.dart`'s per-shape connector footprint scaled *width* with pin count (a D-sub's two-row layout hits ~860px at 128 pins, nearly the full 1060px canvas), so stacked large connectors visually collided. Replaced all three per-type footprints (D-sub, circular rings, rect grid) with one: a single vertical pin column for every connector type, scaling taller not wider; `kCanvasH` is no longer a fixed 440 const, `layoutFixture()` grows it to fit content (440 floor, so the original demo fixture is unaffected); `painters.dart` drops per-shape shell geometry for one plain rounded-rect shell plus per-pin number labels. Also found and fixed a second, independent bug: `AppState._fixtureFromGuess` split connectors left/right by blind list-half of a minPin-sorted list, with no concept of which netlist column (`Conn ID` vs `Conn ID B`) a connector came from — harmless for `example_netlist27072026.xlsx` (reuses one id per mating pair) but scattered Source/Destination connectors across both visual halves for GUI-18's file (distinct ids per side). Fixed: `GuessedConnector.side` ('src'/'dst'/null) now tracks provenance, `_fixtureFromGuess` splits by it when unambiguous, falling back to the old heuristic otherwise. Verified by rendering the real fixture through `DiagramPainter` to a PNG: Side-A/Side-B blocks land at identical y-coordinates, nets draw as short horizontal lines, zero overlap. New tests in `netlist_file_test.dart`, `netlist_file_load_test.dart`, `gui_test.dart`. `flutter analyze`: 0 issues. `flutter test`: 222/222. |
+| CL-52 | 2026-08-17 | GUI-18 full 256x256 fixture netlist + draft connector layout | User asked for a "proper netlist" and "the fixture file," then gave the real constraint: 256 independently-addressed pins per side (512 total), and asked how those map onto physical connectors mounted on the tester body (floated DB37 x N, one large Amphenol, or 128-pin x 2 per side as options). No real fixture connector part number exists anywhere in the repo (`fw_status.txt`/`Doc/` name `J-MTX`/`J-HV` only) so there was nothing real to defer to — treated as a draft proposal, not a hardware fact, and labeled as such throughout. New `required_format/netlist_full_256x256.xlsx`: same `required_format` columns as `example_netlist27072026.xlsx`, all 256 pins, straight-through, grouped into four 128-pin `Conn ID` blocks (`MTX-A1`/`A2`/`B1`/`B2`) — 128 x 2 per side, the cleanest round split of 256 and one of the user's own suggested options; `Part Number` reads `AMPHENOL-128CKT (TBD)` everywhere. Copied into `test_netlists/` so it's loadable through the real GUI netlist picker (`--nets 256`). New `required_format/fixture_connector_layout_256x256.xlsx`: a plain mechanical-reference table of the same four-connector breakdown (not read by any code) — `Side`/`Conn ID`/`Part Number`/`Connector Type`/pin range/pin count/mounting location/mates-with/notes, every placeholder field marked as such. `netlist_file_test.dart` gained a real end-to-end test against the new file (256 pairs, all straight-through, four 128-pin connectors correctly guessed), same pattern as the existing sample's test. `flutter analyze`: 0 issues. `flutter test`: 219/219. |
+| CL-51 | 2026-08-17 | GUI-17 `required_format` netlist/report reconciliation | User asked for `example_netlist27072026.xlsx` (netlist in) and `report_20260725_184312_HT-0004.pdf` (report out) to be the canonical formats. Netlist side already matched (GUI-08/CL-41), confirmed and unchanged. PDF side had drifted from GUI-10's own "matches the CSV column-for-column" claim — the Results table was missing `Conn ID` (real since GUI-11) and the three permanently-blank `Source`/`Part Number`/`Destination` columns the sample keeps for shape. Rebuilt `report_pdf.dart`: full column set, dark-header-band + green/red row tinting by status, bundled `company_logo.jpeg` (new `assets/`, `pubspec.yaml`, loaded via `rootBundle`, degrades to no logo rather than throwing). "Test Duration" is now real (`AppState._runStart`→`ReportMeta.testDuration`, set at `_beginRun`/`_onDone`); "Profile" deliberately omitted — no profile/preset concept exists anywhere in this app, and the sample's own docstring already flagged it as unbacked (same "GUI Reality Check" reasoning as GUI-09/12/13). Found and fixed a real rendering bug in passing: the `pdf` package's core Helvetica font has no glyph for the em dash `report.dart` uses as its "connector unknown" placeholder — new `_pdfSafe()` substitutes a plain hyphen for PDF cell text only (CSV/GUI keep the em dash, which Flutter renders fine). GUI-11's shared `ConnectionResultsTable` (Continuity/Resistance/HV "Connection results" panels) mirrors the same full field set on screen, plus two real HV fields (`Leak V`, `Limit (MΩ)`) that were computed but never shown. New `test/report_pdf_smoke_test.dart`; `report_test.dart` gained `stampDuration` unit coverage and a live-run `testDuration` assertion. `flutter analyze`: 0 issues. `flutter test`: 218/218. |
 | CL-50 | 2026-08-17 | GUI-16 demo/simulator had no heartbeat — every idle demo connection died at ~5 s | User rebuilt all four exes via `build_exe.cmd` and reported every demo losing its connection 3-5 s after connecting — real, not a false alarm: a session log (`%LOCALAPPDATA%\HT_MK1\sessions\`) from before this fix showed the handshake completing, then silence, then `LINK LOST: no traffic for 5.0s` at +5.4 s, exactly matching `connection.dart`'s `defaultLinkTimeout` (5 s). Root cause: `htproto/simulator.dart`'s `InstrumentSim` never emits anything while idle — no periodic re-announcement at all — unlike real firmware, which this project already found and fixed the identical false-"link lost" bug for (`Proto_EvtHeartbeat()`, re-announces state every 2 s, noted elsewhere in this file: "an idle-but-healthy link never trips the GUI's 5 s watchdog"). That firmware-side fix was apparently never mirrored into the simulator, so the demo build has probably always had this gap — GUI-15's port fix just made the demo connect reliably enough for someone to sit on it past 5 s and notice. Fixed: new `InstrumentSim.emitHeartbeat()` re-sends `!STATE <current>` (any bytes reset `ConnectionManager`'s watchdog — `connection.dart`'s `_lastRx` updates on raw receipt, before line parsing, so this doesn't need to be a special event type), driven by a `Timer.periodic(Duration(seconds: 2))` in `SimulatorServer._handleClient`, cancelled both in the client's `onDone` and explicitly in `SimulatorServer.stop()` (not just relying on the async socket-close callback, so a test that stops and immediately tears down can't race a still-pending `Timer` against `flutter_test`'s `!timersPending` invariant). Checked every real-`SimulatorServer` test for a link-loss-timing assumption this could disturb — the two that exist (`protocol_test.dart`) test either mid-run transport drop (socket actually closes, independent of any watchdog) or use `FakeTransport`, not the real simulator; neither is affected. `flutter analyze`: 0 issues. `flutter test`: 212/212. **Verified live, not just in tests**: rebuilt all four exes via `build_exe.cmd`, launched the real built `HT_MK1_GUI.exe --sim`, left it idle 15 s (3× the old failure point) and confirmed the session log shows `!STATE idle` arriving every 2 s on the dot with zero `LINK LOST` — the exact failure mode the user hit, reproduced from an old log and then confirmed gone from a new one. |
 | CL-49 | 2026-08-17 | GUI-15 demo build can no longer collide with a real local server | User asked, after GUI-14 shipped the customer/developer split, for one more demo-safety guarantee: the demo exe must not be able to connect to a real local server. Found the gap in `main.dart`'s `--sim` handling: `SimulatorServer.start(..., port: o.port, ...)` passed `o.port`, which defaults to `46000` — the exact same default a real `--host`/`--port` TCP-bridge target uses. `SimulatorServer.start`'s own default is `port: 0` (OS-assigned free port, the pattern every test file already relies on), so main.dart was overriding a safe default with an unsafe fixed one for no reason tied to `--sim`'s actual purpose. Practical effect: if anything else was already listening on 46000 locally (a real bridge, another running instance), the demo's bind would collide — at best a crash at launch, at worst ambiguity about what it's actually talking to. Fixed: `--sim` now always binds to `port: 0`; confirmed there is no host/port entry UI exposed when `s.serialLink` is false (`shell.dart`'s status bar only shows the COM-port selector, gated on `serialLink`, with nothing filling the gap for `--sim`), so the launch command is the only way the demo's connection target is ever set — with a random OS-assigned port, it now can never end up pointed at anything but its own bundled simulator. `flutter analyze`: 0 issues. `flutter test`: 212/212. |
 | CL-48 | 2026-08-16 | GUI-14 customer/developer build split | User asked for two build tags: customer (no Diagnostics section) and developer (full). `lib/app/build_tag.dart`'s `kCustomerBuild` is a `bool.fromEnvironment` compile-time constant (`--dart-define=CUSTOMER_BUILD=true`), not a runtime flag, so the AOT/release compiler can prove the Diagnostics branch unreachable and tree-shake it out of a customer build entirely. `app/shell.dart`'s `Rail` only adds the Diag button `if (!customerBuild)`; `main.dart`'s view switch gates the `'diag'` route the same way as a defensive fallback. `build_exe.cmd` restructured: a new `:build_variant` subroutine runs `flutter build windows --release` once per tag and packages each into its own real-hardware + demo SFX pair (`call`ed twice with plain sequential lines, not a `for` loop — under this file's plain non-delayed `setlocal`, a loop body's `%VAR%` would substitute once at parse time and both passes would read the first tag's values). **Verification caught a real bug**: `Rail`'s vertical layout hardcoded `buttons[0]`…`buttons[6]` by literal index assuming exactly 7 buttons always — a customer build's 6-button list threw `RangeError` on `buttons[6]` and would have crashed the shipped customer exe outright. Fixed (`if (buttons.length > 6) buttons[6]`). `test/build_tag_test.dart` had two of its own bugs, unrelated to the app: checked for `'Diag'`/`'Run'` when `_RailButton` renders labels uppercased, and its harness didn't give `Rail`'s `Expanded` spacer a bounded height the way the real app's `Row`/`Expanded` ancestor chain does. `flutter analyze`: 0 issues. `flutter test`: passes except one pre-existing, unrelated test (`netlist_upload_test.dart`'s real-simulator discovery test, timing-sensitive under full-suite parallel load, confirmed 3/3 in isolation). Real `build_exe.cmd` run confirmed: all four exes package correctly (~8.28 MB each). Found in passing, not fixed: the script's `dist\` cleanup (`if exist dist rmdir /s /q dist`) has no error check, so a locked leftover exe from an earlier run can silently survive alongside a fresh build instead of being cleared — harmless this time (new files are unambiguously named) but worth hardening. **Follow-up same day, twice**: user re-ran the suite and hit that `netlist_upload_test.dart` timeout for real. First pass bumped its private `waitUntil` default 5 s → 8 s (matching `protocol_test.dart`'s `_waitForDone`) — measurably helped but didn't fix it: one full-suite run came back 212/212 clean, another still timed out, on this test and separately on two in `report_test.dart` (same `waitUntil` pattern). Decided to stop chasing it as "broad CPU-contention flakiness" — until the user hit the *same* failure a third time, actually blocking their `build_exe.cmd` run, which prompted finding the real cause instead of padding the timeout further. **Measured directly** (`dart run` a standalone timing probe, 256 iterations each): a nominal `Duration(milliseconds: 1)` `Future.delayed` costs ~14-15 ms in practice on this Windows machine (system timer granularity), while `Duration.zero` costs ~0.02 ms. `simulator.dart`'s cross-continuity discover mode always sweeps a full 256 pins (`discoverPins`) regardless of scenario size, awaiting `interval` every iteration — at the "1 ms" both `netlist_upload_test.dart` and `report_test.dart` used, that's ~3.6-3.9 s of pure OS timer overhead alone, before any real socket I/O, leaving almost no margin against even the 8 s timeout. Not CPU contention in the abstract — a specific, measurable, fixable cost. Both files' `interval` changed to `Duration.zero` (still exercises the real async `SimulatorServer`/socket path, just without paying Windows' timer tax 256 times over); `protocol_test.dart` left alone since its simulator-backed tests only use small verify-mode net counts (4-8), never the 256-iteration discover path, so it was never actually affected. Confirmed with four consecutive full-suite runs: 212/212 clean every time, and total suite time dropped from ~27-41 s to ~20-22 s — the fix also just made the suite faster, not only more reliable. |

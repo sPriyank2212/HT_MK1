@@ -162,10 +162,10 @@ class DiagramPainter extends CustomPainter {
     // The page draws into a fixed 1060×440 buffer that CSS scales to width.
     canvas.save();
     canvas.scale(size.width / kCanvasW, size.height / kCanvasH);
-    canvas.clipRect(const Rect.fromLTWH(0, 0, kCanvasW, kCanvasH));
+    canvas.clipRect(Rect.fromLTWH(0, 0, kCanvasW, kCanvasH));
 
     canvas.drawRect(
-      const Rect.fromLTWH(0, 0, kCanvasW, kCanvasH),
+      Rect.fromLTWH(0, 0, kCanvasW, kCanvasH),
       Paint()..color = c.sunk,
     );
 
@@ -192,32 +192,21 @@ class DiagramPainter extends CustomPainter {
       final alpha = dim ? .35 : 1.0;
 
       final x = conn.x;
-      final y = conn.y + 20;
+      final y = conn.y + kConnHeaderH;
       final w = conn.w;
-      final h = conn.h - 20;
+      final h = conn.h - kConnHeaderH;
 
-      final shell = Path();
-      if (conn.type == ConnType.dsub) {
-        const i = 9.0;
-        shell.moveTo(x + 2, y + 3);
-        shell.lineTo(x + w - 2, y + 3);
-        shell.lineTo(x + w - 2 - i, y + h - 3);
-        shell.lineTo(x + 2 + i, y + h - 3);
-        shell.close();
-      } else if (conn.type == ConnType.circ) {
-        shell.addOval(Rect.fromCircle(
-          center: Offset(x + w / 2, y + h / 2),
-          radius: math.min(w, h) / 2 - 3,
-        ));
-      } else {
-        shell.addRRect(RRect.fromRectAndRadius(
-          Rect.fromLTWH(x + 2, y + 3, w - 4, h - 6),
-          const Radius.circular(4),
-        ));
-      }
+      // One plain rounded-rect shell for every connector, whatever its real
+      // shape — a vertical pin column (model.dart's layoutConn) has nothing
+      // left to draw a D-shell or a ring of pins around; kTypeName below
+      // still says what the connector actually is.
+      final shell = RRect.fromRectAndRadius(
+        Rect.fromLTWH(x + 2, y + 3, w - 4, h - 6),
+        const Radius.circular(4),
+      );
 
-      canvas.drawPath(shell, Paint()..color = _alpha(c.panel, alpha));
-      canvas.drawPath(
+      canvas.drawRRect(shell, Paint()..color = _alpha(c.panel, alpha));
+      canvas.drawRRect(
         shell,
         Paint()
           ..style = PaintingStyle.stroke
@@ -225,19 +214,16 @@ class DiagramPainter extends CustomPainter {
           ..strokeWidth = s.selConn == conn.id ? 2 : 1.2,
       );
 
-      if (conn.type == ConnType.circ) {
-        // keyway
-        canvas.drawCircle(
-          Offset(x + w / 2, y + h / 2),
-          math.min(w, h) / 2 - 8,
-          Paint()
-            ..style = PaintingStyle.stroke
-            ..color = _alpha(c.lineSoft, alpha)
-            ..strokeWidth = 1,
-        );
-      }
-
-      // pins
+      // pins — one vertical column, pin 1 at the top. The dot sits on the
+      // shell's canvas-facing edge (model.dart's layoutConn); the pin
+      // number is drawn in the space left over on the shell's outward edge,
+      // so numbers never collide with the wires crossing the canvas middle.
+      final pinLabelStyle = TextStyle(
+        fontFamily: kMonoFont,
+        fontFamilyFallback: kMonoFallback,
+        fontSize: 8,
+        color: _alpha(c.ink3, alpha),
+      );
       for (var i = 0; i < conn.pts.length; i++) {
         final p = conn.pts[i];
         final n = s.netAt['${conn.id}:${i + 1}'];
@@ -261,6 +247,11 @@ class DiagramPainter extends CustomPainter {
               ..strokeWidth = 1.6,
           );
         }
+        final pinNum = _CanvasText('${i + 1}', pinLabelStyle);
+        final numX = conn.side == 'L'
+            ? p.x - 6 - pinNum.width // left of the dot, inside the shell
+            : p.x + 6; // right of the dot, inside the shell
+        pinNum.paint(canvas, numX, p.y + 3);
       }
 
       // label — ctx.font='600 11px <ui>'
@@ -277,7 +268,8 @@ class DiagramPainter extends CustomPainter {
       );
       labelText.paint(canvas, x + 2, conn.y + 12);
 
-      // ctx.font='9px <mono>' at x+2+tw+34
+      // meta — ctx.font='9px <mono>', wrapped under the id/label line since
+      // the shell is narrow now (vertical layout), not to its right.
       final meta = _CanvasText(
         '${kTypeName[conn.type]} · ${conn.pins}w',
         TextStyle(
@@ -287,7 +279,7 @@ class DiagramPainter extends CustomPainter {
           color: _alpha(c.ink3, alpha),
         ),
       );
-      meta.paint(canvas, x + 2 + labelText.width + 34, conn.y + 12);
+      meta.paint(canvas, x + 2, conn.y + 12 + 12);
     }
   }
 
@@ -298,13 +290,23 @@ class DiagramPainter extends CustomPainter {
       final hot = identical(n, s.hoverNet) || identical(n, s.selNet);
       final parts = netSegments(n);
 
+      // GUI-22: idle wires used to draw in `gridEmpty` (a near-background
+      // fill colour meant for *empty grid cells*, not stroked lines) at
+      // .55 alpha - on the old compact 8-connector canvas the short
+      // diagonal wires were tolerably faint, but this vertical ladder can
+      // run an idle wire most of the canvas's 1060px width, at which point
+      // that combination reads as no wire at all (confirmed by rendering
+      // it: technically non-transparent pixels, indistinguishable from the
+      // background by eye). `ink3` is the same colour untested pin dots
+      // already use for exactly this "present but not yet tested" meaning,
+      // so idle wires now match them instead of nearly vanishing.
       final stroke = hot
           ? c.accent
           : st == 'fail'
               ? c.fail
               : st == 'pass'
                   ? c.pass
-                  : c.gridEmpty;
+                  : c.ink3;
       final width = hot
           ? 3.0
           : st == 'fail'
@@ -315,7 +317,7 @@ class DiagramPainter extends CustomPainter {
           : (s.selNet != null || s.selConn != null)
               ? .3
               : st == 'idle'
-                  ? .55
+                  ? .7
                   : .85;
 
       final path = Path();

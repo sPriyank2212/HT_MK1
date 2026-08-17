@@ -153,6 +153,32 @@ void main() {
       expect(senseBranches.map((p) => p.lo), [12, 25, 36]);
     });
 
+    test('reads the full required_format/netlist_full_256x256.xlsx fixture '
+        'file end to end — every one of the instrument\'s 256 HI/256 LO '
+        'addresses, four 128-pin connector blocks', () {
+      // GUI-18: the user's proposed full-scale fixture (2x128-pin connector
+      // per side, straight-through pin N -> pin N for every one of the
+      // instrument's 256 independently-addressed HI/LO pins) - see
+      // required_format/README.md and PROJECT_LOG.md GUI-18/CL-52.
+      final bytes = File('required_format/netlist_full_256x256.xlsx')
+          .readAsBytesSync();
+
+      final parsed = parseNetlistWorkbook(bytes,
+          fileName: 'netlist_full_256x256.xlsx');
+
+      expect(parsed.pairs.length, 256);
+      expect(parsed.pairs.every((p) => p.hi == p.lo), isTrue,
+          reason: 'every net is a straight-through pin (GUI-08 convention)');
+      expect(parsed.pairs.map((p) => p.hi), List.generate(256, (i) => i + 1));
+
+      final fixture = parsed.fixture;
+      expect(fixture, isNotNull);
+      expect(fixture!.length, 4, reason: 'MTX-A1/A2, MTX-B1/B2');
+      expect(fixture.every((c) => c.pins == 128), isTrue);
+      expect(fixture.every((c) => c.shapeGuess == 'circ'), isTrue,
+          reason: 'part number contains AMPHENOL');
+    });
+
     test('header lookup is case-insensitive and ignores surrounding '
         'whitespace', () {
       final bytes = _workbook([
@@ -330,6 +356,33 @@ void main() {
       ]);
       final parsed = parseNetlistWorkbook(bytes, fileName: 'x.xlsx');
       expect(parsed.fixture!.single.shapeGuess, 'rect');
+    });
+
+    test('side is src/dst when a connector id only ever appears under one '
+        'of Conn ID / Conn ID B, null when it appears under both '
+        '(GUI-18 — drives which half of the wiring diagram a connector '
+        'lands on)', () {
+      final bytes = _workbook([
+        [
+          TextCellValue('Conn ID'), TextCellValue('HI'), TextCellValue('LO'),
+          TextCellValue('Conn ID B'),
+        ],
+        // J1 only ever appears as Conn ID (source) - unambiguous 'src'.
+        [TextCellValue('J1'), IntCellValue(1), IntCellValue(1), TextCellValue('J2')],
+        // J2 only ever appears as Conn ID B (destination) - unambiguous
+        // 'dst'.
+        [TextCellValue('J1'), IntCellValue(2), IntCellValue(2), TextCellValue('J2')],
+        // J3 appears as both Conn ID (this row) and Conn ID B (next row) -
+        // the same symmetric-pair convention example_netlist27072026.xlsx
+        // uses, so there is no real src/dst distinction: null.
+        [TextCellValue('J3'), IntCellValue(3), IntCellValue(3), TextCellValue('J3')],
+      ]);
+
+      final parsed = parseNetlistWorkbook(bytes, fileName: 'x.xlsx');
+      final byId = {for (final c in parsed.fixture!) c.id: c};
+      expect(byId['J1']!.side, 'src');
+      expect(byId['J2']!.side, 'dst');
+      expect(byId['J3']!.side, isNull);
     });
   });
 }

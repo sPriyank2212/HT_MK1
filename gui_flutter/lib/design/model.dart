@@ -65,6 +65,15 @@ class ConnectorDef {
   final ConnType type;
   final int pins;
 
+  /// The mating part number straight from the netlist's `Part Number`/`Part
+  /// Number B` column (`GuessedConnector.partNumber`, `netlist_file.dart`)
+  /// — empty when the file had none. Deliberately separate from [label]:
+  /// `label` falls back to `id` (or an operator-typed friendly name, e.g.
+  /// the demo fixture's "Engine bay") when there is no real part number, so
+  /// using it as if it were a part number would show the connector id or a
+  /// made-up name as though it were a catalog number.
+  final String partNumber;
+
   /// "L" or "R"
   final String side;
   final int base;
@@ -80,6 +89,7 @@ class ConnectorDef {
     required this.pins,
     required this.side,
     required this.base,
+    this.partNumber = '',
   });
 }
 
@@ -471,43 +481,38 @@ String clock() {
 // CONNECTOR GEOMETRY
 // ---------------------------------------------------------------------------
 
-/// Each connector type gets a real face: D-subs are two staggered rows in a D
-/// shell, circulars are concentric rings filled from the outside in,
-/// rectangulars are a grid. Pin coordinates are cached so wires can be drawn
-/// straight onto them.
-class _Rings {
-  final double r;
-  final List<({double r, int c})> caps;
-  const _Rings(this.r, this.caps);
-}
+/// Every connector is one vertical column of pins — pin 1 at the top, last
+/// pin at the bottom, one row per pin at [kPitch] spacing — not laid out to
+/// its real physical footprint (a staggered D-shell, concentric rings, a
+/// grid). A real fixture can put well over a hundred pins on a single
+/// connector (`required_format/netlist_full_256x256.xlsx`'s 128-pin
+/// blocks), and a physically-accurate footprint at that pin count is wide
+/// enough to overlap its neighbours on screen — a two-row D-sub shell alone
+/// comes out ~860px wide at 128 pins, most of the whole canvas. A single
+/// column scales to any pin count by getting taller, never wider, and it
+/// reads as a straight ladder: Side-A's pin N sits at the same kind of
+/// position Side-B's pin N would, so tracing a net across the canvas is
+/// "find the wire," not "find the pin inside a D-shell or a ring." Dots sit
+/// on each connector's canvas-facing edge (right edge for a left-column
+/// connector, left edge for a right-column one) so wires start/end right at
+/// the shell and the outward edge is free for painters.dart's pin-number
+/// labels. `kTypeName`/`ConnType` still say what the connector actually is
+/// in the meta text — this only changed how pins are drawn, not what a
+/// connector is.
+const double kConnW = 92;
 
-_Rings _circRings(int n) {
-  for (var rr = kPitch; rr < 400; rr += kPitch * 0.5) {
-    final caps = <({double r, int c})>[];
-    var tot = 1;
-    for (var r = rr; r >= kPitch * 0.9; r -= kPitch * 0.95) {
-      final c = (2 * math.pi * r / kPitch).floor();
-      caps.add((r: r, c: c));
-      tot += c;
-    }
-    if (tot >= n) return _Rings(rr, caps);
-  }
-  return const _Rings(kPitch, []);
-}
+/// Header zone above each connector's pin column — the id/label line plus
+/// the type/pin-count meta line below it (painters.dart's
+/// `_paintConnectors`, which reads this same constant for the shell's
+/// top edge).
+const double kConnHeaderH = 32;
 
-({double w, double h}) connSize(ConnectorDef c) {
-  if (c.type == ConnType.dsub) {
-    final n1 = (c.pins / 2).ceil();
-    return (w: n1 * kPitch + 30, h: 2 * kPitch + 34);
-  }
-  if (c.type == ConnType.circ) {
-    final rings = _circRings(c.pins);
-    return (w: 2 * rings.r + 34, h: 2 * rings.r + 40);
-  }
-  final cols = math.sqrt(c.pins * 1.7).ceil();
-  final rows = (c.pins / cols).ceil();
-  return (w: cols * kPitch + 26, h: rows * kPitch + 34);
-}
+({double w, double h}) connSize(ConnectorDef c) => (
+      w: kConnW,
+      // header + a small first-pin inset (7) + the pin column itself + a
+      // 20px margin below the last pin to the shell's bottom edge.
+      h: kConnHeaderH + 7 + (c.pins - 1) * kPitch + 20,
+    );
 
 double layoutConn(ConnectorDef c, double x, double y) {
   final s = connSize(c);
@@ -516,60 +521,27 @@ double layoutConn(ConnectorDef c, double x, double y) {
   c.w = s.w;
   c.h = s.h;
   c.pts = <Offset2>[];
-  final top = y + 20;
-  if (c.type == ConnType.dsub) {
-    final n1 = (c.pins / 2).ceil();
-    final n2 = c.pins - n1;
-    for (var i = 0; i < n1; i++) {
-      c.pts.add(Offset2(x + 18 + i * kPitch, top + 7));
-    }
-    for (var i = 0; i < n2; i++) {
-      c.pts.add(Offset2(x + 18 + kPitch / 2 + i * kPitch, top + 7 + kPitch));
-    }
-  } else if (c.type == ConnType.circ) {
-    final caps = _circRings(c.pins).caps;
-    final cx = x + s.w / 2;
-    final cy = top + (s.h - 20) / 2;
-    var rem = c.pins;
-    for (final ring in caps) {
-      if (rem <= 0) break;
-      final take = math.min(rem, ring.c);
-      for (var i = 0; i < take; i++) {
-        final a = -math.pi / 2 + (i / take) * math.pi * 2;
-        c.pts.add(Offset2(
-            cx + math.cos(a) * ring.r, cy + math.sin(a) * ring.r));
-      }
-      rem -= take;
-    }
-    if (rem > 0) c.pts.add(Offset2(cx, cy));
-  } else {
-    final cols = math.sqrt(c.pins * 1.7).ceil();
-    for (var i = 0; i < c.pins; i++) {
-      c.pts.add(Offset2(
-          x + 16 + (i % cols) * kPitch, top + 7 + (i ~/ cols) * kPitch));
-    }
+  final top = y + kConnHeaderH;
+  final dotX = c.side == 'L' ? x + s.w - 14 : x + 14;
+  for (var i = 0; i < c.pins; i++) {
+    c.pts.add(Offset2(dotX, top + 7 + i * kPitch));
   }
   return y + s.h + 18;
 }
 
-/// `const CW=1060, CH=440;`
+/// `const CW=1060, CH=440;` — width is fixed (the widget always scales it to
+/// fill the panel), but height is not: [layoutFixture] grows it to fit
+/// however tall the current fixture's pin columns actually are, with 440 as
+/// a floor so the original 8-connector demo fixture keeps its original
+/// canvas size.
 const double kCanvasW = 1060;
-const double kCanvasH = 440;
+double kCanvasH = 440;
 
 void layoutFixture() {
-  // `side` is now just a layout-balance hint (see buildFixture) - a
-  // configured fixture can legitimately have every connector land on one
-  // side, so guard the empty case rather than let .reduce() throw.
-  final lw = kConnsL.isEmpty
-      ? 0.0
-      : kConnsL.map((c) => connSize(c).w).reduce(math.max);
-  final rw = kConnsR.isEmpty
-      ? 0.0
-      : kConnsR.map((c) => connSize(c).w).reduce(math.max);
-  final lh =
-      kConnsL.fold<double>(-18, (a, c) => a + connSize(c).h + 18);
-  final rh =
-      kConnsR.fold<double>(-18, (a, c) => a + connSize(c).h + 18);
+  final lh = kConnsL.fold<double>(-18, (a, c) => a + connSize(c).h + 18);
+  final rh = kConnsR.fold<double>(-18, (a, c) => a + connSize(c).h + 18);
+
+  kCanvasH = math.max(440.0, math.max(lh, rh) + 28);
 
   var y = math.max(14.0, (kCanvasH - lh) / 2);
   for (final c in kConnsL) {
@@ -577,10 +549,10 @@ void layoutFixture() {
   }
   y = math.max(14.0, (kCanvasH - rh) / 2);
   for (final c in kConnsR) {
-    y = layoutConn(c, kCanvasW - 16 - rw, y);
+    y = layoutConn(c, kCanvasW - 16 - kConnW, y);
   }
-  kFix.midL = 16 + lw;
-  kFix.midR = kCanvasW - 16 - rw;
+  kFix.midL = 16 + kConnW;
+  kFix.midR = kCanvasW - 16 - kConnW;
 }
 
 Offset2 pinXY(PinRef nd) {

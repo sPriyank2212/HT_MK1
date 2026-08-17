@@ -483,29 +483,62 @@ class InstrumentSim {
     return false;
   }
 
+  /// The nets a run actually tests, real-hardware style: whichever pin
+  /// pairs the operator uploaded (`NETLIST BEGIN/ADD/END`), not the
+  /// scenario's own fixed pairing. `scenario.nets`' scripted pass/fail/
+  /// open/short/etc. pattern still applies — positionally, row `i` of the
+  /// uploaded netlist gets row `i`'s scripted outcome — with every row past
+  /// the scenario's own length defaulting to pass rather than running out
+  /// of scripted data. Falls back to the scenario's fixed nets unchanged
+  /// when nothing has been uploaded (demo-without-a-netlist keeps working
+  /// the way it always has).
+  ///
+  /// Before this, a run compared the uploaded `(hi, lo)` against the
+  /// scenario's own fixed pairs by literal value (`1↔2, 3↔4, …`) — any
+  /// uploaded netlist using a different pairing convention (e.g. real
+  /// hardware's straight-through `Src Pin # == Dst Pin #`, see
+  /// `required_format/netlist_full_256x256.xlsx`) could never match, so
+  /// every net read NOT CONNECTED regardless of `--nets`. Reusing the
+  /// scenario's outcome data *positionally* instead of by literal pin match
+  /// is what makes the 'pass' scenario genuinely mean "everything the
+  /// operator tests passes," for any netlist they load, not just one that
+  /// happens to already match the scenario's own baked-in pairing (see
+  /// GUI-21, PROJECT_LOG.md).
+  List<NetOutcome> _effectiveNets(List<List<int>>? netlist) {
+    if (netlist == null) return scenario.nets;
+    return [
+      for (var i = 0; i < netlist.length; i++)
+        i < scenario.nets.length
+            ? NetOutcome(
+                hi: netlist[i][0],
+                lo: netlist[i][1],
+                cont: scenario.nets[i].cont,
+                resMohm: scenario.nets[i].resMohm,
+                resStatus: scenario.nets[i].resStatus,
+                insulLeakMohm: scenario.nets[i].insulLeakMohm,
+                insulStatus: scenario.nets[i].insulStatus,
+              )
+            : NetOutcome(hi: netlist[i][0], lo: netlist[i][1]),
+    ];
+  }
+
   Future<void> _runCont(String? mode) async {
-    final outcomes = <String, NetOutcome>{
-      for (final n in scenario.nets) '${n.hi}:${n.lo}': n
-    };
     if (mode == 'verify') {
       // netlist presence is checked in _startRun (8.1 answer 4)
-      final nets = _st.netlist!;
+      final nets = _effectiveNets(_st.netlist);
       final total = nets.length;
       var passed = 0;
       var failed = 0;
       for (var i = 0; i < total; i++) {
-        final hi = nets[i][0];
-        final lo = nets[i][1];
+        final n = nets[i];
         if (_maybeDisconnect(i, total)) return; // transport gone: no !DONE
         if (_runStop) {
           await _endRun('cont', passed, failed, true);
           return;
         }
-        final outcome = outcomes['$hi:$lo'];
-        final status = outcome?.cont ?? ContStatus.open;
-        _emitEvent('CONT $hi $lo ${status.wire}');
+        _emitEvent('CONT ${n.hi} ${n.lo} ${n.cont.wire}');
         _emitEvent('PROGRESS ${i + 1} $total');
-        if (status == ContStatus.pass) {
+        if (n.cont == ContStatus.pass) {
           passed++;
         } else {
           failed++;
@@ -544,7 +577,9 @@ class InstrumentSim {
   }
 
   Future<void> _runRes() async {
-    final nets = scenario.nets;
+    // Resistance shares the MTX netlist with continuity (real hardware:
+    // same J-MTX connector, same uploaded pairs) - see _effectiveNets.
+    final nets = _effectiveNets(_st.netlist);
     final total = nets.length;
     var passed = 0;
     var failed = 0;
