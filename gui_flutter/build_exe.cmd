@@ -1,6 +1,6 @@
 @echo off
 rem ===========================================================================
-rem  HT_MK1 Console - source to independent executable, in one script.
+rem  HT_MK1 Console - source to independent executables, in one script.
 rem
 rem    build_exe.cmd [--skip-tests] [--skip-analyze]
 rem
@@ -8,16 +8,23 @@ rem  From a fresh checkout this will:
 rem    1. check the toolchain and say exactly what is missing
 rem    2. generate the windows\ runner (not in the repo - it is SDK-specific)
 rem    3. fetch packages
-rem    4. analyze and run the test suite
-rem    5. build the release
-rem    6. package it as portable single-file executables in dist\
+rem    4. analyze and run the test suite (once - shared by both builds below)
+rem    5/6. build the release and package it, for the developer build, then
+rem         again for the customer build (two full `flutter build windows`
+rem         passes - see lib\app\build_tag.dart for why a runtime flag isn't
+rem         enough: kCustomerBuild has to be a real compile-time constant so
+rem         the customer build has no code path to Diagnostics at all, not a
+rem         hidden menu item)
 rem
-rem  Produces:
-rem    dist\HT_MK1_GUI.exe        connects to the instrument on the ST-LINK VCP
-rem    dist\HT_MK1_GUI_demo.exe   built-in simulator, no hardware
+rem  Produces, in dist\:
+rem    HT_MK1_GUI_developer.exe        full build, real ST-LINK VCP hardware
+rem    HT_MK1_GUI_developer_demo.exe   full build, built-in simulator
+rem    HT_MK1_GUI_customer.exe         no Diagnostics section, real hardware
+rem    HT_MK1_GUI_customer_demo.exe    no Diagnostics section, simulator
 rem
-rem  Both are independent: copy either to any Windows 10/11 x64 machine and
-rem  double-click. No Flutter, no Python, no runtime required on the target.
+rem  All four are independent: copy any of them to any Windows 10/11 x64
+rem  machine and double-click. No Flutter, no Python, no runtime required on
+rem  the target.
 rem
 rem  NOTE: plain setlocal, deliberately. With `enabledelayedexpansion` cmd eats
 rem  the `!` in the SFX config's `;!@Install@!UTF-8!` marker, and the resulting
@@ -172,22 +179,60 @@ if errorlevel 1 goto fail_test
 :skip_tests
 
 rem ---------------------------------------------------------------------------
-echo.
-echo ============================================================
-echo  [5/6] release build
-echo ============================================================
-call flutter build windows --release
-if errorlevel 1 goto fail
-if not exist "%REL%\HT_MK1_GUI.exe" goto no_binary
-
-rem ---------------------------------------------------------------------------
-echo.
-echo ============================================================
-echo  [6/6] packaging
-echo ============================================================
 if exist dist rmdir /s /q dist
 mkdir dist
 
+call :build_variant developer ""
+call :build_variant customer "--dart-define=CUSTOMER_BUILD=true"
+
+echo.
+echo ============================================================
+echo  done
+echo ============================================================
+for %%F in (dist\*.exe) do echo   %%~nxF   %%~zF bytes
+echo.
+echo  Copy any of them to any Windows 10/11 x64 machine and double-click.
+echo  Nothing needs installing on the target.
+echo.
+echo  They unpack to a temp folder on each launch, so first paint takes a
+echo  second or two longer than the folder build in
+echo    %REL%
+echo  which is the developer build's bits (the last variant built), if you
+echo  would rather ship a folder for that one.
+echo.
+endlocal
+exit /b 0
+
+rem ---------------------------------------------------------------------------
+rem  :build_variant <tag> <dart-define arg, or "" for none>
+rem
+rem  One full `flutter build windows --release` pass plus both its SFX
+rem  packages (real hardware + demo). Called twice from the main body above -
+rem  once per tag - so dist\ ends up with all four exes. Deliberately a
+rem  `call`ed subroutine of plain sequential lines, not a `for` loop body:
+rem  with plain (non-delayed) expansion, a `for`/`if` block's `%VAR%`
+rem  references are all substituted once, at parse time, before the loop body
+rem  ever runs - a second iteration would keep reading the FIRST iteration's
+rem  values. Sequential lines re-parse (and so re-expand `%VAR%`) each time
+rem  they execute, which is what makes running this twice with different
+rem  values safe under plain setlocal.
+rem ---------------------------------------------------------------------------
+:build_variant
+set "TAG=%~1"
+set "DARTDEFINE=%~2"
+
+echo.
+echo ============================================================
+echo  [5/6] release build - %TAG%
+echo ============================================================
+call flutter build windows --release %DARTDEFINE%
+if errorlevel 1 goto fail
+if not exist "%REL%\HT_MK1_GUI.exe" goto no_binary
+
+echo.
+echo ============================================================
+echo  [6/6] packaging - %TAG%
+echo ============================================================
 echo   compressing payload ...
 rem Archive the CONTENTS of Release, so the SFX extracts them flat into its
 rem temp directory and RunProgram can name the exe directly.
@@ -198,14 +243,14 @@ if errorlevel 1 goto fail
 echo   writing SFX configs ...
 > "%TEMP%\ht_cfg_main.txt" (
   echo ;!@Install@!UTF-8!
-  echo Title="HT_MK1 Console"
+  echo Title="HT_MK1 Console (%TAG%)"
   echo RunProgram="HT_MK1_GUI.exe --serial auto"
   echo GUIMode="2"
   echo ;!@InstallEnd@!
 )
 > "%TEMP%\ht_cfg_demo.txt" (
   echo ;!@Install@!UTF-8!
-  echo Title="HT_MK1 Console (demo)"
+  echo Title="HT_MK1 Console (%TAG%, demo)"
   echo RunProgram="HT_MK1_GUI.exe --sim"
   echo GUIMode="2"
   echo ;!@InstallEnd@!
@@ -217,27 +262,12 @@ findstr /c:";!@Install@!UTF-8!" "%TEMP%\ht_cfg_main.txt" >nul
 if errorlevel 1 goto fail_config
 
 echo   assembling ...
-copy /b "%SFX%" + "%TEMP%\ht_cfg_main.txt" + "%TEMP%\ht_mk1_payload.7z" "dist\HT_MK1_GUI.exe" >nul
-copy /b "%SFX%" + "%TEMP%\ht_cfg_demo.txt" + "%TEMP%\ht_mk1_payload.7z" "dist\HT_MK1_GUI_demo.exe" >nul
+copy /b "%SFX%" + "%TEMP%\ht_cfg_main.txt" + "%TEMP%\ht_mk1_payload.7z" "dist\HT_MK1_GUI_%TAG%.exe" >nul
+copy /b "%SFX%" + "%TEMP%\ht_cfg_demo.txt" + "%TEMP%\ht_mk1_payload.7z" "dist\HT_MK1_GUI_%TAG%_demo.exe" >nul
 del "%TEMP%\ht_mk1_payload.7z" "%TEMP%\ht_cfg_main.txt" "%TEMP%\ht_cfg_demo.txt" >nul 2>&1
 
-if not exist "dist\HT_MK1_GUI.exe" goto fail
-echo.
-echo ============================================================
-echo  done
-echo ============================================================
-for %%F in (dist\*.exe) do echo   %%~nxF   %%~zF bytes
-echo.
-echo  Copy either to any Windows 10/11 x64 machine and double-click.
-echo  Nothing needs installing on the target.
-echo.
-echo  They unpack to a temp folder on each launch, so first paint takes a
-echo  second or two longer than the folder build in
-echo    %REL%
-echo  which is the same bits if you would rather ship a folder.
-echo.
-endlocal
-exit /b 0
+if not exist "dist\HT_MK1_GUI_%TAG%.exe" goto fail
+goto :eof
 
 rem ---------------------------------------------------------------------------
 rem  helpers

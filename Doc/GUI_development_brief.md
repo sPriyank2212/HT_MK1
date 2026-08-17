@@ -132,7 +132,18 @@ in the protocol does this.
 >CAL GET                       -> <CAL current_ua=<int> gain=<int> rref_mohm=<int>
 >LIMITS GET                    -> <LIMITS r_max_mohm=<int> ins_min_mohm=<int>
 >LIMITS SET r_max_mohm=<int> ins_min_mohm=<int>  -> <OK
+
+>TEMP READ                     -> <OK started   read the Control Card's DS18B20 (U2, PA0)
 ```
+
+**New 2026-08-16 (HW-13/FW-14):** `TEMP READ` reads the temperature sensor found on the current
+Control Card schematic (`Doc/Control_Card.pdf`, `uC` sheet) that earlier revisions did not carry.
+Diagnostic only — not part of any continuity/resistance/insulation run, and not gated on fixture
+or netlist state, same footing as `MANUAL PATH`/`CAL GET`. Answered `<OK started` (it is handed to
+the sequencer because a real conversion blocks a little over 750 ms — see `CMD_TEMP_READ` in
+`tasks.h`) with the reading following as a `!TEMP` event (§3.3). Like `MANUAL PATH`, no completion
+event is promised if the read fails (sensor missing/unpowered) or a fault interrupts it — the GUI
+should not block indefinitely waiting for `!TEMP` after issuing `TEMP READ`.
 
 `<OK started` is the literal reply for every command that is handed to the sequencer queue,
 `<OK` for everything answered on the spot. Match both exactly — the difference is not
@@ -262,6 +273,8 @@ anything. A 256×256 discovery scan takes tens of seconds.
 !INSUL <net> <leak_mohm> <pass|fail>
 !FAULT <code> <text>                   e.g.  !FAULT F04 insulation low on net 37
 !DONE <cont|res|insul> <passed> <failed>
+
+!TEMP <deci_celsius>                   e.g.  !TEMP 235  ->  23.5 degC. Answers TEMP READ (2026-08-16, HW-13/FW-14)
 ```
 
 **`!DONE` is the last event of every run**, for all three test types. When it arrives,
@@ -695,9 +708,9 @@ Implemented in `Core/Src/app/proto.c`, on hardware now.
 
 | | |
 |---|---|
-| **Works** | `PING` `ID` `STATUS` `SAFE` `ABORT` `FIXTURE` `NETLIST *` `CONT RUN verify\|discover` `INSUL ARM\|RUN` `HV SET` `MANUAL PATH\|OFF` `CAL GET` `LIMITS GET\|SET` |
+| **Works** | `PING` `ID` `STATUS` `SAFE` `ABORT` `FIXTURE` `NETLIST *` `CONT RUN verify\|discover` `RES RUN` `INSUL ARM\|RUN` `HV SET` `MANUAL PATH\|OFF` `CAL GET` `LIMITS GET\|SET` `TEMP READ` (new 2026-08-16, HW-13/FW-14) |
 | **Refused by design** | `MANUAL RELAY` → `ERR EHW` |
-| **Runs but always fails** | `RES RUN` — every net reports `fail_high` with `!FAULT F08`. The resistance measurement path is mid-rewrite for a new ADC (firmware task FW-02); reporting a plausible number from a measurement path that no longer exists would be worse than reporting a failure. **Build the resistance screen anyway** — the event format is final, and your simulator should exercise it properly |
+| **Fixed 2026-08-11** | **FW-02** — `RES RUN` now measures for real (4-wire Kelvin on the Matrix Card's ADS124S08) instead of every net reporting `fail_high`/`!FAULT F08` unconditionally. Superseded the "runs but always fails" row this table used to carry |
 | **Accepted, not yet driven** | `HV SET` — the arm check and the range check are real, and the value is echoed as `!HV <mv>`, but it does not yet move the rail. The rail is raised by the insulation run itself, at a fixed fraction. Build to the contract; the command's behaviour will not change, only what it drives |
 | **Not emitted yet** | `!RES` verdict `fail_low`. `!STATE fault` is emitted only in the one internal case in §3.4. Handle it; it's part of the contract |
 | **Fixed 2026-08-05** | **FW-07** — `ABORT` now stops a run, and commands sent mid-run are answered mid-run. Console RX became interrupt-driven, comms moved above the sequencer, and settle delays yield instead of busy-spinning. **FW-08** — `!SAFE` is now emitted where the hardware is actually made safe, not where the request was posted. Both found by the GUI-side task-2 review |

@@ -223,7 +223,7 @@ void main() {
       expect(t.sent, sentAtConnect,
           reason: 'nothing beyond the connect handshake should be sent');
       expect(s.nlMtx.loaded, isFalse,
-          reason: 'connect() already cleared the pre-connection placeholder');
+          reason: 'nothing was loaded before or during connect()');
       expect(s.mdMtxOpen, isTrue,
           reason: 'a cancelled pick must leave the modal exactly as it was');
     });

@@ -198,6 +198,15 @@ class InstrumentSim {
     _emitEvent('STATE ${state.wire}');
   }
 
+  /// Mirrors the real firmware's `Proto_EvtHeartbeat()`: re-announces state
+  /// on a fixed cadence so an idle-but-healthy link never trips
+  /// `ConnectionManager`'s 5 s watchdog (`connection.dart`'s
+  /// `defaultLinkTimeout`) just because nothing has happened since connect.
+  /// Without this, the simulator sends nothing at all while idle - unlike
+  /// real firmware - and every demo connection would "link lost" a few
+  /// seconds after connecting if the operator hadn't started a run yet.
+  void emitHeartbeat() => _emitEvent('STATE ${_st.state.wire}');
+
   void _setHv(int mv) {
     if ((mv - _st.hvMv).abs() > 10) {
       _st.hvMv = mv;
@@ -592,6 +601,7 @@ class SimulatorServer {
   ServerSocket? _server;
   Socket? _client;
   InstrumentSim? _sim;
+  Timer? _heartbeat;
 
   String get host => _server?.address.address ?? '127.0.0.1';
   int get port => _server?.port ?? 0;
@@ -614,6 +624,12 @@ class SimulatorServer {
   }
 
   Future<void> stop() async {
+    // Cancelled here too, not just in _handleClient's onDone - that fires
+    // asynchronously off client.destroy() below, and a test that stop()s and
+    // immediately tears down must not race a still-pending heartbeat Timer
+    // (flutter_test's "!timersPending" invariant).
+    _heartbeat?.cancel();
+    _heartbeat = null;
     final sim = _sim;
     _sim = null;
     if (sim != null) await sim.close();
@@ -624,6 +640,7 @@ class SimulatorServer {
   }
 
   void _handleClient(Socket client) {
+    _heartbeat?.cancel(); // defensive - a new client should never find one live
     _client = client;
     client.setOption(SocketOption.tcpNoDelay, true);
 
@@ -645,6 +662,12 @@ class SimulatorServer {
     _sim = sim;
     send('# HT_MK1 simulator scenario=${scenario.name}\n');
 
+    // Same cadence as the real firmware's Proto_EvtHeartbeat() - see
+    // InstrumentSim.emitHeartbeat's doc comment for why this exists at all.
+    _heartbeat = Timer.periodic(const Duration(seconds: 2), (_) {
+      sim.emitHeartbeat();
+    });
+
     final framer = LineFramer();
     // handleLine is async, so chain the calls: one command must finish before
     // the next is dispatched, exactly as the single receiving thread did.
@@ -663,6 +686,8 @@ class SimulatorServer {
       },
       onError: (Object _) {},
       onDone: () {
+        _heartbeat?.cancel();
+        _heartbeat = null;
         unawaited(sim.close());
         if (identical(_sim, sim)) _sim = null;
         _client = null;

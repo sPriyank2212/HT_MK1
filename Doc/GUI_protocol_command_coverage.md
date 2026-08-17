@@ -136,10 +136,11 @@ netbars now browse for real:
   are just two sources for the same upload. The MTX netlist modal (`lib/app/modals.dart`) no
   longer claims "there is no file to pick" — it offers both: browse a file, or build one from
   cross continuity.
-- **HV** (`AppState.browseHvNetlist`) sets the same name/cards/nets metadata `pickHvFile` sets
-  from the canned list — there still isn't a wire command for "load an HV netlist" (see §1),
-  so a file only ever replaces the three hardcoded demo entries with a real one; it does not
-  change what gets uploaded to the instrument.
+- **HV** (`AppState.browseHvNetlist`) sets GUI-side name/cards/nets metadata from the real file
+  — there still isn't a wire command for "load an HV netlist" (see §1), so it does not change
+  what gets uploaded to the instrument. The three-canned-example picker this modal used to offer
+  alongside "Browse the file system…" (letting an operator "load" fabricated metadata as if it
+  were real) has been removed — see PROJECT_LOG.md GUI-12.
 
 A malformed file (missing HI/LO header, an out-of-range or duplicate pin pair, a file that
 isn't really `.xlsx`) raises `NetlistFileFormatException` with a message an operator can act

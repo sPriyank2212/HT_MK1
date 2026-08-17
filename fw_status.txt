@@ -1,30 +1,37 @@
 ================================================================================
  HT_MK1  -  AUTOMATED HARNESS TEST SYSTEM  -  FIRMWARE STATUS
  MCU: STM32G474RET6 (Cortex-M4F, FreeRTOS, STM32CubeIDE / HAL)
- Last updated: 2026-08-12 (DOC-01 sync)
+ Last updated: 2026-08-16 (HW-13 schematic resync)
 ================================================================================
  LIVE TRACKING IS PROJECT_LOG.md, NOT THIS FILE. This file is a snapshot of
  the architecture and driver status for quick orientation; open items, dates
  and decisions are tracked in PROJECT_LOG.md and may have moved on since the
  "Last updated" line above. If the two disagree, PROJECT_LOG.md wins.
 ================================================================================
- SUPERSEDED SINCE THE ABOVE SYNC (2026-08-12, same day): DAC8775 is GONE from
- the schematic. Every DAC8775 reference below (current-source register map,
- SPI2 8-bit framing, control_frontend.c's IDAC half) describes hardware that
- no longer exists. The Kelvin excitation current now comes from the
- ADS124S08's own internal IDAC (routed to HI_COM via AIN9), capped at 2 mA -
- not the DAC8775's supposedly-open range. Firmware has NOT been updated for
- this yet - see Doc/idac_current_source.md for the full account and
- PROJECT_LOG.md for the open item. Do not trust this file's DAC8775 sections
- until that lands.
+ SUPERSEDED SINCE THE 2026-08-12 SYNC: DAC8775 is GONE from the schematic.
+ Every DAC8775 reference below (current-source register map, SPI2 8-bit
+ framing, control_frontend.c's IDAC half) describes hardware that no longer
+ exists. The Kelvin excitation current now comes from the ADS124S08's own
+ internal IDAC (routed to HI_COM via AIN9), capped at 2 mA - not the
+ DAC8775's supposedly-open range. Firmware has NOT been updated for this yet
+ - see Doc/idac_current_source.md for the full account and PROJECT_LOG.md for
+ the open item. Do not trust this file's DAC8775 sections until that lands.
+================================================================================
+ NEW SINCE THE ABOVE (2026-08-16, HW-13/FW-14): the Control Card gained a
+ DS18B20 1-Wire temperature sensor (U2) on PA0 - see the BUS/PERIPHERAL MAP
+ below for the pin/net detail. Driven: drivers/ds18b20.{h,c} (bit-banged,
+ CRC8-checked), board.c's board_init_temp()/g_ds18b20, new protocol command
+ >TEMP READ / event !TEMP (CMD_TEMP_READ in tasks.c). Unverified on real
+ hardware - no DS18B20 to bit-bang against yet.
 ================================================================================
 
 SOURCE OF TRUTH
 --------------------------------------------------------------------------------
 The Doc/ folder is now authoritative:
-  - Control_Card-5.pdf, Matrix_Card-7.pdf, HV_Card-3.pdf   (finalised KiCad,
-    current as of this update; supersede all earlier-numbered PDFs, including
-    the -1/-2/-3/-4/-6 series referenced by older revisions of this file)
+  - Control_Card.pdf, Matrix_Card.pdf, HV_Card.pdf   (finalised KiCad, current
+    as of this update - renamed 2026-08-16, dropping the old -N/" 1" suffixes;
+    supersede all earlier-numbered PDFs, including the -1/-2/-3/-4/-5/-6/-7/-8
+    series and "Control_Card 1" referenced by older revisions of this file)
   - Harness_Tester_Operation_Document.docx  (v1.1 original)
   - Harness_Tester_Operation_Document_v1.3.docx  (was v1.2_corrected; renamed
     and updated to v1.3 - firmware review, see the v1.3 section below)
@@ -77,6 +84,15 @@ BUS / PERIPHERAL MAP  (CURRENT as of FW-02 / CL-23, 2026-08-11)
           HV_Card_x.0 / x.1  = the two ADC chip-selects per HV board (see below)
           HV_Card_EN1..4     = per-slot I2C2 bus-segment gate (PC5/PC6/PA10/
                                  PA9); EN1 is the Matrix Card's own slot (J1)
+          PA0 = 1_Wire       -> NEW (HW-13, 2026-08-16, Control Card `uC` sheet):
+                                 DS18B20U+T&R temperature sensor (U2), R2 4.7k
+                                 pull-up on the 1-Wire bus, R3 47R series on DQ.
+                                 Driven (FW-14): drivers/ds18b20.{h,c}, bound
+                                 in board.c as g_ds18b20 (open-drain, no CubeMX
+                                 .ioc entry yet - configured directly, same as
+                                 Log_HwInit_LPUART1()/ADS1232_HwInit_Nucleo()).
+                                 Read via `>TEMP READ` -> `!TEMP <deci_C>`.
+                                 Unverified on real hardware.
 
     - DAC8830 (HV V_PGM) is on SPI, NOT I2C (Op-Doc said I2C - wrong).
     - There is NO HV-enable and NO discharge GPIO: CA05P-5 VIN is tied to

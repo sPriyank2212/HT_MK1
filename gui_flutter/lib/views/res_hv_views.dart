@@ -67,10 +67,16 @@ class ResView extends StatelessWidget {
             onTap: canRun ? () => s.runTest('res') : null),
       ]),
       Netbar(s: s, dom: 'mtx', useKey: 'res'),
-      // MOCK: Excitation/Gain/Offset cal are fixed text. These numbers
-      // duplicate (and can silently disagree with) the real cal.currentUa/
-      // gain the Diagnostics Calibration panel reads from CAL GET. Only
-      // "Scope" (nlMtx) and "Connector" are real.
+      // "Connector" and "Scope" (nlMtx) are real. "Excitation" and "Sense"
+      // are genuinely fixed hardware facts (FW-12: the ADS124S08's own
+      // IDAC1, fixed at 2 mA, routed to AIN9 = HI_COM). "Gain" no longer
+      // claims a single fixed PGA setting — FW-02 auto-ranges it per
+      // measurement (highest gain first, stepping down on saturation), so
+      // no one number is "the" gain; 20 SPS is the real fixed data rate
+      // (`board.c`'s `ADS124S08_DR_20`). "Offset cal" no longer invents a
+      // subtracted value — the per-measurement system-offset subtraction
+      // (CL-23) isn't reported back over the wire (`ResResult` carries only
+      // the final milliohms), so there is nothing real to show as a number.
       Band([
         const BandItem('Connector', Conn('J-MTX')),
         BandItem(
@@ -78,15 +84,13 @@ class ResView extends StatelessWidget {
           Text(s.nlMtx.loaded ? '${s.nlMtx.nets} declared pairs' : 'no netlist',
               style: t.bandV),
         ),
-        // FW-12: excitation is the ADS124S08's own IDAC1, fixed at 2 mA,
-        // routed to AIN9 (= HI_COM) - not the (removed) DAC8775.
         BandItem('Excitation',
             Text('2 mA · ADS124S08 IDAC1 → AIN9', style: t.bandV)),
         BandItem(
             'Sense', Text('ADS124S08 U68 · SPI1', style: t.bandV)),
-        BandItem('Gain', Text('PGA ×16 · 20 SPS', style: t.bandV)),
+        BandItem('Gain', Text('auto-ranged PGA · 20 SPS', style: t.bandV)),
         BandItem('Offset cal',
-            Text('0.412 Ω subtracted', style: t.bandV)),
+            Text('per measurement · not reported', style: t.bandV)),
       ]),
       TwoUp(
         main: Cols([
@@ -111,30 +115,21 @@ class ResView extends StatelessWidget {
           _ResConnectionResults(s: s),
         ]),
         side: Cols([
-          // MOCK: every row except "Limits from" is fixed text (Mode/Set
-          // current/Measured/Compliance/Resolution) - none of it reflects a
-          // real measurement or the real CAL GET reply.
+          // "Mode"/"Set current"/"Compliance" are real fixed hardware facts
+          // (FW-12/DOC-04: HW-01's 2-wire AD7476 fallback is gone, the
+          // IDAC's own datasheet compliance ceiling is AVDD − 0.6 V = 2.7 V).
+          // "Measured" (a live per-measurement excitation current readback)
+          // and a specific "Resolution" figure both dropped rather than
+          // invented — no wire field reports either, and resolution varies
+          // with the auto-ranged PGA gain (see the Excitation band above),
+          // so no single number is honest. "Limits from" is real.
           HtPanel(
             header: const [PanelTitle('Measurement conditions')],
             child: PanelPad(Kv([
-              KvRow(
-                'Mode',
-                KvInline([
-                  Text('2-wire fallback ', style: t.kvDd),
-                  const Tag(TagVariant.warn, 'HW-01'),
-                ]),
-              ),
+              const KvRow('Mode', KvText('4-wire Kelvin · ADS124S08 IDAC1')),
               const KvRow('Set current', KvText('2.000 mA')),
-              KvRow(
-                'Measured',
-                KvInline([
-                  Text('1.840 mA ', style: t.kvDd),
-                  const Tag(TagVariant.warn, '−8 %'),
-                ]),
-              ),
               const KvRow(
-                  'Compliance', KvText('3.3 V rail · headroom 1.1 V')),
-              const KvRow('Resolution', KvText('±0.9 mΩ at PGA ×16')),
+                  'Compliance', KvText('2.7 V ceiling (AVDD − 0.6 V) · 45 % margin at 2 mA')),
               KvRow(
                 'Limits from',
                 KvText(s.nlMtx.loaded
@@ -143,8 +138,11 @@ class ResView extends StatelessWidget {
               ),
             ])),
           ),
-          // MOCK: static documentation diagram - device list/values are
-          // fixed text, not read from the instrument.
+          // Static topology diagram, not live data - accurate to the
+          // current schematic (FW-12: IDAC1 → AIN9 → HI_COM, DAC8775/Opto U3
+          // gone). No protocol field reports a sense path to draw live even
+          // in principle, so this documents the fixed wiring rather than
+          // standing in for a real reading.
           HtPanel(
             header: const [PanelTitle('Sense path')],
             child: PanelPad(PathBox(const [
@@ -406,9 +404,17 @@ class HvView extends StatelessWidget {
             style: t.bandV,
           ),
         ),
-        // MOCK: Stimulus/Sense/Return/Limit are fixed hardware-doc text.
-        // "Stack" is real-ish (see s.stack's own mock note in app_state.dart
-        // - it's operator-picked, not detected).
+        // "Stack" is operator-picked, not detected (see s.stack's own note
+        // in app_state.dart). Stimulus/Sense/Return are fixed hardware
+        // facts, accurate to the current schematic. "trip 0.045 V" is the
+        // real fixed threshold `mLeakBad` uses below. "≥ 10 MΩ" stays fixed
+        // text rather than reading `s.limits.insMinMohm` for real: FW-11
+        // (PROJECT_LOG.md) found the firmware's own `LIMITS SET
+        // ins_min_mohm` value is off by 1000x from what "10 MΩ" actually
+        // means and has no effect on the pass/fail verdict either way — a
+        // live number here would be either wrong or would silently imply
+        // this is what the verdict is gated on, which it isn't. Needs FW-11
+        // resolved first, not a GUI-side unit guess.
         BandItem(
           'Stimulus',
           Text('500 V DC · R3002 1 MΩ',
@@ -429,10 +435,10 @@ class HvView extends StatelessWidget {
         ]),
         side: Cols([
           _HvRailPanel(s: s),
-          // MOCK: static documentation diagram - accurate to the schematic
-          // (DAC8830/CA05P-5/R3002/R3004 unaffected by FW-12, unlike the
-          // Resistance view's stale DAC8775 references), but still fixed
-          // text, not derived from a real run.
+          // Static topology diagram, not live data - accurate to the
+          // schematic (DAC8830/CA05P-5/R3002/R3004 unaffected by FW-12,
+          // unlike the Resistance view's now-corrected stale DAC8775
+          // references).
           HtPanel(
             header: const [PanelTitle('Leakage loop')],
             child: PanelPad(PathBox(
@@ -457,15 +463,14 @@ class HvView extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Kv([
-                  // MOCK: unconditional literal - always reads "closed /
-                  // safe" regardless of any real interlock state (there is
-                  // no protocol field for this at all).
-                  KvRow(
+                  // No protocol field reports interlock state at all -
+                  // honestly unverified rather than an unconditional "safe",
+                  // same rule verifyChecks row 5 (app_state.dart) follows:
+                  // the GUI must never show a safe state it hasn't been told
+                  // is real.
+                  const KvRow(
                     'Interlock',
-                    KvInline([
-                      Text('closed ', style: t.kvDd),
-                      const Tag(TagVariant.ok, 'safe'),
-                    ]),
+                    KvText('not reported by the instrument · unverified'),
                   ),
                   const KvRow('Switching',
                       KvText('cold · discharge before every relay change')),
@@ -503,12 +508,10 @@ class HvView extends StatelessWidget {
   }
 }
 
-/// `#hvCards` — `buildCards()` and `setRelays()`
-// MOCK: setRelays() is never called from a real INSUL RUN - AppState._onInsul
-// discards the real per-net m.net/m.leakMohm data it receives and only tallies
-// pass/fail (see the MOCK comment on _onInsul in app_state.dart). This grid
-// only ever lights up if the operator clicks the canned F04 fault card
-// (openFault()); it never reflects an actual HV test in progress.
+/// `#hvCards` — `buildCards()` and `setRelays()`. `AppState._onInsul` calls
+/// `setRelays(n, !pass)` for every real `!INSUL` result (GUI-09/CL-40), so
+/// this grid reflects an actual run in progress, not only the fault-card
+/// click path.
 class _RelayPanel extends StatelessWidget {
   final AppState s;
   const _RelayPanel({required this.s});

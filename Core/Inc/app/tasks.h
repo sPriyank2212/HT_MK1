@@ -45,7 +45,13 @@ typedef enum
   /* Forces safe, then clears the fault latch. Handled BEFORE the sequencer's
    * fault gate - it is the only recovery from a latched fault short of a power
    * cycle, so it has to run while faulted. */
-  CMD_CLEAR_FAULT = 8
+  CMD_CLEAR_FAULT = 8,
+  /* Reads the Control Card's DS18B20 (U2, PA0 - see HW-13/FW-14). Diagnostic
+   * only, no netlist/fixture involved. Routed through the sequencer rather
+   * than answered inline in proto.c because a real conversion blocks for a
+   * little over 750 ms - doing that in tComms would stall the protocol
+   * parser (and every other command's reply) for most of a second. */
+  CMD_TEMP_READ   = 9
 } TestCmdType_t;
 
 /* CMD_FORCE_SAFE.b: ask the sequencer to emit !FIXTURE (value in .a) after the

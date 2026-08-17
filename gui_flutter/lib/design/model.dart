@@ -450,14 +450,6 @@ class FixNetlist {
   });
 }
 
-class HvFile {
-  final String name;
-  final int cards;
-  final int nets;
-  final String note;
-  const HvFile(this.name, this.cards, this.nets, this.note);
-}
-
 /// `USES` — what each netbar says the file is for.
 const Map<String, String> kUses = {
   'run': 'continuity + resistance read this file',

@@ -15,6 +15,7 @@ import '../design/icons.dart';
 import '../design/tokens.dart';
 import '../design/widgets.dart';
 import 'app_state.dart';
+import 'build_tag.dart';
 
 /// `@media (max-width:860px)` — the rail goes horizontal and the page scrolls.
 ///
@@ -609,7 +610,18 @@ class Rail extends StatelessWidget {
   final AppState s;
   final bool horizontal;
 
-  const Rail({super.key, required this.s, this.horizontal = false});
+  /// Whether this is a customer build — hides the Diag button. Defaults to
+  /// the real compile-time flag ([kCustomerBuild]); overridable so a test
+  /// can exercise both branches without needing two separate `dart-define`
+  /// test runs.
+  final bool customerBuild;
+
+  const Rail({
+    super.key,
+    required this.s,
+    this.horizontal = false,
+    this.customerBuild = kCustomerBuild,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -648,8 +660,11 @@ class Rail extends StatelessWidget {
           label: 'Results',
           icon: HtIcons.results,
           badge: null),
-      _RailButton(
-          s: s, view: 'diag', label: 'Diag', icon: HtIcons.diag, badge: null),
+      // Customer builds ship with no Diagnostics section at all - not just
+      // a hidden button, see kCustomerBuild.
+      if (!customerBuild)
+        _RailButton(
+            s: s, view: 'diag', label: 'Diag', icon: HtIcons.diag, badge: null),
     ];
 
     if (horizontal) {
@@ -710,7 +725,9 @@ class Rail extends StatelessWidget {
           buttons[5],
           // .rail .rail-end{margin-top:auto}
           const Expanded(child: SizedBox()),
-          buttons[6],
+          // Diag (buttons[6]) doesn't exist in a customer build - the first
+          // six are always present, this one is the only conditional entry.
+          if (buttons.length > 6) buttons[6],
         ],
       ),
     );

@@ -294,22 +294,67 @@ void main() {
       expect(s.drBar, closeTo(0.5, 1e-9));
     });
 
-    test('a continuity failure raises F06 and shows in the fault list', () {
+    test('a continuity failure raises F06 and shows the real net that failed',
+        () {
       final s = newState();
-      // The F06 fault row names nets[4], so the model needs at least five.
       s.rebuildNets(const [
         msg.NetEntry(hi: 1, lo: 2),
         msg.NetEntry(hi: 3, lo: 4),
-        msg.NetEntry(hi: 5, lo: 6),
-        msg.NetEntry(hi: 7, lo: 8),
-        msg.NetEntry(hi: 9, lo: 10),
       ]);
       s.onEvent(const msg.ContResult(
-          hi: 1, lo: 2, status: proto.ContStatus.open));
-      expect(s.nets[0].open, isTrue);
+          hi: 3, lo: 4, status: proto.ContStatus.open));
+      expect(s.nets[1].open, isTrue);
       expect(s.faultsOn['f06'], isTrue);
-      expect(s.faultList.map((f) => f.code), contains('F06'));
+      final f06 = s.faultList.singleWhere((f) => f.code == 'F06');
+      // Real net (NET_002, the one that actually opened) - not a fixed
+      // nets[4] reference, and no fabricated voltage (ContResult carries no
+      // voltage over the wire).
+      expect(f06.detail, contains('NET_002'));
+      expect(f06.net, same(s.nets[1]));
+      expect(f06.value, '—');
       expect(s.faultCountPill.text, '1 open');
+    });
+
+    test('a resistance failure raises F08 with the real net, reading and '
+        'limit', () {
+      final s = newState();
+      s.rebuildNets(const [msg.NetEntry(hi: 1, lo: 2)]);
+      s.onEvent(const msg.ResResult(
+          hi: 1, lo: 2, milliohms: 4812, status: proto.ResStatus.failHigh));
+      expect(s.faultsOn['f08'], isTrue);
+      final f08 = s.faultList.singleWhere((f) => f.code == 'F08');
+      expect(f08.value, '4.812 Ω');
+      expect(f08.detail, contains('limit 2.000 Ω'));
+      expect(f08.net, same(s.nets[0]));
+    });
+
+    test('an insulation failure raises F04 with the real net and card/relay',
+        () {
+      final s = newState();
+      s.rebuildNets(const [msg.NetEntry(hi: 1, lo: 2)]);
+      s.onEvent(const msg.InsulResult(
+          net: 1, leakMohm: 3200000000, status: proto.InsulStatus.fail));
+      expect(s.faultsOn['f04'], isTrue);
+      final f04 = s.faultList.singleWhere((f) => f.code == 'F04');
+      expect(f04.value, '3.2 MΩ');
+      expect(f04.net, same(s.nets[0]));
+    });
+
+    test('the pre-HV verify modal shows the real worst resistance margin',
+        () {
+      final s = newState();
+      s.rebuildNets(const [
+        msg.NetEntry(hi: 1, lo: 2),
+        msg.NetEntry(hi: 3, lo: 4),
+      ]);
+      // nets[0] keeps its default rmax=2.00, r=0 (margin +2.000); make
+      // nets[1] the real worst by measuring it close to its limit.
+      s.onEvent(const msg.ResResult(
+          hi: 3, lo: 4, milliohms: 1910, status: proto.ResStatus.pass));
+      s.R['res'] = 'pass';
+      final row2 = s.verifyChecks[1];
+      expect(row2.detail, contains('worst margin +0.090 Ω'));
+      expect(row2.detail, contains('2 mA excitation'));
     });
   });
 
@@ -372,12 +417,14 @@ void main() {
       s.requestHv();
       expect(s.mdNlOpen, isTrue);
       expect(s.mdVerifyOpen, isFalse);
-
-      s.pickHvFile(hvFilesFor(s.netc).first);
-      expect(s.mdNlOpen, isFalse);
-      expect(s.mdVerifyOpen, isTrue);
       // The acknowledgement starts unchecked every time.
       expect(s.ackChecked, isFalse);
+      // What picking a real file does from here (closes the picker, opens
+      // verify) is covered end to end in
+      // netlist_file_load_test.dart's browseHvNetlist group — there is no
+      // canned-file picker anymore (GUI Reality Check: the three example
+      // .hnl filenames used to be selectable and would "load" fabricated
+      // metadata as if real).
     });
 
     test('the verification list reflects what actually passed', () {

@@ -77,11 +77,13 @@ class _Domains extends StatelessWidget {
         title: 'Resistance',
         stage: 'S1 · MTX',
         state: s.dResS,
-        // MOCK: literal string, never updates. Doesn't reflect the IDAC's
-        // actual 2 mA excitation (FW-12) or the real PGA gain/offset that
-        // Diagnostics' Calibration panel already reads from CAL GET.
-        cond: '1.84 mA · 4-wire\n'
-            'ADS124S08 U68 · SPI1 · PGA ×16\n'
+        // Fixed hardware facts, not a live reading (see the matching Band
+        // in res_hv_views.dart's ResView for the same numbers/reasoning):
+        // 2 mA is the IDAC's genuinely fixed excitation (FW-12); PGA gain
+        // is auto-ranged per measurement (FW-02), so no single number is
+        // claimed here.
+        cond: '2 mA · 4-wire\n'
+            'ADS124S08 U68 · SPI1 · auto-ranged PGA\n'
             'OPTO_CNTR = HIGH',
         stat: s.drN,
         unit: 'out of limit',
@@ -288,12 +290,13 @@ class _StackPanel extends StatelessWidget {
         Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // MOCK: "Detected on I2C2" is false - s.stack is a manual Seg
-            // pick (pickStack, below), not read from the instrument. No
-            // protocol field for a real detected card count exists.
+            // Set by the operator below (pickStack) - no protocol field
+            // reports a real detected card count on I2C2 yet (see GUI-06,
+            // "BUS SCAN").
             Text(
-              'Detected on I2C2. The HV netlist must match the fitted stack — '
-              'a 4-card netlist on a 3-card stack leaves 64 nets unreachable.',
+              'Set by the operator — no bus-enumeration command exists yet to '
+              'detect it. The HV netlist must match the fitted stack — a '
+              '4-card netlist on a 3-card stack leaves 64 nets unreachable.',
               style: t.ui(size: 12, color: c.ink2, height: 1.5),
             ),
             const SizedBox(height: 10),

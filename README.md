@@ -42,11 +42,11 @@ and 500 V insulation testing across a Control Card, a Matrix Card and up to four
 
 | Card | File | Notes |
 |---|---|---|
-| Control | `Doc/Control_Card 1.pdf` | STM32G474, mux addressing via MCP23017 U21, 6 connectors (J1–J6). **DAC8775 removed** — Kelvin excitation now sources from the ADS124S08's own IDAC instead (HW-11 closed; firmware updated, FW-12 closed — see `Doc/idac_current_source.md`) |
-| Matrix | `Doc/Matrix_Card-8.pdf` | 128× CD74HC4051, 4-wire sense array, ADS124S08 (U68, sheet 9 — confirmed present, see HW-12); AIN9 now wired to `HI_COM` for the IDAC excitation path |
-| HV | `Doc/HV_Card-3.pdf` | 500 V, 64 HS + 64 LS reed relays per card, R3003 = 5 kΩ, confirmed (HW-08 closed) |
+| Control | `Doc/Control_Card.pdf` | STM32G474, mux addressing via MCP23017 U21, 6 connectors (J1–J6). **DAC8775 removed** — Kelvin excitation now sources from the ADS124S08's own IDAC instead (HW-11 closed; firmware updated, FW-12 closed — see `Doc/idac_current_source.md`). **New (HW-13, 2026-08-16): U2, a DS18B20U+T&R 1-Wire temperature sensor, on `PA0`** (R2 4.7 kΩ pull-up, R3 47 Ω series on `DQ`) — driven (FW-14 closed): `drivers/ds18b20`, `>TEMP READ`/`!TEMP`, unverified on real hardware |
+| Matrix | `Doc/Matrix_Card.pdf` | 128× CD74HC4051, 4-wire sense array, ADS124S08 (U68, sheet 9 — confirmed present, see HW-12); AIN9 now wired to `HI_COM` for the IDAC excitation path. Unchanged in the 2026-08-16 schematic sync |
+| HV | `Doc/HV_Card.pdf` | 500 V, 64 HS + 64 LS reed relays per card, R3003 = 5 kΩ, confirmed (HW-08 closed). 2026-08-16 sync: cosmetic resistor-refdes renumbering only (R503/R546 area), no net/topology change |
 
-**2026-08-12: schematic set replaced again** (`Control_Card-5`/`Matrix_Card-7` → `Control_Card 1`/`Matrix_Card-8`), still uncommitted in the working tree, same-day as `-4`/`2`/`-1` → `-5`/`-7`/`-3` closed out under HW-12. Note the naming break: `Control_Card 1.pdf` doesn't follow the `-N` convention the other files use — worth confirming that's intentional before the next sync. See `Doc/idac_current_source.md` for what changed and why it matters.
+**2026-08-16: schematic set resynced, filenames normalized** — `Control_Card 1.pdf`/`HV_Card-3.pdf`/`Matrix_Card-8.pdf` → `Control_Card.pdf`/`HV_Card.pdf`/`Matrix_Card.pdf`, dropping the `-N`/` 1` suffixes flagged as an inconsistency since CL-27/CL-32. See HW-13 in `PROJECT_LOG.md` for the full diff against the previous revision.
 
 ## Firmware layout
 

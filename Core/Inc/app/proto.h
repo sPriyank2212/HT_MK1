@@ -83,6 +83,17 @@ void Proto_EvtFixture(ProtoFixture_t fx);
 void Proto_EvtHv(int32_t millivolts);
 void Proto_EvtSafe(void);
 
+/**
+  * @brief  Report a `>TEMP READ` result.
+  * @param  deci_celsius : [in] temperature in tenths of a degree C (235 =
+  *                              23.5 C) - an integer, like every other
+  *                              measurement on the wire. Also sidesteps
+  *                              formatting a float at all: this build links
+  *                              newlib-nano without -u _printf_float, so a
+  *                              bare "%f" prints nothing (see ads1232.c).
+  */
+void Proto_EvtTemp(int32_t deci_celsius);
+
 /* Liveness heartbeat. The GUI calls five seconds of silence a lost link
  * (brief 3.5.3); an idle instrument is otherwise mute. Call periodically,
  * comfortably inside that window - see PROTO_HEARTBEAT_MS. */

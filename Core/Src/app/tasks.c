@@ -14,6 +14,7 @@
 #include "test/continuity.h"
 #include "test/kelvin.h"
 #include "test/insulation.h"
+#include "drivers/ds18b20.h"
 #include "cmsis_os2.h"
 #include <string.h>
 
@@ -257,6 +258,21 @@ static void run_command(const TestCmd_t *c)
       (void)Insulation_TestPair(c->board, (uint8_t)c->a, (uint8_t)c->b, c->vfrac, &r);
       s_hv_active = 0U;
       LOG_I("INS", "b%u sense=%dmV v=%d", c->board, (int)(r.sense_volts * 1000.0f), (int)r.verdict);
+      break;
+    }
+    case CMD_TEMP_READ:
+    {
+      float c;
+      if (DS18B20_ReadTemperature(&g_ds18b20, &c) == HAL_OK)
+      {
+        int32_t deci_c = (int32_t)((c >= 0.0f) ? (c * 10.0f + 0.5f) : (c * 10.0f - 0.5f));
+        Proto_EvtTemp(deci_c);
+        LOG_I("TEMP", "%ld deci-C", (long)deci_c);
+      }
+      else
+      {
+        LOG_E("TEMP", "DS18B20 read failed (missing/unpowered or bad CRC)");
+      }
       break;
     }
     case CMD_FORCE_SAFE:

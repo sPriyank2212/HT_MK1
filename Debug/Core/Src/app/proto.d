@@ -37,7 +37,7 @@ Core/Src/app/proto.o: ../Core/Src/app/proto.c ../Core/Inc/app/proto.h \
  ../Core/Inc/cards/matrix_card.h ../Core/Inc/drivers/mcp23017.h \
  ../Core/Inc/cards/control_frontend.h ../Core/Inc/drivers/ad7476.h \
  ../Core/Inc/cards/hv_card.h ../Core/Inc/drivers/dac8830.h \
- ../Core/Inc/drivers/ads124s08.h
+ ../Core/Inc/drivers/ads124s08.h ../Core/Inc/drivers/ds18b20.h
 ../Core/Inc/app/proto.h:
 ../Core/Inc/main.h:
 ../Drivers/STM32G4xx_HAL_Driver/Inc/stm32g4xx_hal.h:
@@ -86,3 +86,4 @@ Core/Src/app/proto.o: ../Core/Src/app/proto.c ../Core/Inc/app/proto.h \
 ../Core/Inc/cards/hv_card.h:
 ../Core/Inc/drivers/dac8830.h:
 ../Core/Inc/drivers/ads124s08.h:
+../Core/Inc/drivers/ds18b20.h:

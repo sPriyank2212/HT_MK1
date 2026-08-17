@@ -39,7 +39,20 @@
       "Bash(dart run *)",
       "Bash(flutter analyze *)",
       "Bash(flutter test *)",
-      "Bash(dart --version)"
+      "Bash(dart --version)",
+      "Bash(git status *)",
+      "Bash(mkdir -p /c/Users/priya/AppData/Local/Temp/claude/c--Users-priya-OneDrive-Documents-Gitlab-Software-Team-ht-mk1-github-repo-HT-MK1/106c82fc-a25f-4f20-be93-44d4c4234360/scratchpad/old /c/Users/priya/AppData/Local/Temp/claude/c--Users-priya-OneDrive-Documents-Gitlab-Software-Team-ht-mk1-github-repo-HT-MK1/106c82fc-a25f-4f20-be93-44d4c4234360/scratchpad/new)",
+      "Bash(git show *)",
+      "Read(//c/Users/priya/AppData/Local/Temp/claude/c--Users-priya-OneDrive-Documents-Gitlab-Software-Team-ht-mk1-github-repo-HT-MK1/106c82fc-a25f-4f20-be93-44d4c4234360/scratchpad/**)",
+      "Bash(SCRATCH=\"/c/Users/priya/AppData/Local/Temp/claude/c--Users-priya-OneDrive-Documents-Gitlab-Software-Team-ht-mk1-github-repo-HT-MK1/106c82fc-a25f-4f20-be93-44d4c4234360/scratchpad\" *)",
+      "Read(//c/Users/priya/AppData/Local/Temp/claude/c--Users-priya-OneDrive-Documents-Gitlab-Software-Team-ht-mk1-github-repo-HT-MK1/106c82fc-a25f-4f20-be93-44d4c4234360/scratchpad/old/**)",
+      "Bash(pdftotext -layout Doc/Control_Card.pdf /c/Users/priya/AppData/Local/Temp/claude/c--Users-priya-OneDrive-Documents-Gitlab-Software-Team-ht-mk1-github-repo-HT-MK1/106c82fc-a25f-4f20-be93-44d4c4234360/scratchpad/new/Control_Card_layout.txt)",
+      "Read(//c/Users/priya/AppData/Local/Temp/claude/c--Users-priya-OneDrive-Documents-Gitlab-Software-Team-ht-mk1-github-repo-HT-MK1/106c82fc-a25f-4f20-be93-44d4c4234360/scratchpad/new/**)",
+      "Bash(pdftotext -layout /c/Users/priya/AppData/Local/Temp/claude/c--Users-priya-OneDrive-Documents-Gitlab-Software-Team-ht-mk1-github-repo-HT-MK1/106c82fc-a25f-4f20-be93-44d4c4234360/scratchpad/old/HV_Card.pdf /c/Users/priya/AppData/Local/Temp/claude/c--Users-priya-OneDrive-Documents-Gitlab-Software-Team-ht-mk1-github-repo-HT-MK1/106c82fc-a25f-4f20-be93-44d4c4234360/scratchpad/old/HV_Card_layout.txt)",
+      "Bash(pdftotext -layout Doc/HV_Card.pdf /c/Users/priya/AppData/Local/Temp/claude/c--Users-priya-OneDrive-Documents-Gitlab-Software-Team-ht-mk1-github-repo-HT-MK1/106c82fc-a25f-4f20-be93-44d4c4234360/scratchpad/new/HV_Card_layout.txt)",
+      "Bash(cd \"c:\\\\Users\\\\priya\\\\OneDrive\\\\Documents\\\\Gitlab\\\\Software_Team\\\\ht_mk1\\\\github_repo\\\\HT_MK1\" *)",
+      "Bash(find \"/c/ST/STM32CubeIDE_2.1.1\" -iname \"arm-none-eabi-gcc.exe\" 2>/dev/null | head -5 *)",
+      "Read(//c/ST/STM32CubeIDE_2.1.1/**)"
     ],
     "additionalDirectories": [
       "c:\\Users\\psoni\\STM32CubeIDE\\workspace_1.19.0\\HT_MK1"

@@ -40,14 +40,14 @@ class ContView extends StatelessWidget {
       Netbar(s: s, dom: 'mtx', useKey: 'cont'),
       Netbar(s: s, dom: 'fix', useKey: 'cont'),
       _ModeSelect(s: s),
-      // MOCK: Connector/Switching/Stimulus/Sense/Threshold are fixed
-      // hardware-doc text, not read from the instrument - "CD4067" is also
-      // stale (mux is CD74HC4051 since the Matrix Card rework). Only "Scan
-      // scope" is real (computed from s.cmode).
+      // Connector/Switching/Stimulus/Sense/Threshold are fixed hardware-doc
+      // text, not read from the instrument (there is no protocol field for
+      // any of it) - accurate to the schematic though, not stale. Only
+      // "Scan scope" is real (computed from s.cmode).
       Band([
         const BandItem('Connector', Conn('J-MTX')),
         BandItem('Switching',
-            Text('CD4067 · 256 HS × 256 LS', style: context.type.bandV)),
+            Text('CD74HC4051 · 256 HS × 256 LS', style: context.type.bandV)),
         BandItem('Stimulus',
             Text('3.3 V via R26 10 kΩ', style: context.type.bandV)),
         BandItem(

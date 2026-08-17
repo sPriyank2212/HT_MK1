@@ -25,6 +25,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
 import 'app/app_state.dart';
+import 'app/build_tag.dart';
 import 'app/modals.dart';
 import 'app/run_history.dart';
 import 'app/shell.dart';
@@ -229,10 +230,16 @@ Future<void> main(List<String> args) async {
     transportFactory = SerialTransport.new;
     stdout.writeln('instrument on $name at ${o.baud} 8N1');
   } else if (o.sim) {
+    // port: 0, not o.port (defaults to 46000 - the exact same default a real
+    // --host/--port TCP bridge target uses) - an OS-assigned free port
+    // instead of the conventional one means the demo's bundled simulator can
+    // never collide with, or be mistaken for, a real server that happens to
+    // already be listening locally. The double-click demo build must not be
+    // able to end up talking to anything but its own simulator.
     final sim = await SimulatorServer.start(
       makeScenario(o.scenario, nets: o.nets),
       host: '127.0.0.1',
-      port: o.port,
+      port: 0,
       interval: Duration(microseconds: (o.interval * 1e6).round()),
     );
     host = '127.0.0.1';
@@ -427,7 +434,11 @@ class _HtHomeState extends State<HtHome> {
         'hv' => HvView(s: s),
         'program' => ProgramView(s: s),
         'results' => ResultsView(s: s),
-        'diag' => DiagView(s: s),
+        // Customer builds have no Diag route at all - the Rail's button is
+        // already gone (see kCustomerBuild), this is the defensive fallback
+        // in case s.view somehow still holds 'diag' (e.g. restored from a
+        // stored preference in a future change).
+        'diag' when !kCustomerBuild => DiagView(s: s),
         _ => RunView(s: s),
       };
 

@@ -38,7 +38,7 @@ Core/Src/test/insulation.o: ../Core/Src/test/insulation.c \
  ../Core/Inc/cards/matrix_card.h ../Core/Inc/drivers/mcp23017.h \
  ../Core/Inc/cards/control_frontend.h ../Core/Inc/drivers/ad7476.h \
  ../Core/Inc/cards/hv_card.h ../Core/Inc/drivers/dac8830.h \
- ../Core/Inc/drivers/ads124s08.h
+ ../Core/Inc/drivers/ads124s08.h ../Core/Inc/drivers/ds18b20.h
 ../Core/Inc/test/insulation.h:
 ../Core/Inc/test/harness_test.h:
 ../Core/Inc/bsp/board.h:
@@ -86,3 +86,4 @@ Core/Src/test/insulation.o: ../Core/Src/test/insulation.c \
 ../Core/Inc/cards/hv_card.h:
 ../Core/Inc/drivers/dac8830.h:
 ../Core/Inc/drivers/ads124s08.h:
+../Core/Inc/drivers/ds18b20.h:

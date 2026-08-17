@@ -36,6 +36,7 @@ MatrixCard_t      g_matrix;
 ControlFrontend_t g_frontend;
 HvCard_t          g_hv[BOARD_HV_COUNT];
 ADS124S08_t       g_ads124s08;
+DS18B20_t         g_ds18b20;
 
 /* Set by Board_Init() on its way out; see Board_IsReady(). Starts 0 so any
  * hardware command that runs before Board_Init() is even called (should not
@@ -99,6 +100,16 @@ static uint8_t s_board_ready = 0U;
 #define BOARD_HV0_ADC_RAIL_CS_PIN   HV_CARD_DT_1_1_Pin
 #define BOARD_HV0_ADC_LEAK_CS_PORT  HV_CARD_DT_1_0_GPIO_Port  /* PC13 */
 #define BOARD_HV0_ADC_LEAK_CS_PIN   HV_CARD_DT_1_0_Pin
+
+/* U2 (DS18B20U+T&R), Control Card `uC` sheet - HW-13, 2026-08-16. Confirmed
+ * from the schematic diff, not yet carried into the CubeMX .ioc/gpio.c (no
+ * main.h macro exists for PA0 yet) - configured directly in board_init_temp()
+ * below, the same "configure directly so a regen can't clobber it" approach
+ * Log_HwInit_LPUART1() and ADS1232_HwInit_Nucleo() use for pins ahead of
+ * their own CubeMX registration. TODO: fold into the .ioc at the next real
+ * CubeMX sync. */
+#define BOARD_TEMP_PORT   GPIOA
+#define BOARD_TEMP_PIN    GPIO_PIN_0
 
 /**
   * @brief  Instantiate and bind the Matrix card (enable expanders + on-card ADC).
@@ -342,6 +353,27 @@ static HAL_StatusTypeDef board_init_hv(uint8_t idx)
 }
 
 /**
+  * @brief  Configure PA0 open-drain and bind the DS18B20 (U2) temperature sensor.
+  * @note   No bus/mutex dependency (unlike board_init_matrix()/board_init_ads124s08()) -
+  *         it is a single GPIO, not on the shared I2C segments.
+  * @retval HAL status from DS18B20_Init().
+  */
+static HAL_StatusTypeDef board_init_temp(void)
+{
+  GPIO_InitTypeDef gpio = {0};
+
+  __HAL_RCC_GPIOA_CLK_ENABLE();   /* already enabled by MX_GPIO_Init(); harmless twice */
+
+  gpio.Pin   = BOARD_TEMP_PIN;
+  gpio.Mode  = GPIO_MODE_OUTPUT_OD;
+  gpio.Pull  = GPIO_NOPULL;         /* R2 (4.7k) on the schematic is the pull-up */
+  gpio.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(BOARD_TEMP_PORT, &gpio);
+
+  return DS18B20_Init(&g_ds18b20, BOARD_TEMP_PORT, BOARD_TEMP_PIN);
+}
+
+/**
   * @brief  Initialise the whole board: matrix, control front end and all HV cards.
   * @note   Runs the per-subsystem init helpers in order and aborts on the first
   *         failure. On success every layer is left in its safe idle state (HV at
@@ -378,6 +410,13 @@ HAL_StatusTypeDef Board_Init(void)
       return st;
     }
   }
+  /* Not gated into the abort-on-failure chain above: DS18B20_Init() only
+   * fails on a NULL argument (never happens here - the pointers are fixed
+   * local constants), and a missing/unpowered sensor is not detected until
+   * DS18B20_ReadTemperature() is actually called (>TEMP READ). A diagnostic
+   * temperature sensor should not be able to block the electrical-test
+   * subsystems from coming up. */
+  (void)board_init_temp();
   s_board_ready = 1U;
   return HAL_OK;
 }

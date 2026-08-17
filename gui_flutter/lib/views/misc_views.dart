@@ -64,54 +64,81 @@ class ProgramView extends StatelessWidget {
           }),
         ),
       ),
-      // MOCK: _mtxRows (below) is a static const array, completely
-      // disconnected from whatever MTX netlist file is actually loaded -
-      // "showing 8" is hardcoded too, not "8 of N".
+      // Real once a netlist is loaded (s.nets) - used to be a static const
+      // array unrelated to whatever file was actually loaded. "Wire" stays
+      // "—": no netlist format this app reads carries a wire-gauge column,
+      // so it's left blank rather than invented (same rule report.dart's
+      // uncarried columns follow).
       HtPanel(
-        header: const [
-          PanelTitle('MTX nets'),
-          FlexSpacer(),
-          Lbl('continuity + resistance · showing 8'),
+        header: [
+          const PanelTitle('MTX nets'),
+          const FlexSpacer(),
+          Lbl(s.nlMtx.loaded
+              ? 'continuity + resistance · ${s.nets.length} nets'
+              : 'no MTX netlist loaded'),
         ],
-        child: HtTable(
-          minWidth: 640,
-          columns: const [
-            HtCol('Net'),
-            HtCol('Wire'),
-            HtCol('HS'),
-            HtCol('LS'),
-            HtCol('R min', right: true),
-            HtCol('R max', right: true),
-            HtCol('Topology'),
-          ],
-          rows: [
-            for (final r in _mtxRows)
-              [
-                Td(r.$1),
-                Td(r.$2, numeric: true),
-                Td(r.$3, numeric: true),
-                Td(r.$4, numeric: true),
-                Td(r.$5, numeric: true),
-                Td(r.$6, numeric: true),
-                Tag(r.$7, r.$8),
-              ],
-          ],
-        ),
+        child: !s.nlMtx.loaded
+            ? Padding(
+                padding: const EdgeInsets.symmetric(vertical: 22),
+                child: Text('Load an MTX netlist to see the expected nets.',
+                    style: t.td.copyWith(color: c.ink3),
+                    textAlign: TextAlign.center),
+              )
+            : HtTable(
+                minWidth: 640,
+                columns: const [
+                  HtCol('Net'),
+                  HtCol('Wire'),
+                  HtCol('HS'),
+                  HtCol('LS'),
+                  HtCol('R min', right: true),
+                  HtCol('R max', right: true),
+                  HtCol('Topology'),
+                ],
+                rows: [
+                  for (final n in s.nets)
+                    [
+                      Td(n.name),
+                      const Td('—', numeric: true),
+                      Td('${refOf(n.src)} / ${pad(n.hs + 1, 3)}',
+                          numeric: true),
+                      Td(
+                          '${n.dsts.map(refOf).join(" · ")} / '
+                          '${pad(n.ls + 1, 3)}',
+                          numeric: true),
+                      Td(n.rmin.toStringAsFixed(2), numeric: true),
+                      Td(n.rmax.toStringAsFixed(2), numeric: true),
+                      _topologyTag(n),
+                    ],
+                ],
+              ),
       ),
-      // PARTIAL: the "loaded"/"not loaded" gate and "Reachable" column (below)
-      // are real (nlHv.loaded, s.stack), but _hvRows itself is a static const
-      // array - the 7 rows shown have nothing to do with the actual HV
-      // netlist file's contents.
+      // GUI-11: HV card/relay assignment is a direct function of the source
+      // pin's own flat board position, not a separate per-net mapping read
+      // from the HV netlist file (same real data `_NetResults` in
+      // res_hv_views.dart already shows live) - so this table is real once
+      // an MTX netlist is loaded, same gate as "MTX nets" above, not
+      // `nlHv.loaded`. The HV netlist file's actual remaining job is just
+      // declaring a card count to cross-check against the fitted stack
+      // before a run (`stackMatch()`) - that stays a separate concept from
+      // this per-net listing. "Insul min" stays fixed text for the same
+      // FW-11 reason as the HV view's "Limit" band item (res_hv_views.dart).
       HtPanel(
         header: [
           const PanelTitle('HV nets'),
           const FlexSpacer(),
-          Lbl(s.nlHv.loaded
-              ? '${s.nlHv.name} · ${s.nlHv.nets} nets · ${s.nlHv.cards}-card map'
-              : 'no HV netlist loaded'),
+          Lbl(s.nlMtx.loaded
+              ? '${s.nets.length} nets · $kFixPins pins'
+              : 'no MTX netlist loaded'),
         ],
-        child: s.nlHv.loaded
-            ? HtTable(
+        child: !s.nlMtx.loaded
+            ? Padding(
+                padding: const EdgeInsets.symmetric(vertical: 22),
+                child: Text('Load an MTX netlist to see the relay map.',
+                    style: t.td.copyWith(color: c.ink3),
+                    textAlign: TextAlign.center),
+              )
+            : HtTable(
                 minWidth: 640,
                 columns: const [
                   HtCol('Net'),
@@ -122,26 +149,20 @@ class ProgramView extends StatelessWidget {
                   HtCol('Reachable'),
                 ],
                 rows: [
-                  for (final r in _hvRows)
+                  for (final n in s.nets)
                     () {
-                      final reach = r.$2 < s.stack;
+                      final reach = n.card < s.stack;
                       return <Widget>[
-                        Td(r.$1),
-                        Td('H${r.$2 + 1}', numeric: true),
-                        Td('HS-${pad(r.$3, 2)}', numeric: true),
-                        Td('all except LS-${pad(r.$3, 2)}', numeric: true),
-                        Td('10 MΩ', numeric: true),
+                        Td(n.name),
+                        Td('H${n.card + 1}', numeric: true),
+                        Td('HS-${pad(n.relay, 2)}', numeric: true),
+                        Td('all except LS-${pad(n.relay, 2)}', numeric: true),
+                        const Td('10 MΩ', numeric: true),
                         Tag(reach ? TagVariant.ok : TagVariant.bad,
                             reach ? 'yes' : 'card not fitted'),
                       ];
                     }(),
                 ],
-              )
-            : Padding(
-                padding: const EdgeInsets.symmetric(vertical: 22),
-                child: Text('Load an HV netlist to see the relay map.',
-                    style: t.td.copyWith(color: c.ink3),
-                    textAlign: TextAlign.center),
               ),
       ),
     ]);
@@ -159,39 +180,14 @@ class ProgramView extends StatelessWidget {
         ],
       );
 
-  // MOCK: invented example data (part numbers, wire gauges, pin refs) - see
-  // the MOCK comment on the "MTX nets" panel above.
-  static const List<(String, String, String, String, String, String, TagVariant, String)>
-      _mtxRows = [
-    ('PWR_28V_A', '14 AWG', 'J1-01 / 001', 'J3-14 / 142', '0.02', '0.35',
-        TagVariant.mut, '1:1'),
-    ('PWR_28V_B', '14 AWG', 'J1-02 / 002', 'J3-15 / 143', '0.02', '0.35',
-        TagVariant.mut, '1:1'),
-    ('GND_RET', '12 AWG', 'J1-03 / 003', 'J2-22 / 086', '0.01', '0.20',
-        TagVariant.mut, '1:1'),
-    ('ARINC_A_HI', '24 AWG TSP', 'J1-14 / 014', 'J2-07 / 071', '0.10', '3.00',
-        TagVariant.mut, '1:1'),
-    ('ARINC_A_LO', '24 AWG TSP', 'J1-15 / 015', 'J2-08 / 072', '0.10', '3.00',
-        TagVariant.mut, '1:1'),
-    ('LAMP_CMD', '22 AWG', 'J1-22 / 022', 'J3-05 / 133', '0.05', '2.00',
-        TagVariant.mut, '1:1'),
-    ('SPLICE_28V', '18 AWG', 'J1-31 / 031', 'J2-04 · J3-09 · J4-01', '0.05',
-        '1.20', TagVariant.acc, '1:3 splice'),
-    ('SENSE_RTD_1', '26 AWG', 'J2-11 / 075', 'J4-03 / 195', '0.20', '5.00',
-        TagVariant.mut, '1:1'),
-  ];
+  /// `Topology` column for the real "MTX nets" table above — same
+  /// classification `_Inspector` (cont_view.dart) uses for the net inspector.
+  Widget _topologyTag(Net n) => switch (n.joint) {
+        'Y' => Tag(TagVariant.acc, '1:${n.dsts.length} splice'),
+        'I' => const Tag(TagVariant.acc, 'inline splice'),
+        _ => const Tag(TagVariant.mut, '1:1'),
+      };
 
-  // MOCK: same as _mtxRows above - invented example data, unrelated to any
-  // real HV netlist file.
-  static const List<(String, int, int)> _hvRows = [
-    ('GND_RET', 0, 3),
-    ('PWR_28V_A', 0, 1),
-    ('PWR_28V_B', 0, 2),
-    ('ARINC_A_HI', 0, 14),
-    ('LAMP_RET', 1, 19),
-    ('SENSE_RTD_1', 2, 11),
-    ('AUX_SPARE', 3, 7),
-  ];
 }
 
 // ===========================================================================
@@ -205,25 +201,33 @@ class ResultsView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Cols([
-      // MOCK: SparkPainter.data is a fixed 24-value array (design/painters.dart)
-      // and the "78 %" pill is a literal string - neither is derived from
-      // AppState.history, despite Run history (below) now being real (GUI-05).
-      HtPanel(
-        header: const [
-          PanelTitle('First-pass yield · last 24 builds'),
-          FlexSpacer(),
-          Pill(PillVariant.acc, '78 %'),
-        ],
-        child: PanelPad(
-          SizedBox(
-            height: 54,
-            child: CustomPaint(
-              painter: SparkPainter(context.colors),
-              size: Size.infinite,
-            ),
+      // Real, from AppState.history (GUI-05) - there is no "build"/serial
+      // concept in the protocol (same reason Run history below is per-test,
+      // not per-build), so this is a rolling pass rate over recent runs
+      // rather than a literal "first-pass yield" figure.
+      Builder(builder: (context) {
+        final rolling = _recentPassRate(s, window: 5, maxPoints: 24);
+        final overall = _overallPassRate(s, maxPoints: 24);
+        return HtPanel(
+          header: [
+            const PanelTitle('Pass rate · recent runs'),
+            const FlexSpacer(),
+            Pill(PillVariant.acc, overall == null ? '—' : '$overall %'),
+          ],
+          child: PanelPad(
+            rolling.length < 2
+                ? Text('Not enough runs recorded yet this session.',
+                    style: context.type.td.copyWith(color: context.colors.ink3))
+                : SizedBox(
+                    height: 54,
+                    child: CustomPaint(
+                      painter: SparkPainter(context.colors, rolling),
+                      size: Size.infinite,
+                    ),
+                  ),
           ),
-        ),
-      ),
+        );
+      }),
       HtPanel(
         header: [
           const PanelTitle('Run history'),
@@ -240,30 +244,20 @@ class ResultsView extends StatelessWidget {
         child: _runHistoryTable(context, s),
       ),
       _testReports(context, s),
-      // MOCK: _pareto (below) is a static const array - no shift data exists
-      // anywhere in the protocol to compute this from.
+      // No per-fault location history is tracked anywhere (RunHistoryEntry
+      // is pass/fail counts only, not per-fault code/location) - honestly
+      // empty rather than four invented fault locations. A real version
+      // needs RunHistoryEntry extended to carry fault codes/locations, which
+      // is a real feature addition, not a wiring fix.
       HtPanel(
         header: const [PanelTitle('Fault pareto · this shift')],
-        child: HtTable(
-          columns: const [
-            HtCol('Code'),
-            HtCol('Test'),
-            HtCol('Fault'),
-            HtCol('Most common location'),
-            HtCol('Count', right: true),
-            HtCol('Share', right: true),
-          ],
-          rows: [
-            for (final r in _pareto)
-              [
-                Td(r.$1, numeric: true),
-                Td(r.$2),
-                Td(r.$3),
-                Td(r.$4, numeric: true),
-                Td(r.$5, numeric: true),
-                Td(r.$6, numeric: true),
-              ],
-          ],
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 22),
+          child: Text(
+            'Not tracked yet — no per-fault location history is recorded.',
+            style: context.type.td.copyWith(color: context.colors.ink3),
+            textAlign: TextAlign.center,
+          ),
         ),
       ),
     ]);
@@ -381,12 +375,37 @@ class ResultsView extends StatelessWidget {
   static String _stamp(DateTime t) =>
       '${t.year}-${_two(t.month)}-${_two(t.day)} ${_two(t.hour)}:${_two(t.minute)}';
 
-  static const _pareto = <(String, String, String, String, String, String)>[
-    ('F06', 'Continuity', 'Open circuit', 'J2-07 backshell', '14', '46 %'),
-    ('F08', 'Resistance', 'Resistance high', 'J3-05 crimp', '9', '30 %'),
-    ('F04', 'HV', 'Below 10 MΩ', 'H1 HS-03', '4', '13 %'),
-    ('F07', 'Continuity', 'Unexpected short', 'J4-03 splice', '3', '11 %'),
-  ];
+  /// A rolling pass-rate series (0-100), oldest first, over the last
+  /// [maxPoints] recorded runs — each point is the pass rate of the trailing
+  /// [window] runs ending there. Real data (`AppState.history`), not a fixed
+  /// demo series.
+  static List<double> _recentPassRate(AppState s,
+      {required int window, required int maxPoints}) {
+    final entries = s.history.load();
+    final recent =
+        entries.length > maxPoints ? entries.sublist(entries.length - maxPoints) : entries;
+    return [
+      for (var i = 0; i < recent.length; i++)
+        () {
+          final start = math.max(0, i - window + 1);
+          final slice = recent.sublist(start, i + 1);
+          final passed = slice.where((e) => e.pass).length;
+          return passed / slice.length * 100;
+        }(),
+    ];
+  }
+
+  /// The real overall pass rate over the last [maxPoints] recorded runs, or
+  /// null if none have run yet this session.
+  static int? _overallPassRate(AppState s, {required int maxPoints}) {
+    final entries = s.history.load();
+    if (entries.isEmpty) return null;
+    final recent =
+        entries.length > maxPoints ? entries.sublist(entries.length - maxPoints) : entries;
+    final passed = recent.where((e) => e.pass).length;
+    return (passed / recent.length * 100).round();
+  }
+
 }
 
 // ===========================================================================
@@ -557,11 +576,12 @@ class _DiagViewState extends State<DiagView> {
   }
 
   /// `#cardBody` — rebuilt by `setStack()`
-  // PARTIAL: fitted/empty state and card presence for H1-H4 use the real
-  // (but operator-set, not detected - see s.stack) stack count. Everything
-  // else is fixed: Control/Matrix rows are always "Ready"/"Degraded", and
-  // every rail voltage (including the HV rows' "(4.98 + i*0.004)") is a
-  // fabricated formula, not a real reading.
+  // Fitted/empty state and card presence for H1-H4 use the real (but
+  // operator-set, not detected - see s.stack) stack count. There is no
+  // protocol field for per-card board status or rail voltage at all (same
+  // gap as the Bus map panel's "Rescan" - see GUI-06), so Status/Rail are
+  // honestly "not reported" rather than a fabricated "Ready"/"Degraded" and
+  // a formula-generated voltage.
   Widget _cards(BuildContext context, AppState s) {
     return HtPanel(
       header: const [PanelTitle('Cards'), FlexSpacer(), Lbl('by stage')],
@@ -579,15 +599,15 @@ class _DiagViewState extends State<DiagView> {
             const Td('—', numeric: true),
             const Td('Control rev 4'),
             const Td('both', numeric: true),
-            const Tag(TagVariant.ok, 'Ready'),
-            const Td('3.301 V', numeric: true),
+            const Tag(TagVariant.mut, 'not reported'),
+            const Td('—', numeric: true),
           ],
           [
             const Td('M1', numeric: true),
-            const Td('Matrix rev 6'),
+            const Td('Matrix rev 8'),
             const Td('1 · J-MTX', numeric: true),
-            const Tag(TagVariant.warn, 'Degraded'),
-            const Td('3.298 V', numeric: true),
+            const Tag(TagVariant.mut, 'not reported'),
+            const Td('—', numeric: true),
           ],
           for (var i = 0; i < 4; i++)
             [
@@ -595,9 +615,8 @@ class _DiagViewState extends State<DiagView> {
               Td(i < s.stack ? 'HV rev 1' : '—'),
               Td('2 · J-HV${i + 1}', numeric: true),
               Tag(i < s.stack ? TagVariant.ok : TagVariant.mut,
-                  i < s.stack ? 'Ready' : 'Empty'),
-              Td(i < s.stack ? '${(4.98 + i * 0.004).toStringAsFixed(3)} V' : '—',
-                  numeric: true),
+                  i < s.stack ? 'Fitted' : 'Empty'),
+              const Td('—', numeric: true),
             ],
         ],
       ),
@@ -931,24 +950,21 @@ class _DiagViewState extends State<DiagView> {
     );
   }
 
-  // MOCK/STALE: static known-issues reference, not live diagnostic data. The
-  // header tag ("1 blocking · 2 pending" below) is a hardcoded literal, not
-  // computed from this list. HW-01 (ADS124S08 unreachable, 2-wire AD7476
-  // fallback) is gone from the list outright - FW-01/FW-02 wired the
-  // ADS124S08 in for real and RES RUN now measures 4-wire through it
-  // (U33/the AD7476 fallback path don't exist anymore either).
+  // Static known-issues reference kept in sync with PROJECT_LOG.md, not live
+  // diagnostic data (there is no protocol field for any of this). Both
+  // HW-01 and HW-02 were removed once closed (CL-08 and GUI-09/CL-40) - a
+  // resolved item staying in this list would itself become the same kind of
+  // stale claim this cleanup exists to prevent. FW-04 closed too (CL-19);
+  // its still-open bus-speed half carries forward as BU-03. The header tag
+  // is computed from the real list length rather than a hand-typed count
+  // that silently drifts from it (this list is verify-at-bring-up level,
+  // not "blocking" in the sense the old tag implied - see PROJECT_LOG.md).
   Widget _limits(BuildContext context) {
     final c = context.colors;
     final t = context.type;
     const blockers = [
       (
-        'HW-02',
-        'Sense array cannot switch — resistance only.',
-        ' HI_SENSE_EN / LO_SENSE_EN nets do not match the expander outputs, so '
-            '4-wire measurements report as 2-wire until the rename lands.'
-      ),
-      (
-        'FW-04',
+        'BU-03',
         'Cross continuity is bus-bound.',
         ' A full 256 × 256 sweep is roughly 70 s of I2C traffic at 100 kHz '
             'against 18 s at 400 kHz. Netlist mode needs only ~624 reads. Raise '
@@ -965,10 +981,10 @@ class _DiagViewState extends State<DiagView> {
     ];
 
     return HtPanel(
-      header: const [
-        PanelTitle('Instrument limits'),
-        FlexSpacer(),
-        Tag(TagVariant.warn, '1 blocking · 2 pending'),
+      header: [
+        const PanelTitle('Instrument limits'),
+        const FlexSpacer(),
+        Tag(TagVariant.warn, '${blockers.length} known issue${blockers.length == 1 ? "" : "s"}'),
       ],
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,

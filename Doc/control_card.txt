@@ -1,0 +1,620 @@
+                              1                    2                             3             4                                              5                              6
+         uC
+                                                      DAC                           Opto_SPDT
+A
+                                                                                                                                                                             A
+
+         File: uC.kicad_sch                           File: DAC.kicad_sch           File: OPTO_SPDT.kicad_sch
+         Power_Interface                              ADC                           Isolator
+
+B                                                                                                                                                                            B
+
+         CFiolen:nePcotowrer_Intrerface.kicad_sch     FBiulezz: eArDC.kicad_sch     JFTilAeG: _ICsoonlanteocrt.okricad_sch                    GPIO_Expander
+C
+                                                                                                                                                                             C
+
+   File: Connector.kicad_sch                          File: Buzzer.kicad_sch        File: JTAG_Connector.kicad_sch                            File: GPIO_Expander.kicad_sch
+
+   H1
+
+   MountingHole                                                                                HARNESS TESTER
+
+   H2
+
+   MountingHole
+
+   H3                                                                                          Sheet: /
+                                                                                               File: Control_Card.kicad_sch
+D  MountingHole                                                                                                                                                                                         D
+
+   H4                                                                                          Title: Control Card                                                           Rev: v1.0
+                                                                                                                                                                             Id: 1/11
+   MountingHole
+                                                                                                                                                                                                       6
+                                                                                               Size: A4                     Date: 2026-07-12
+                                                                                               KiCad E.D.A. 10.0.3
+
+       1                                           2                             3             4                                              5
+                 1                                                      2                                                                      3                   4                                     5                                                              6
+
+  uC                                                                                                                                                                                                     NRST
+                                                                                                                                                                                                                                     SW2
+A
+      +3V3                  1uF@16V                            +3V3          FB2                                                                                                                                                               SW_Push
+                                   100nF@50V                            600R@100MHz
+      100nF@50V  600R@100MHz                                                                  4.7uF@16V                                           +3V3
+            C1    FB1 C2                  C5                                         C7 C8             100nF@50V
+                                                1uF@16V                                                          100nF@50V
+                                                                          AVDD                                            100nF@50V
+                                                                                                                                    100nF@50V
+                                                         C6                                   C9 C10 C11                                                                                                          NRST 100nF@50V                                        GND
+                                                       GND                                      GND                                                                                                                                                                              A
+                                                                                                                                                                                                                        2.2K
+                            GND                                1                                                                                                                                                             R2
+                                                                  16
+                                                                     32                                                                                                                                                           C14
+                                                                        48
+                                                                           64                                                                                                                                                                31
+                                                                              29
+
+                                     28 VREF+                  VBAT                  PA0  12
+                                                                  VDD                PA1  13
+                                                                     VDD             PA2  14
+                                                                        VDD          PA3  17
+                                                                           VDD       PA4  18
+                                                                              VDDA   PA5  19
+                                                                                     PA6  20
+                            NRST     7 PG10                                          PA7  21        USART2_TX                                                                                            Crystall                                 C12
+                                                                                     PA8  42          USART2_RX                                                                                                                                12pF@50V
+                       OSC_IN        5                   PF0                         PA9  43                                                                                                                         GND
+                     OSC_OUT         6                   PF1                        PA10  44        SPI1_SCK                                                                                                                                              OSC_IN
+                                                                                    PA11  45          SPI1_MISO
+                     HV_Card_1.2     55 PD2                                         PA12  46        SPI1_MOSI                                                                                                                                        2 Y1
+                                                                                    PA13  49          I2C2_SDA                                                                                                                                             24MHz
+                     HV_Card_1.3     8                   PC0                        PA14  50          HV_Card_EN4
+                                     9                   PC1                        PA15  51          HV_Card_EN3                                                                                                                                         OSC_OUT
+                     I2C2_CS         10                  PC2                                                                                                                                                                                   12pF@50V
+                                     11                  PC3                                          SWDIO
+                     I2C3_CS         22                  PC4                                        SWCLK                                                                                                                                         C13
+                                     23                  PC5                                          BUZZ_I/P
+                     I2C2_SCL        38                  PC6
+                                     39                  PC7                                         SPI1_CS
+B                    HV_Card_EN1     40                  PC8                                         SPI3_CS                                                                                             Boot                                                           B
+                     HV_Card_EN2     41                  PC9                                         SPI2_CS
+                                     52                  PC10                                       SPI3_SCK
+                         I2C3_SCL    53                  PC11                        PB0  24          SPI3_MISO                                                                                                             SW1
+                        I2C3_SDA     54                  PC12                        PB1  25        SPI3_MOSI                                                                                                             SW_Push
+                         UART4_TX    2                   PC13                        PB2  26
+      OPTO_CNTR         UART4_RX     3                   PC14                        PB3  56  USART3_TX                                                                                                     Boot                                    R3
+                                     4                   PC15                        PB4  57   USART3_RX                                                                                                                                       10KOhms
+                     HV_Card_1.0                                                     PB5  58   GPIO2_ISO
+            10KOhms  HV_Card_1.1                                                     PB6  59  SPI2_SCK                                                                                                                                                             GND
+                 R1                                                                  PB7  60   SPI2_MISO
+                                                                                     PB8  61  SP12_MOSI                                                 GPIO1_ISO
+                                                                                     PB9  62                                                            GPIO0_ISO
+                                                                                    PB10  30                                                            Boot
+                                                                                    PB11  33                                                            GPIO3_ISO
+                                                                                    PB12  34
+      GND                                                                           PB13  35                                                                                                             SPI1_CS_Pull_UP
+                                                                                    PB14  36                                                                                                                  +3V3
+                                                                                    PB15  37
+                                                               VSS
+                                                                  VSSA                                                                                                                                                                         SPI1_CS
+
+C                                                              15                                                                                                                                                                                                       C
+                                                                  27
+                                                                     U1
+                                                                     STM32G474RETx
+
+                                                               GND
+
+   AVDD_Decoupling_Capacitor
+
+                            C4
+
+                 AVDD 100nF@50V
+                             C3
+
+                            1uF@16V  GND
+
+                                                                                                                                                                   HARNESS TESTER
+
+D                                                                                                                                                                  Sheet: /uC/                                                                                                     D
+                                                                                                                                                                   File: uC.kicad_sch
+                                                                                                                                                                                                                                                        Rev: v1.0
+                                                                                                                                                                   Title: Control Card                                                                  Id: 2/11
+
+                                                                                                                                                                   Size: A4            Date: 2026-07-12                                                                           6
+                                                                                                                                                                   KiCad E.D.A. 10.0.3
+
+                 1                                                      2                                                                      3                   4                                     5
+                1                                      2                                                                                             3                                           4                                                                               5                                             6                                  7                                                                   8
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                  A
+   +5V_Isolation
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                  B
+                                                               U2                                                                                                                                                                                                                                                                 U4
+                                                       R05C05TE05S-R                                                                                                                                                                                                                                                        R05CT05S-R
+
+A                                                                                                                                                                                                                                                                                +5V                                3 +VIN              +VOUT 14                               +5V_ISO_1
+           +5V
+           GND                        1  -VIN                                             -VOUT   16                                                                                                                                                                                           C29  C31             1 CTRL              TRIM 13                           C32  C34
+                                      2  -VIN                                             -VOUT   15
+                   C15  C16           3  +VIN                                             +VOUT   14                                 C22  C23                                                                                                                                         100nF@50V 10uF                                                                 100nF@50V 10uF
+                                      4  +VIN                                             +VOUT   13
+                100nF@50V 10uF        5  SGNDIN                                        SGNDOUT    12                                 100nF@50V 10uF  +5V_ISO                                                                                                                                                        4 SYNC              NC 6
+                                      6  SGNDIN                                        SGNDOUT    11                                                                                                                                                                                                                5 SYNC_OK
+                                      7  SGNDIN                                                   10
+                                      8  SGNDIN                                               TM  9                                                                                                                                                                              GND                                2 -VIN              -VOUT 9                                ISO_GND_1
+                                                                                       SGNDOUT                                                                                                                                                                                            GND
+                                                                                                                                                     ISO_GND
+
+B
+
+   +12V_DCDC                                                                                                                                                                                                                                                                                                                3.3V_LDO
+
+                                                                                                                                                              U3                                                                                                         Vc R10  100KOhm            1uF@16V    GND
+                                                                                                                                                     LT8337EV-1-PBF                                                                                                                           C30            GND
+
+                                                       4R94.9K                                                                            1          SYNC/MODE              NC  21                                                                                                                                                                                                    U5
+                                                                  4R75.5K                                                                 2          RT                     NC
+                                                                                                                                          3          GND                    NC  20                                                                                                                                                                                             TLV70033_SOT23-5
+                                                                                                                                          4          FB                     NC
+                                                                                                               GND                        5          GND                  GND   19
+                                                                                                                                          6          VOUT                   VC
+                                                                                                                     C21                  7          VOUT              INTVCC   18                                                                                                                                                                           +5V               1  IN  OUT 5      +3V3
+                                                                                                                                          8          GND             EN/UVLO                                                                                                                                                                                                   3  EN
+                                                                                                                                     GND  9          SW                    VIN  17 GND                                                                                                                                                                            C33
+                                                                                                                                     GND  10         SW                    BST                                                                                                                                                                                       1uF@16V
+C                               +12V     L1 600 Ohms @ 100 MHz                                                                                                              SW  16 Vc 1uF@16V    GND                                                                                                                                                                                                                                             C
+                                                                                                                                                                                15                                                                                                                                                                                                  2 GND
+                                         C17           C18                             1M@0.25W                                                                                 14 EN_DCDC C25                                                                      L3                                                                                                                                                   C35
+                                            100nF@50V     100nF@50V                                                       4.7pF@50V                                                                                                                              0.25uH                                                                                                                                                      1uF@16V
+                                                                    22uF@25V C19         R6                                                                                     13                                                                                       C28 +5V
+                                                                                                                                                                                12 100nF@50V L2                                                                     GND  10uF@25V
+                                                                           C20                    90.9K@0.25W                        SW                                         11 C24                  332K@0.25W 1M@0.25WR8         22uF@25V C26        GND
+                                                                              1uF@16V                                                                                                            1.5uH                                        C27
+                                                                                       GND R7                                                                                       SW
+                                                                                                                                                                                                                             EN_DCDC              47uF@35V                                                                                                                            GND
+
+                                                                                                                                                                                                                           R9
+
+D                                                                                                                                                                                                                                                                                                                                                                                                                                                D
+
+E                                                                                                                                                                                                                                                                                                                                                                                                                                                E
+
+                                                                                                                                                                                                                                                                                                                                        HARNESS TESTER
+
+                                                                                                                                                                                                                                                                                                                                        Sheet: /Power_Interface/
+                                                                                                                                                                                                                                                                                                                                        File: Power_Intrerface.kicad_sch
+
+                                                                                                                                                                                                                                                                                                                                        Title: Control Card
+
+                                                                                                                                                                                                                                                                                                                                        Size: A3        Date: 2026-07-12                                                              Rev: v1.0
+                                                                                                                                                                                                                                                                                                                                        KiCad E.D.A. 10.0.3                                                                           Id: 3/11
+F                                                                                                                                                                                                                                                                                                                                                                                                                                                F
+                1                                      2                                                                                             3                                           4                                                                               5                                             6                                  7                                                                   8
+                       1                                                                             2                                        3                                             4                                           5                                                 6
+
+                                                                                                                                       U6                                                                                                                 +3V3                             A
+                                                                                                                                DAC8775IRWFR                                                                                                                        GPIO2_ISO
+                                                                                                                                                                                                                              10KOhms      10KOhms                  GPIO3_ISO
+A                    1uF@16V  +12V                                                        PVDD                   44  AVDD                          REFIN 46                                                                        R21          R24                 GPIO1_ISO
+          DVDD                     100nF@50VGND_PVDD                                                             66  DVDD                        REFOUT 47                                                                                                          GPIO0_ISO
+            C36 C38                                                                                              17  PVDD_A                                                                                                                           10KOhms
+                                                               10uFGND                                           13  PVDD_B                                                                                                                                R25                             B
+                  GND                                                          100nF@50V                         5   PVDD_C
+                                                 C41                                                    DVDD     1   PVDD_D                                                                                                                                                                C
+     100nF@50VVNEG_A                          C40
+                  C37                                                                                                                                                                                                                                                                      D
+                                                                                                                 65 DVDD_EN                                                                                                   10KOhms
+B                                                                                                                                                                                                                                  R22                          Rev: v1.0
+                                                                                                                 19  VNEG_IN_A                        IOUT_A    37         100KOhm I_OUT                                                                        Id: 4/11
+                                                                                                                 36  VNEG_IN_A                     HARTIN_A     29                                                                              10KOhms
+                                                                                                                 16  LP_A                          CCOMP_A      30       R17                                                                         R23                                  6
+                                                                                                                 14  LN_A                                       39
+                                                                   B140-13-F D4                         VNEG_A   38  VPOS_IN_A                       VOUT_A     33  C42 10nF@50V
+                                                             100uH L4                                                                            VSENSEP_A      34                   I_OUT
+                                                                                                                                                 VSENSEN_A
+                     P6SMB33A               VPOS_1A00nF@50V                    VPOS_A                                                                                                                                                          GND
+                           D1                  C39           B140-13D-3F                                                                                                                                                                5
+                              D2
+                                                                                                     GND_PVDD    20  VNEG_IN_B                        IOUT_B    41           100KOhm
+                                    P6SMB33A                                                         GND_PVDD    40  VNEG_IN_B                     HARTIN_B     27
+                                                                                                                 12  LP_B                          CCOMP_B      28         100KOhm
+                                                                                                           PVDD  10  LN_B                                       43    R18  100KOhm
+                                                                                                           PVDD  42  VPOS_IN_B                       VOUT_B     31
+                                                                                                     GND_PVDD                                    VSENSEP_B      32  R11
+                                                                                                                                                 VSENSEN_B          R12
+
+                                                                                                     GND_PVDD    51  VNEG_IN_C                        IOUT_C    50    R19    100KOhm
+                                                                                                     GND_PVDD    70  VNEG_IN_C                     HARTIN_C     64
+                                                                                                                 6   LP_C                          CCOMP_C      63  R13    100KOhm
+                                                                                                           PVDD  8   LN_C                                       48  R14    100KOhm
+                                                                                                           PVDD  49  VPOS_IN_C                       VOUT_C     60
+                                                                                                     GND_PVDD                                    VSENSEP_C      59
+                                                                                                                                                 VSENSEN_C
+
+                                                                                                     GND_PVDD    55  VNEG_IN_D                        IOUT_D    54    R20    100KOhm
+                                                                                                     GND_PVDD    71  VNEG_IN_D                     HARTIN_D     62
+                                                                                                                 2   LP_D                          CCOMP_D      61  R15    100KOhm
+                                                                                                           PVDD  4   LN_D                                       52  R16    100KOhm
+                                                                                                           PVDD  53  VPOS_IN_D                       VOUT_D     58
+                                                                                                     GND_PVDD                                    VSENSEP_D      57
+                                                                                                                                                 VSENSEN_D
+
+C                                                              SPI2_SCK_ISO                                      21  SCLK                              PVSS_A   15
+                                                             SPI2_MOSI_ISO                                       22  SDIN                              PVSS_B   11
+                                                              SPI2_MISO_ISO                                      24  SDO                               PVSS_C   7
+                                                                                                                 25  SYNC_N                            PVSS_D   3
+                                                                SPI2_CS_ISO                                                                   DCDC_AGND_AB      9
+                                                                                                                                              DCDC_AGND_CD      72
+                                                                                          GPIO0_ISO              23  LDAC_N                     DAC_AGND_AB     35
+                                                                                          GPIO1_ISO              26  CLR                       DAC_AGND_CD      56
+                                                                                          GPIO2_ISO              68  RESET_N                                    18
+                                                                                          GPIO3_ISO              67  ALARM_N                             PBKG   69
+                                                                                                                                                         PBKG   45
+                                                                                                                                                      REFGND    73
+
+                                                                                                                                                           PAD
+
+                                                                                                                                                                    GND
+
+                                                                                                                                                                           GND
+
+                                                                                                                                                                                            HARNESS TESTER
+
+D                                                                                                                                                                                           Sheet: /DAC/
+                                                                                                                                                                                            File: DAC.kicad_sch
+
+                                                                                                                                                                                            Title: Control Card
+
+                                                                                                                                                                                            Size: A4        Date: 2026-07-12
+                                                                                                                                                                                            KiCad E.D.A. 10.0.3
+
+                       1                                                                             2                                        3                                             4
+                              1  2                                                               3                                                                      4                                 5             6
+A
+                                                                                                                                                                                                                        A
+B
+                                 Opto_SPDT_SwitchV+ 5                                                                        +3V3
+C                                             100nF@50V
+                                                                           +5VC43                         U7A       OPTO_CNTR 6
+D                                                                                                   TS5A3159DBV                                          R26
+                              1                              GND                                                                                               10KOhms  ADC_IN
+                                                                                             IN                    3
+                                                                                                    4                 I_OUT
+                                                         U7B
+                                                         TS5A3159DBV                                               1
+
+                                    2 GND
+                                                                                                                                                                                                                                                                                  B
+                                    GND
+
+                                                                                                                                                                                                                        C
+
+                                                                                                                                                                        HARNESS TESTER
+
+                                                                                                                                                                        Sheet: /Opto_SPDT/                              D
+                                                                                                                                                                        File: OPTO_SPDT.kicad_sch
+
+                                                                                                                                                                        Title: Control Card
+
+                                                                                                                                                                        Size: A4        Date: 2026-07-12     Rev: v1.0
+                                                                                                                                                                        KiCad E.D.A. 10.0.3                  Id: 5/11
+
+                                 2                                                               3                                                                      4                                 5             6
+                              1  2                                 3                     4                                                     5             6
+A
+                                                                                                                                                             A
+B
+                                    ADC                                               The ADC_Continously send the data once the CS is enable
+C
+                                         +3V3        100nF@50V                U8         SPI3_CS
+D                                               C44                AD7476SRTZ-EP-RL7
+                              1
+                                                                1  VDD    *CS         6                       SPI3_MISO
+                                                                2  GND  SDATA         5
+                                                                3  VIN   SCLK         4
+
+                                         GND                                                                                                                 B
+
+                                         ADC_IN                                          SPI3_SCK
+
+                                                                                                                                                             C
+
+                                                                                         HARNESS TESTER
+
+                                                                                         Sheet: /ADC/                                                        D
+                                                                                         File: ADC.kicad_sch
+
+                                                                                         Title: Control Card
+
+                                                                                         Size: A4        Date: 2026-07-12                         Rev: v1.0
+                                                                                         KiCad E.D.A. 10.0.3                                      Id: 6/11
+
+                                 2                                 3                     4                                                     5             6
+                                     1                                                    2                                                       3                                                  4                                             5                                               6
+
+                                                                                  U9                                                                                                                                                      U19                  GND
+                                                                            ADUM1250ARZ                                                                                                                                        ADUM3200TRZ-EP-RL7                             +5V
+
+   +3V3                                                      1        VDD1                      GND2  5                          2.2K  R49  2.2K  R50  +5V        +3V3                                         1  VDD1                                GND2  5  2.2K  R65  2.2K  R70
+                                                             8        VDD2                      GND1  4                                                                                                        8  VDD2                                GND1  4
+                   2.2K  R27   2.2K  R33           +5V                                                               GND                                                       2.2K  R55  2.2K  R60  +5V
+
+A  I2C3_SDA                                                  2        SDA1                      SDA2  7                                                 ISO_SDA3  I2C2_CS                                      2  VIA                                 VOA   7                        I2C2_CS_ISO  A
+                                                             3        SCL1                      SCL2  6                                                ISO_SCL3   I2C3_CS                                      3  VIB                                 VOB   6
+   I2C3_SCL                                                                                                                                                                                                                                                                          I2C3_CS_ISO
+
+                                                                                  U10                          GND                                                                                                                        U15                  GND
+                                                                            ADUM1250ARZ                                       +5V                                                                                              ADUM3200TRZ-EP-RL7                             +5V
+
+      +3V3           2.2K        2.2K              +5V       1        VDD1                      GND2  5                       ISO_SDA22.2KR392.2KR44               +3V3        2.2K  R51  2.2K  R56  +5V       1  VDD1                             GND2     5                SPI2_CS_ISO2.2KR612.2KR66
+                                                             8        VDD2                      GND1  4                      ISO_SCL2                                                                          8  VDD2                             GND1     4                SPI3_CS_ISO
+   I2C2_SDA                                                                                                                                                       SPI2_CS
+    I2C2_SCL               R28          R34                                                                                                                       SPI3_CS                                      2                                            7
+                                                                                                                                                                                                               3                                            6
+                                                             2        SDA1                      SDA2  7                                                                                                           VIA                                 VOA
+                                                             3        SCL1                      SCL2  6                                                                                                           VIB                                 VOB
+
+                                                                                       U11                     GND                                                                                                                        U16                  GND
+                                                                            ADUM3201TRZ-EP-RL7                                +5V                                                                                              ADUM3200TRZ-EP-RL7                             +5V
+                                                                                                                                                                                                                                                                                                    B
+            +3V3                                                1     VDD1                      GND2     5     2.2K  R40   2.2K  R45                              +3V3                                         1  VDD1                             GND2     5  2.2K          ISO_HV_Card_1.0R622.2KR67
+                                                                8     VDD2                      GND1     4                                                                                                     8  VDD2                             GND1     4                ISO_HV_Card_1.1
+B                        2.2K  R29   2.2K  R35     +5V                                                                                                                         2.2K  R52  2.2K  R57  +5V
+                                                                                                                                                                                                                                                               GND
+       SPI2_MISO                                                2     VOA                        VIA     7                                  SPI2_MISO_ISO         HV_Card_1.0                                  2  VIA                                 VOA   7                 +5V
+        SP12_MOSI                                               3     VIB                       VOB      6                                   SPI2_MOSI_ISO        HV_Card_1.1                                  3  VIB                                 VOB   6
+                                                                                                                                                                                                                                                                             ISO_HV_Card_1.2
+                                                                                       U12                           GND                                                                                                                  U17                                ISO_HV_Card_1.3
+                                                                            ADUM3201TRZ-EP-RL7                                      +5V                                                                                        ADUM3200TRZ-EP-RL7
+
+             +3V3                                                  1  VDD1                      GND2        5                                                     +3V3                                         1  VDD1                             GND2     5  2.2K  R63  2.2K  R68
+                                                                   8  VDD2                      GND1        4                                                                                                  8  VDD2                             GND1     4
+         SPI3_MISO                                      +5V                                                          2.2K  R41   2.2K  R46                                     2.2K  R53  2.2K  R58  +5V
+          SPI3_MOSI        2.2K  R30    2.2K  R36
+                                                                                                                                                                                                               2                                            7
+C                                                                  2  VOA                        VIA        7                               SPI3_MISO_ISO         HV_Card_1.2                                  3  VIA                                 VOA   6
+             +3V3                                                  3  VIB                       VOB         6                                SPI3_MOSI_ISO        HV_Card_1.3                                     VIB                                 VOB
+
+           SPI2_SCK                                                                    U13                           GND                                                                                                                  U18                  GND
+           SPI3_SCK                                                         ADUM3200TRZ-EP-RL7                                      +5V                                                                                        ADUM3200TRZ-EP-RL7                                                   C
+
+                                                                   1  VDD1                      GND2        5        2.2K  R42   2.2K  R47                        +3V3                                         1  VDD1                             GND2     5                 +5V2.2KR642.2KR69
+                                                                   8  VDD2                      GND1        4                                                                                                  8  VDD2                             GND1     4
+                           2.2K  R31    2.2K  R37       +5V                                                                                                                    2.2K  R54  2.2K  R59  +5V                                                                     ISO_HV_Card_EN1
+                                                                                                                                                                                                                                                                             ISO_HV_Card_EN2
+                                                                   2  VIA                       VOA         7                               SPI2_SCK_ISO          HV_Card_EN1                                  2  VIA                                 VOA   7
+                                                                   3  VIB                       VOB         6                               SPI3_SCK_ISO          HV_Card_EN2                                  3  VIB                                 VOB   6
+
+                                                                                       U14                           GND
+                                                                            ADUM3200TRZ-EP-RL7                                      +5V
+
+             +3V3          2.2K  R32    2.2K  R38       +5V        1  VDD1                      GND2        5                      ISO_HV_Card_EN32.2KR432.2KR48
+                                                                   8  VDD2                      GND1        4                      ISO_HV_Card_EN4
+      HV_Card_EN3
+      HV_Card_EN4                                                  2  VIA                       VOA         7                                                                                        HARNESS TESTER
+D                                                                  3  VIB                       VOB         6
+                                                                                                                                                                                                     Sheet: /Isolator/
+                                                                                                                                                                                                     File: Isolator.kicad_sch                                                                              D
+
+                                                                                                                                                                                                     Title: Control Card                                                        Rev: v1.0
+                                                                                                                                                                                                                                                                                Id: 7/11
+                                                                                                                                                                                                     Size: A4          Date: 2026-07-12
+                                                                                                                                                                                                     KiCad E.D.A. 10.0.3                                                                                  6
+
+                                     1                                      2                                                                     3                                                  4                                             5
+                      1                                                         2                                       3                                            4                                      5                                           6                             7                                               8
+                                                                                               HV_Card_2                                                                     HV_Card_3
+   HV_Card_1                             J2                                                                                   J3                                                                                 J4                                        HV_Card_4                           J5
+                         6120XX22021_61205022021                                                               6120XX22021_61205022021                                                            6120XX22021_61205022021                                                       6120XX22021_61205022021
+
+                                          1     2                                                                                  1     2                                                                            1     2                                                                       1     2
+
+                      +5V_ISO 3                 4 +5V_ISO                                                      +5V_ISO 3                 4 +5V_ISO                                                +5V_ISO 3                 4 +5V_ISO                                           +5V_ISO 3                 4 +5V_ISO
+
+                                          5     6                                                                                  5     6                                                                            5     6                                                                       5     6
+
+                      ISO_GND 7                 8 ISO_GND                                                      ISO_GND 7                 8 ISO_GND                                                ISO_GND 7                 8 ISO_GND                                           ISO_GND 7                 8 ISO_GND
+
+A                                            9  10                                                                                    9  10                                                                              9  10                                                                         9  10                                     A
+
+                      +5V_ISO_1 11              12 +5V_ISO_1                                                   +5V_ISO_1 11              12 +5V_ISO_1                                             +5V_ISO_1 11              12 +5V_ISO_1                                        +5V_ISO_1 11              12 +5V_ISO_1
+
+                                            13  14                                                                                   13  14                                                                             13  14                                                                        13  14
+
+                      ISO_GND_1 15              16 ISO_GND_1                                                   ISO_GND_1 15              16 ISO_GND_1                                             ISO_GND_1 15              16 ISO_GND_1                                        ISO_GND_1 15              16 ISO_GND_1
+
+                             17                 18                                                                 17                    18                                                           17                    18                                                           17               18
+
+                         ISO_SDA3 19            20 LO_S1                                                       ISO_SDA3 19               20 LO_S1                                                 ISO_SDA3 19               20 LO_S1                                            ISO_SDA3 19               20 LO_S1
+                         ISO_SCL3 21            22 LO_S2                                                       ISO_SCL3 21               22 LO_S2                                                 ISO_SCL3 21               22 LO_S2                                            ISO_SCL3 21               22 LO_S2
+   GND                   ISO_SDA2 23            24 LO_S3                        GND  GND                       ISO_SDA2 23               24 LO_S3               GND                     GND       ISO_SDA2 23               24 LO_S3               GND                GND       ISO_SDA2 23               24 LO_S3               GND
+
+                         ISO_SCL2 25            26 LO_S4                                                       ISO_SCL2 25               26 LO_S4                                                 ISO_SCL2 25               26 LO_S4                                            ISO_SCL2 25               26 LO_S4
+                         HI_S1 27               28 SPI1_CS                                                     I2C2_SDA 27               28 SPI1_CS                                                   27                    28 SPI1_CS                                                   27               28 SPI1_CS
+
+                         IN  29                 30 HI_S2                                                       IN  29                    30 HI_S2                                                 IN  29                    30 HI_S2                                            IN       29               30 HI_S2
+
+                             31                 32                                                                 31                    32                                                           31                    32                                                           31               32
+
+                 ISO_HV_Card_EN1 33             34 HI_S3                                                  ISO_HV_Card_EN1 33             34 HI_S3                                            ISO_HV_Card_EN1 33             34 HI_S3                                       ISO_HV_Card_EN1 33             34 HI_S3
+                 ISO_HV_Card_EN2 35             36 HI_S4                                                  ISO_HV_Card_EN2 35             36 HI_S4                                            ISO_HV_Card_EN2 35             36 HI_S4                                       ISO_HV_Card_EN2 35             36 HI_S4
+   GND           ISO_HV_Card_EN3 37             38 I2C_EN1                      GND  GND                  ISO_HV_Card_EN3 37             38 I2C_EN1             GND                     GND  ISO_HV_Card_EN3 37             38 I2C_EN1             GND                GND  ISO_HV_Card_EN3 37             38 I2C_EN1             GND
+
+                 ISO_HV_Card_EN4 39             40 I2C_EN2                                                ISO_HV_Card_EN4 39             40 I2C_EN2                                          ISO_HV_Card_EN4 39             40 I2C_EN2                                     ISO_HV_Card_EN4 39             40 I2C_EN2
+                      SPI2_SCK_ISO 41           42 SPI2_MISO_ISO                                               SPI2_SCK_ISO 41           42 SPI2_MISO_ISO                                         SPI2_SCK_ISO 41           42 SPI2_MISO_ISO                                    SPI2_SCK_ISO 41           42 SPI2_MISO_ISO
+                         SPI1_SCK 43            44 SPI1_MISO                                                   SPI1_SCK 43               44 SPI1_MISO                                             SPI1_SCK 43               44 SPI1_MISO                                        SPI1_SCK 43               44 SPI1_MISO
+                 SPI2_MOSI_ISO 45               46 SPI1_MOSI                                                   I2C2_SCL 45               46 SPI1_MOSI                                                 45                    46 SPI1_MOSI                                                 45               46 SPI1_MOSI
+
+                             47                 48                                                                 47                    48                                                           47                    48                                                           47               48
+
+B                        +3V3 49                50 +3V3                                                            49                    50                                                           49                    50                                                           49               50                                     B
+
+                 GND                                                       GND                            GND                                              GND                               GND                                              GND                          GND                                              GND
+
+   Power_IN_+5V
+
+                                   J1
+                      Barrel_Jack_MountingPin
+
+                                           1 +5V
+
+                                           2
+
+                                                                 Mounting
+
+                             3
+
+                                                    GND
+
+C                                                                                                                                                                                                                                                                                                                                                C
+
+D                                                                                                                                                                                                                                                                                                                                                D
+
+E                                                                                                                                                                                                                                                                                                                                                E
+
+                                                                                                                                                                                                                                                           HARNESS TESTER
+
+                                                                                                                                                                                                                                                           Sheet: /Connector/
+                                                                                                                                                                                                                                                           File: Connector.kicad_sch
+
+                                                                                                                                                                                                                                                           Title: Control Card
+
+                                                                                                                                                                                                                                                           Size: A3             Date: 2026-07-12                                      Rev: v1.0
+                                                                                                                                                                                                                                                           KiCad E.D.A. 10.0.3                                                        Id: 8/11
+F                                                                                                                                                                                                                                                                                                                                                F
+                      1                                                         2                                  3                                                 4                                5                                                 6                             7                                               8
+   1          2                                                        3  4                                  5             6
+
+A                                                                                                                          A
+
+      Buzzer
+
+                                          +5V
+
+                                          LOAD- LOAD+ R73  10KOhm
+
+                                          +
+
+                                                    LS1
+                                                    SMI-1027-T-5V-R
+
+                                          -
+
+                                          D
+
+              BUZZ_I/P  100Ohms      G                     Q1
+                           R72                             2N7002LT1G
+
+                        R71               S
+                             10KOhm
+
+B                                                                                                                          B
+
+                                     GND
+
+C                                                                                                                          C
+
+                                                                          HARNESS TESTER
+
+D                                                                         Sheet: /Buzzer/                                  D
+                                                                          File: Buzzer.kicad_sch
+
+                                                                          Title: Control Card
+
+                                                                          Size: A4         Date: 2026-07-12     Rev: v1.0
+                                                                          KiCad E.D.A. 10.0.3                   Id: 9/11
+
+   1          2                                                        3  4                                  5             6
+                              1  2                                    3                                    4                                 5             6
+A
+                                                                                                                                                           A
+B
+                                                               VCC_JTAG
+C                                                                                                VCC_JTAG
+                                                                                J6
+D                                                                     61202021721_JTAG
+                              1
+                                                   JP1                1      2
+                                    +3V3
+                                    PWR_Jumper                 TRST 3        4
+
+                                                               TDI 5         6
+
+                                                        SWDIO         7      8
+
+                                                        SWCLK         9      10                                                                            B
+
+                                                                      11     12
+
+                                    NRST                JP2    RCLK 13       14
+                                                                             16
+                                                                         15
+
+                                                        Reset_Jumper  17     18
+
+                                                                      19     20
+
+                                                                                 GND
+
+                                                                                                                                                           C
+
+                                                                                                           HARNESS TESTER
+
+                                                                                                           Sheet: /JTAG_Connector/                         D
+                                                                                                           File: JTAG_Connector.kicad_sch
+
+                                                                                                           Title: Control Card
+
+                                                                                                           Size: A4        Date: 2026-07-12     Rev: v1.0
+                                                                                                           KiCad E.D.A. 10.0.3                  Id: 10/11
+
+                                 2                                    3                                    4                                 5             6
+   1              2                                                                  3               4                                 5             6
+
+A                                                C101                          +3V3                                                                  A
+                                                 100nF
+
+                                      GND                                      U21
+
+                                      R101                                     MCP23017x-x-SO
+
+                                       I2C3_SCL4.7K12SCK                       GPA0     21  LO_S1
+                                      I2C3_SDA   13  SDA                       GPA1     22  LO_S2
+                                               R102                            GPA2     23  LO_S3
+                           +3V3                                                GPA3     24  LO_S4
+                                                 4.7K                          GPA4     25  HI_S1
+                  +3V3                                                 V DD 9  GPA5     26  HI_S2
+                                                                               GPA6     27  HI_S3
+                                R105             20  INTA                      GPA7     28  HI_S4
+                                                 19  INTB
+                             4.7K
+
+            +3V3                                 18 RESET                      GPB0     1   I2C_EN1
+                                                                               GPB1     2   I2C_EN2
+                                                                               GPB2     3
+B     R107  R108     R109                        15  A0                        GPB3     4                                                            B
+                                                 16  A1                        GPB4     5
+      4.7K  4.7K     4.7K                        17  A2                        GPB5     6
+                                                                               GPB6     7
+      R113  R114     R115                                  10 V SS             GPB7     8
+
+      4.7K 4.7K 4.7K
+
+      GND                                  GND
+
+C                                                                                                                                                    C
+
+                                                                                                     HARNESS TESTER
+
+D                                                                                                    Sheet: /GPIO_Expander/                          D
+                                                                                                     File: GPIO_Expander.kicad_sch
+
+                                                                                                     Title: Control Card
+
+                                                                                                     Size: A4        Date: 2026-07-12     Rev: v1.0
+                                                                                                     KiCad E.D.A. 10.0.3                  Id: 11/11
+
+   1              2                                                                  3               4                                 5             6

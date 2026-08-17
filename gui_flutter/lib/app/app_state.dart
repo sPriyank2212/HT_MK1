@@ -79,38 +79,30 @@ class PortEntry {
   const PortEntry(this.name, this.description);
 }
 
-/// `const HV_FILES=[...]`, sized from the generated harness.
-// MOCK: three fixed example filenames shown in the HV-netlist picker modal,
-// sized only off netc (itself possibly the demo-seed net count). Real file
-// browsing exists separately ("Browse the file system…" in modals.dart) -
-// this canned list is decoration alongside it, not a real file listing.
-List<HvFile> hvFilesFor(int netc) => [
-      HvFile('AV-880_HV_3card.hnl', 3, netc, '$netc nets · 3-card map'),
-      HvFile('AV-880_HV_4card.hnl', 4, netc + 42,
-          '${netc + 42} nets · 4-card map'),
-      HvFile('AV-880_HV_1card.hnl', 1, 52, '52 nets · single card'),
-    ];
-
 class AppState extends ChangeNotifier {
   // -------------------------------------------------------------------------
   // the design's model
   // -------------------------------------------------------------------------
 
-  // MOCK: buildNets() is a 118-net fake "AV-880" demo harness (design/model.dart).
-  // rebuildNets() only replaces it with the real loaded netlist when NETLIST GET
-  // returns a non-empty list - and the instrument's netlist is RAM-only, empty on
-  // every boot. So on a freshly-connected real instrument this demo harness is
-  // what actually drives the wiring diagram, resistance histogram/ranked table
-  // and net inspector, even though nlMtx.loaded correctly reads false. Real once
-  // a netlist is uploaded; fake by default otherwise. See "GUI Reality Check", cause A.
-  List<Net> nets = buildNets();
+  // Empty until a real netlist exists - either NETLIST GET returns a
+  // non-empty list from a connected instrument, or the operator loads one
+  // (file browse / cross-continuity save), both via rebuildNets(). Used to
+  // seed this with buildNets()'s 118-net fake "AV-880" demo harness, which
+  // rendered in the wiring diagram, resistance histogram/ranked table and
+  // net inspector before any netlist was ever loaded, even though nlMtx.loaded
+  // correctly read false. See "GUI Reality Check", cause A.
+  List<Net> nets = <Net>[];
   late Map<String, Net> netAt = buildNetAt(nets);
   late int netc = nets.length;
 
   late MtxNetlist nlMtx;
   late HvNetlist nlHv;
-  late FixNetlist nlFix; // MOCK: kFix (design/model.dart) - permanently static fixture
-  // geometry, no protocol command exists to read it back from the instrument.
+  late FixNetlist nlFix; // kFix (design/model.dart) is always some fixture -
+  // real once a netlist's connector layout is guessed/confirmed
+  // (setActiveFixture), the coded-in default demo shape otherwise - but
+  // nlFix.loaded only ever tracks whether that fixture came from a real
+  // file/guess, not whether kFix exists (there is no protocol command to
+  // read fixture geometry back from the instrument).
 
   /// HV cards detected on I2C2
   // MOCK: nothing detects this. `stack` is set only by the operator's own Seg
@@ -372,28 +364,30 @@ class AppState extends ChangeNotifier {
         pickNetlistFile = pickNetlistFile ?? _noPick,
         history = history ?? RunHistoryStore(),
         pickSavePath = pickSavePath ?? _noSavePath {
+    // Nothing has been loaded yet - true before any connection or netlist
+    // selection, and (per GUI Reality Check cause A) also true of a freshly
+    // connected real instrument, whose netlist is RAM-only and empty on
+    // every boot. connect() confirms this against the instrument once linked
+    // (nlMtx.loaded = false when NETLIST GET comes back empty); nothing
+    // needs to happen here to "clear" a placeholder, because there is none.
     nlMtx = MtxNetlist(
-      loaded: true,
-      name: 'AV-880_RevC.hnl',
-      nets: netc,
-      pins: netc * 2 + 8,
-      time: clock(),
+      loaded: false,
+      nets: 0,
+      pins: 0,
       origin: 'file',
     );
     nlHv = HvNetlist(loaded: false);
     nlFix = FixNetlist(
-      loaded: true,
+      loaded: false,
       name: kFix.name,
       conns: kFix.connectors.length,
       pins: kFixPins,
-      time: clock(),
     );
 
     layoutFixture();
     setStack(3, quiet: true);
     setMode('net', quiet: true);
     resetAll(quiet: true);
-    selNet = nets.length > 11 ? nets[11] : null;
 
     // The design's boot log, before the link says anything.
     _bootLog();
@@ -867,13 +861,23 @@ class AppState extends ChangeNotifier {
   // faults — `const ALL` and `renderFaults()`
   // -------------------------------------------------------------------------
 
-  // MOCK (partially): faultsOn['f06'/'f08'/'f04'] are real - only set when
-  // _onCont/_onRes/_onInsul actually see a failure - so this panel correctly
-  // stays empty on a clean run. But every displayed detail below is fabricated:
-  // always nets[4]/nets[5]/nets[2] by fixed index, and fixed values ('3.281 V',
-  // '4.812 Ω', '3.2 MΩ') regardless of which net actually failed or what its
-  // real measured value was. See "GUI Reality Check", cause A.
-  List<({String code, String title, String detail, String value, bool hot, String go, int net})>
+  Net? _firstNet(bool Function(Net) test) {
+    for (final n in nets) {
+      if (test(n)) return n;
+    }
+    return null;
+  }
+
+  /// `faultsOn['f06'/'f08'/'f04']` are only set when `_onCont`/`_onRes`/
+  /// `_onInsul` actually see a failure, so this panel is empty on a clean
+  /// run; each card below picks the first real net that tripped that fault
+  /// (`_onCont` sets `Net.open`, `_onRes` sets `Net.r`, `_onInsul` sets
+  /// `Net.insFail`/`Net.ins`) and shows its real name/refs/measurement,
+  /// rather than a fixed net index and an invented reading. `ContResult`
+  /// carries no voltage over the wire (pass/fail only, see
+  /// `htproto/messages.dart`), so F06's value is honestly `—` rather than a
+  /// fabricated number.
+  List<({String code, String title, String detail, String value, bool hot, String go, Net net})>
       get faultList {
     final out = <({
       String code,
@@ -882,41 +886,50 @@ class AppState extends ChangeNotifier {
       String value,
       bool hot,
       String go,
-      int net
+      Net net
     })>[];
-    if (faultsOn['f06']! && nets.length > 4) {
-      out.add((
-        code: 'F06',
-        title: 'Open circuit',
-        detail:
-            'Continuity · ${nets[4].name} · ${refOf(nets[4].src)} → ${refOf(nets[4].dsts[0])}',
-        value: '3.281 V',
-        hot: false,
-        go: 'cont',
-        net: 4,
-      ));
+    if (faultsOn['f06']!) {
+      final n = _firstNet((n) => n.open);
+      if (n != null) {
+        out.add((
+          code: 'F06',
+          title: 'Open circuit',
+          detail: 'Continuity · ${n.name} · ${refOf(n.src)} → ${refOf(n.dsts[0])}',
+          value: '—',
+          hot: false,
+          go: 'cont',
+          net: n,
+        ));
+      }
     }
-    if (faultsOn['f08']! && nets.length > 5) {
-      out.add((
-        code: 'F08',
-        title: 'Resistance high',
-        detail: 'Resistance · ${nets[5].name} · limit 2.000 Ω',
-        value: '4.812 Ω',
-        hot: false,
-        go: 'res',
-        net: 5,
-      ));
+    if (faultsOn['f08']!) {
+      final n = _firstNet((n) => n.r > n.rmax || n.r < n.rmin);
+      if (n != null) {
+        out.add((
+          code: 'F08',
+          title: 'Resistance high',
+          detail:
+              'Resistance · ${n.name} · limit ${n.rmax.toStringAsFixed(3)} Ω',
+          value: '${n.r.toStringAsFixed(3)} Ω',
+          hot: false,
+          go: 'res',
+          net: n,
+        ));
+      }
     }
-    if (faultsOn['f04']! && nets.length > 2) {
-      out.add((
-        code: 'F04',
-        title: 'Insulation below limit',
-        detail: 'HV · H1 HS-02 · ${nets[2].name} · 500 V',
-        value: '3.2 MΩ',
-        hot: true,
-        go: 'hv',
-        net: 2,
-      ));
+    if (faultsOn['f04']!) {
+      final n = _firstNet((n) => n.insFail);
+      if (n != null) {
+        out.add((
+          code: 'F04',
+          title: 'Insulation below limit',
+          detail: 'HV · H${n.card + 1} HS-${pad(n.relay, 2)} · ${n.name} · 500 V',
+          value: '${n.ins.toStringAsFixed(1)} MΩ',
+          hot: true,
+          go: 'hv',
+          net: n,
+        ));
+      }
     }
     return out;
   }
@@ -933,7 +946,7 @@ class AppState extends ChangeNotifier {
     final list = faultList;
     if (index >= list.length) return;
     final f = list[index];
-    final n = nets[f.net];
+    final n = f.net;
     if (f.go == 'hv' && !onHv) return;
     go(f.go);
     if (f.go == 'cont') {
@@ -1097,19 +1110,14 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  void pickHvFile(HvFile f) {
-    loadHv(f.name, f.cards, f.nets);
-    mdNlOpen = false;
-    openVerify();
-  }
-
-  /// The HV netlist modal's "Browse the file system…" — a real file, parsed
-  /// for real, instead of only ever picking from [hvFilesFor]'s three canned
-  /// entries. There is no wire command for "load an HV netlist" (unlike MTX,
-  /// nothing here is uploaded to the instrument — see [MtxNetlistModal] and
-  /// `_uploadNetlistPairs`); this only ever sets the same name/cards/nets
-  /// metadata [pickHvFile] does, sourced from the file instead of a canned
-  /// list.
+  /// The HV netlist modal's "Browse the file system…" — the only way to
+  /// provide an HV netlist (the three-canned-example picker this used to
+  /// have alongside it let an operator "load" fabricated metadata as if it
+  /// were real — see "GUI Reality Check" — removed). There is no wire
+  /// command for "load an HV netlist" (unlike MTX, nothing here is uploaded
+  /// to the instrument — see [MtxNetlistModal] and `_uploadNetlistPairs`);
+  /// this only ever sets GUI-side name/cards/nets metadata, sourced from the
+  /// real file just read.
   Future<void> browseHvNetlist() async {
     final picked = await pickNetlistFile();
     if (picked == null) return; // operator cancelled
@@ -1135,14 +1143,21 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// The five rows of `#mdVChecks`.
-  // PARTIAL/MOCK: rows 1, 2 and 4's `state`/`value` are real (R['cont'],
-  // R['res'], stackMatch()) - but row 2's `detail` ("worst margin +0.09 Ω ·
-  // 1.84 mA excitation") is a fixed literal, not the real worst-margin net or
-  // current (and 1.84 mA is stale besides - the IDAC forces a fixed 2 mA,
-  // FW-12). Rows 3 and 5 ("Harness moved…confirmed", "Interlock closed…safe")
-  // are unconditional `state: 'ok'` literals - nothing is actually checked
-  // for either; row 3 in particular claims a transfer that was never verified.
+  /// The five rows of `#mdVChecks`. All five now read real state: row 1 from
+  /// `R['cont']`, row 2 below from the real per-net resistance margins
+  /// (`Net.rmax - Net.r`, same calculation `_RankedTable` in
+  /// res_hv_views.dart uses), row 3 from the instrument's own `onHv`/
+  /// `!FIXTURE` report, row 4 from `stackMatch()`, and row 5 honestly
+  /// unverified (no protocol field reports interlock state at all).
+  String get _worstResMarginDetail {
+    if (nets.isEmpty) return '2 mA excitation';
+    final worst =
+        nets.reduce((a, b) => (a.rmax - a.r) < (b.rmax - b.r) ? a : b);
+    final margin = worst.rmax - worst.r;
+    return 'worst margin ${margin >= 0 ? "+" : ""}${margin.toStringAsFixed(3)} '
+        'Ω · 2 mA excitation';
+  }
+
   List<({String state, String title, String detail, String value})>
       get verifyChecks => [
             (
@@ -1155,7 +1170,7 @@ class AppState extends ChangeNotifier {
             (
               state: R['res'] == 'pass' ? 'ok' : 'bad',
               title: 'Resistance passed on J-MTX',
-              detail: 'worst margin +0.09 Ω · 1.84 mA excitation',
+              detail: _worstResMarginDetail,
               value: R['res'] == 'pass' ? '0 out of limit' : 'not passed',
             ),
             (

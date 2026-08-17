@@ -165,7 +165,6 @@ class HvNetlistModal extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = context.colors;
     final t = context.type;
-    final files = hvFilesFor(s.netc);
 
     return ModalScrim(
       onDismiss: s.cancelModals,
@@ -187,27 +186,10 @@ class HvNetlistModal extends StatelessWidget {
           ),
         ),
         body: [
-          // .filelist
-          Container(
-            decoration: BoxDecoration(
-              color: c.lineSoft,
-              border: Border.all(color: c.line),
-              borderRadius: BorderRadius.circular(kRadius),
-            ),
-            clipBehavior: Clip.antiAlias,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                for (var i = 0; i < files.length; i++) ...[
-                  if (i > 0) const SizedBox(height: 1),
-                  _FileRow(file: files[i], stack: s.stack, s: s),
-                ],
-              ],
-            ),
-          ),
           Align(
             alignment: Alignment.centerLeft,
             child: Btn('Browse the file system…',
+                variant: BtnVariant.primary,
                 onTap: () => unawaited(s.browseHvNetlist())),
           ),
           Text(
@@ -227,59 +209,6 @@ class HvNetlistModal extends StatelessWidget {
           ),
         ],
         footer: [Btn('Cancel', onTap: s.cancelModals)],
-      ),
-    );
-  }
-}
-
-/// `.filerow`
-class _FileRow extends StatelessWidget {
-  final HvFile file;
-  final int stack;
-  final AppState s;
-  const _FileRow({required this.file, required this.stack, required this.s});
-
-  @override
-  Widget build(BuildContext context) {
-    final c = context.colors;
-    final t = context.type;
-    final ok = file.cards == stack;
-
-    return HoverRow(
-      onTap: () => s.pickHvFile(file),
-      base: c.panel,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 11),
-        child: Row(
-          children: [
-              Container(
-                width: 26,
-                height: 26,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: c.hvSoft,
-                  borderRadius: BorderRadius.circular(5),
-                ),
-                child: HtIcon(HtIcons.doc,
-                    size: 14, color: c.hv, strokeWidth: 1.7),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(file.name, style: t.fileName),
-                    const SizedBox(height: 2),
-                    Text(file.note, style: t.fileDetail),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 12),
-            Tag(ok ? TagVariant.ok : TagVariant.warn,
-                ok ? 'matches stack' : '${file.cards}-card ≠ $stack'),
-          ],
-        ),
       ),
     );
   }

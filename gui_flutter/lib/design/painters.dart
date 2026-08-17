@@ -465,16 +465,16 @@ class HistPainter extends CustomPainter {
 
 class SparkPainter extends CustomPainter {
   final HtColors c;
-  const SparkPainter(this.c);
 
-  /// The design's fixed 24-build series.
-  static const List<int> data = [
-    92, 88, 90, 84, 79, 81, 86, 90, 88, 72, 68, 74,
-    80, 83, 87, 85, 78, 71, 76, 82, 86, 84, 79, 78,
-  ];
+  /// A real rolling pass-rate series (0-100), oldest first — see
+  /// `AppState.history`/`_recentPassRate` in `misc_views.dart`. Used to be a
+  /// fixed 24-build demo series unrelated to any real run.
+  final List<double> data;
+  const SparkPainter(this.c, this.data);
 
   @override
   void paint(Canvas canvas, Size size) {
+    if (data.length < 2) return;
     final w = size.width;
     const h = 54.0;
     const pad = 6.0;
@@ -535,5 +535,5 @@ class SparkPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(SparkPainter old) => old.c != c;
+  bool shouldRepaint(SparkPainter old) => old.c != c || old.data != data;
 }

@@ -213,6 +213,11 @@ void Proto_EvtSafe(void)
   proto_emit('!', "SAFE");
 }
 
+void Proto_EvtTemp(int32_t deci_celsius)
+{
+  proto_emit('!', "TEMP %ld", (long)deci_celsius);
+}
+
 /* -------------------------------------------------------------------------- */
 /* State accessors                                                            */
 /* -------------------------------------------------------------------------- */
@@ -652,6 +657,15 @@ static void proto_exec(char *line)
     {
       proto_err("ESYNTAX", "LIMITS");
     }
+  }
+  else if (strcmp(t[0], "TEMP") == 0 && n >= 2U && strcmp(t[1], "READ") == 0)
+  {
+    /* Routed through the sequencer, not answered inline - a real conversion
+     * blocks for a little over 750 ms (see CMD_TEMP_READ in tasks.h) and
+     * doing that here would stall every other command's reply for as long.
+     * Result arrives as a !TEMP event, same "<OK started then an event"
+     * shape as MANUAL PATH. */
+    if (proto_hw_ready() != 0) { proto_post(CMD_TEMP_READ, 0U, 0U); }
   }
   else if (strcmp(t[0], "FIXTURE") == 0 && n >= 2U)
   {

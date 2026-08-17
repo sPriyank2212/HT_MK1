@@ -179,7 +179,12 @@ void main() {
       sim = await SimulatorServer.start(
         makeScenario(scenario, nets: nets),
         port: 0,
-        interval: const Duration(milliseconds: 1),
+        // Duration.zero, not 1ms - see netlist_upload_test.dart's boot() for
+        // why: a nominal "1ms" Future.delayed measures ~14-15ms on Windows
+        // (system timer granularity), and cross-discovery's 256-pin sweep
+        // turns that into ~3.6-3.9s of pure timer overhead before any real
+        // work happens, which is what made this test's waitUntil flaky.
+        interval: Duration.zero,
       );
       cm = ConnectionManager(
         onEvent: (m) => s.onEvent(m),

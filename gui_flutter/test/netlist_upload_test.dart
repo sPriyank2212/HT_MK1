@@ -72,8 +72,15 @@ class _FakeTransport implements Transport {
   }
 }
 
+/// 8 s, not 5: this waits on a real `SimulatorServer`'s cross-continuity
+/// sweep over a real socket, and under `flutter test`'s full-suite
+/// parallelism (200+ tests, many isolates) it can occasionally lose the CPU
+/// for a few seconds — confirmed passing reliably in isolation at 5 s,
+/// intermittently timing out only under full-suite load. Matches
+/// `protocol_test.dart`'s own `_waitForDone` timeout for the same class of
+/// wait (real simulator, run completion).
 Future<void> waitUntil(bool Function() cond,
-    {Duration timeout = const Duration(seconds: 5)}) async {
+    {Duration timeout = const Duration(seconds: 8)}) async {
   final sw = Stopwatch()..start();
   while (!cond()) {
     if (sw.elapsed > timeout) {
@@ -85,7 +92,7 @@ Future<void> waitUntil(bool Function() cond,
 
 void main() {
   group('connect() and the instrument netlist', () {
-    test('an empty instrument netlist clears the stale demo placeholder',
+    test('an empty instrument netlist leaves the netlist unloaded',
         () async {
       final t = _FakeTransport();
       late final AppState s;
@@ -97,8 +104,9 @@ void main() {
       s = AppState(cm: cm, host: '127.0.0.1', port: 46000);
       addTearDown(cm.disconnect);
 
-      // The pre-connection placeholder: cosmetic demo data, not measured.
-      expect(s.nlMtx.loaded, isTrue);
+      // Nothing is loaded before a connection exists either (GUI Reality
+      // Check, cause A - no seeded demo placeholder claiming otherwise).
+      expect(s.nlMtx.loaded, isFalse);
 
       await s.connect();
 
@@ -145,7 +153,19 @@ void main() {
       sim = await SimulatorServer.start(
         makeScenario(scenario, nets: nets),
         port: 0,
-        interval: const Duration(milliseconds: 1),
+        // Duration.zero, not 1ms: measured directly on this machine, a
+        // nominal "1ms" Future.delayed actually costs ~14-15ms (Windows'
+        // ~15.6ms system timer granularity) - cross-discovery always sweeps
+        // all 256 pins (simulator.dart's discoverPins), so 256 iterations of
+        // that costs ~3.6-3.9s of pure timer overhead alone, even with zero
+        // contention. That's most of waitUntil's budget gone before any real
+        // work or scheduling jitter, which is what actually made this test
+        // flaky under load - not "CPU contention" in the abstract.
+        // Duration.zero resolves on the next event-loop turn instead of a
+        // real OS timer (measured ~0.02ms/iteration), so it still exercises
+        // the same real async SimulatorServer/socket path, just without
+        // paying Windows' timer tax 256 times over.
+        interval: Duration.zero,
       );
       cm = ConnectionManager(
         onEvent: (m) => s.onEvent(m),

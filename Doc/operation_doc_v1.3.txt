@@ -1,0 +1,514 @@
+HARNESS TESTER
+System Initialization & Operation Document
+256-Line High Side to Low Side Test System
+Document Version:
+1.3
+Date:
+July 2026
+System:
+Control Card + HV Card + Matrix Card
+Revision Notes:
+Matrix updated to 256 lines; HV safety procedure and insulation voltage interpretation corrected. v1.3 firmware-engineering review: HV-card line count (64/card, 4 cards for 256) and I2C bank-select, insulation measurement return-path requirement, HV_Sense scaling (x10) correction, insulation band re-derivation, and 3.3 V multiplexer resistance-measurement feasibility all annotated. See the FIRMWARE REVIEW NOTEs in the relevant sections and the Open Decisions block below.
+FIRMWARE REVIEW - OPEN HARDWARE DECISIONS (v1.3): The following items must be resolved with the hardware team before firmware final release. Each is expanded in its section.
+1. HV_Sense divider (being fixed): 0.245 V at 500 V, ratio 0.00049 (1:2000 divider). R3003 is being changed from 50 kΩ to 5 kΩ in the next schematic revision (10 MΩ : 5 kΩ); the drawn 50 kΩ would give 2.49 V (×10). Firmware uses the 0.245 V scaling. See Sec. 3.2.
+2. Insulation return scheme (RESOLVED): energise the net under test on the high side and close all low-side relays EXCEPT that net’s own return; the net is measured against all other conductors tied to HV_RET. See Sec. 4.0 / 4.1.
+3. Resistance at 10 mA: current source holds 10 mA within compliance; VERIFY at bring-up that the two series +3V3 CD4067 muxes keep V_HI_COM < 3.3 V at 10 mA (0 Ω loopback). If it clamps, reduce current. Characterise/subtract the mux R_offset. See Sec. 7.
+4. HV insulation covers 64 HS + 64 LS lines PER card; a full 256-line harness needs 4 HV cards sharing I2C addresses 0x20-0x27, selected one at a time by ISO_HV_CARD_EN1..EN4. Confirm the card-count fitted and add bank-select to the init sequence (Sec. 1.1 / 1.2 / 4.0).
+5. Continuity level (RESOLVED): LO_COM pull-down = 100 Ω. A present wire pulls the sense node well below 3.3 V (a few hundred mV, or less with low-Rₒₙ muxes); an open stays ≈ 3.3 V. Large margin — calibrate the connected/open thresholds at bring-up. See Sec. 6.
+1. System Overview
+The Harness Tester performs electrical verification of wire harness assemblies by applying controlled voltages and measuring responses across 256 lines (High Side) to 256 lines (Low Side). The system comprises three cards that must be initialized in sequence before any test operation commences.
+1.1 System Architecture
+Card
+Role
+Key Interfaces
+Control Card
+Master controller — DAC, ADC, logic
+I2C, SPI, GPIO
+HV Card
+High Voltage generation up to 500 V DC
+CA05P-5 DCDC, Reed Relays ×128, MCP23017 ×8
+Matrix Card
+Cross-point switching — 256 HS × 256 LS paths
+CD4067 MUX ×32, MCP23017 ×2, 512 test points
+FIRMWARE REVIEW NOTE (v1.3): HV Card capacity. "Reed Relays x128, MCP23017 x8" describes ONE HV card = 64 High-Side + 64 Low-Side reed relays (128 coils driven by 8x MCP23017 at I2C addresses 0x20-0x27). A single HV card can insulation-test only 64 HS lines, not 256. Full 256-line HV coverage requires FOUR identical HV cards, each selected in turn by its ISO_HV_CARD_ENx line (EN1-EN4). The Matrix card is genuinely 256x256; the HV insulation subsystem is 64 lines per card.
+1.2 Communication Map
+Device
+Bus
+Notes
+DAC8830 (HV Card)
+SPI (isolated)
+Controls CA05P-5 HV output level
+DAC8775 (Control Card)
+SPI2 — ISO bus 2
+4-channel DAC; Ch.A used as 10 mA current source
+ADC AD7476 ×4
+SPI1 Matrix(HI_COM), SPI2 HV×2(iso), SPI3 Control
+HV feedback and continuity/resistance measurement
+MCP23017 ×8 (HV Card)
+I2C — ISO bus 1
+Drive 64 HS + 64 LS reed relay coils
+MCP23017 ×2 (Matrix Card)
+I2C — ISO bus 2
+Drive HI_EN1–16 and LO_EN1–16 MUX enables
+FIRMWARE REVIEW NOTE (v1.3): HV-card I2C addressing / 4-card banking. Every HV card uses the SAME MCP23017 addresses 0x20-0x27. When more than one HV card is fitted (needed for >64 HS lines) the cards share I2C2 and are distinguished by the per-card isolator-enable lines ISO_HV_CARD_EN1..EN4 driven from the Control Card: enable exactly ONE card’s I2C isolator at a time, drive/scan its 0x20-0x27, then move to the next. The single-card init in Sec. 2.2 covers only card 1; firmware must add this bank-select loop. (Per HV_Card schematic sheet 1 note.)
+1.3 HV Insulation Voltage Divider — Principle of Operation
+The HV Card sense network uses a 4-resistor chain to monitor the applied HV and to detect insulation faults. The key measurement resistors are:
+• R_series = 1 MΩ  (R3001 + R3002 combined — series path from HV line)
+• R_bottom = 1 kΩ  (R3004 — fixed ADC-side resistor)
+Worst-case condition — direct wire connection (zero insulation impedance):
+When the harness wire under test has zero impedance to the return (i.e., a dead short or direct connection), the 1 MΩ series resistor and 1 kΩ bottom resistor form a simple divider:
+At the 10 MΩ insulation go/no-go limit the leakage develops ≈ 0.045 V across R3004 (1 kΩ) at the HV_RET node. Good insulation (> 10 MΩ) reads below 0.045 V; a low-impedance/short reads well above. (HV_Sense, the separate rail-monitor node, reads ≈ 0.245 V at 500 V — see §3.2.)
+At a dead short (zero insulation impedance) the reading is 500 V × 1 kΩ / (1 MΩ + 1 kΩ) ≈ 0.50 V — this, not 0.049 V, is the true worst-case maximum (the earlier 0.049 V figure was a ×10 error; only the 0.045 V = 10 MΩ go/no-go point was correct). Good wire insulation means the insulation impedance is very high (≥ 10 MΩ), so virtually no current flows and the voltage across the 1 kΩ bottom resistor drops to near zero.
+Insulation fault interpretation:
+ADC Reading
+Approx. Leakage R
+Interpretation
+< 0.005 V
+> ~100 MΩ
+PASS — Excellent insulation, negligible leakage
+0.005 – 0.045 V
+10 – 100 MΩ
+PASS — 0.045 V = 10 MΩ go/no-go limit
+0.045 – 0.10 V
+~4 – 10 MΩ
+FAIL — Degraded / marginal insulation
+0.10 – 0.25 V
+~1 – 4 MΩ
+FAIL — Significant leakage
+0.25 – ~0.50 V
+< 1 MΩ → near short
+FAIL — Severe leakage / direct connection
+FIRMWARE REVIEW NOTE (v1.3): Bands re-derived from the actual divider V_R3004 = 500 V × 1 kΩ / (1 MΩ + R_ins + 1 kΩ). Estimate insulation resistance from the reading as R_ins ≈ 500000 / V_ADC − 1.001 MΩ. The single go/no-go stays at 0.045 V (=10 MΩ): below = PASS, at/above = FAIL. The full 0–0.50 V span (not 0–0.049 V) is available on the HV-card AD7476 (Vref = 5 V).
+⚠  NOTE: Key principle: In this insulation test circuit a LOWER ADC voltage means BETTER insulation. GO/NO-GO: V_HV_RET < 0.045 V => PASS (>10 MΩ); >= 0.045 V => FAIL (<=10 MΩ). The graded bands are informational only. The ADC reading rises toward ~0.50 V as insulation resistance falls. A reading approaching ~0.50 V indicates a direct connection or insulation breakdown.
+1.4 Initialization Sequence Summary
+Phase
+Card
+Action
+1
+Control Card
+Power-on, bus scan, DAC/ADC/GPIO expander verification
+2
+HV Card
+GPIO expander all-zero (all relays OFF), 500 V ramp, ADC confirm
+3
+HV Card (Insulation Test)
+Write GPIO expander 0x00, enable HV, sequential reed relay activation, ADC monitoring
+4
+Matrix Card
+GPIO expander discovery, all outputs 0x00, all paths confirmed open
+5A
+Matrix Card (Op A)
+Continuity auto-discovery — scan all 256 × 256 paths
+5B
+Matrix Card (Op B)
+Pre-defined plan verification
+6A
+Matrix Card (Resistance A)
+Auto-measure resistance of all discovered connections
+6B
+Matrix Card (Resistance B)
+Verify resistance against pre-defined plan limits
+2. Control Card Initialization
+The Control Card (STM32G474RETx) is the master of the entire system. All communication buses must be verified before proceeding to HV Card or Matrix Card operations.
+2.1 Power-On Self Test (POST)
+Step 2.1.1: Apply +5 V supply to Control Card. Confirm 3.3 V LDO (TLV70033) output is stable.
+Step 2.1.2: Confirm isolated 5 V supplies (R05C05TE05S-R, R05CT05S-R) are active.
+Step 2.1.3: Confirm +12 V boost (LT8337EV-1-PBF) output is stable.
+Step 2.1.4: uC firmware boot executes. Initialize all GPIO to safe defaults:
+◦ All MCP23017 I2C write pending — defer until bus init (Section 2.2)
+◦ All SPI chip-select lines → HIGH (deselected)
+◦ DAC8775 RESET_N → deassert (HIGH = active)
+◦ OPTO_CNTR (PC12) → LOW (Opto SPDT selects 3.3 V pull-up path, not DAC path)
+2.2 I2C Bus Initialization
+Step 2.2.1: Configure I2C2 and I2C3 peripherals at 100 kHz (standard mode). Isolators (ADUM1205) are active on both buses.
+Step 2.2.2: Perform I2C bus scan (0x00–0x7F) on I2C2 (HV Card bus) and I2C3 (Matrix Card bus).
+Step 2.2.3: Verify DAC8830 responds on its isolated SPI (write-only device — no address).
+Step 2.2.4: Verify all 8× MCP23017 on HV Card respond on I2C2 at addresses 0x20–0x27. Log each.
+Step 2.2.5: Verify 2× MCP23017 on Matrix Card respond on I2C3. Log addresses.
+Step 2.2.6: If any expected device does not respond: log "I2C device missing at address 0xXX on bus Y". HALT.
+⚠  NOTE: I2C buses use ADUM1205 bidirectional isolators. Pull-up resistors (4.7 kΩ) are on both sides of the isolator. If scan returns no devices, verify isolator power supply (+3.3 V side 1, +5 V side 2) before assuming firmware fault.
+2.3 SPI Bus Initialization — ADC Channels
+Step 2.3.1: Configure SPI2 (isolated HV-card ADCs U301/U302), SPI1 (Matrix ADC U33, HI_COM) and SPI3 (Control-Card ADC U4): Mode 0, appropriate clock per AD7476 datasheet.
+Step 2.3.2: Assert CS for each ADC, perform a dummy read cycle, deassert CS. Verify 12-bit response word is not all-zeros or all-ones.
+Step 2.3.3: Perform baseline ADC read on all channels with no input stimulus:
+◦ HV feedback channel (isolated SPI2): expected near 0 V (HV off, no current in divider)
+◦ Continuity channels (SPI3 via Opto SPDT in pull-up mode): expected 3.3 V
+Step 2.3.4: Log baseline values. Any anomalous baseline indicates a hardware fault.
+2.4 Control Card Initialization Complete — Checklist
+✓ / ✗
+Item
+☐
+Power rails stable: +3.3 V, +5 V, +5 V ISO, +12 V
+☐
+STM32 firmware boot complete
+☐
+All GPIO initialized to safe defaults
+☐
+DAC8830 (HV Card) found on isolated SPI
+☐
+All 8× MCP23017 (HV Card) found on I2C2 at addresses 0x20–0x27
+☐
+MCP23017 ×2 (Matrix Card) found on I2C3
+☐
+HV-card ADCs (isolated SPI2) verified — baseline ≈ 0 V
+☐
+ADC2 (Control Card SPI3) communication verified — baseline ≈ 3.3 V
+☐
+OPTO_CNTR = LOW (3.3 V pull-up path active)
+3. HV Card Initialization
+⚠  NOTE: HIGH VOLTAGE HAZARD — up to 500 VDC. Ensure test fixture is fully enclosed and no personnel contact is possible with HV lines before and during this section.
+3.1 Safety State — GPIO Expander All-Zero Before HV Enable
+Before the CA05P-5 DCDC is enabled, all 8× MCP23017 GPIO expanders on the HV Card must be written to output 0x00 on every port. This guarantees all 128 reed relay driver transistors (64 High Side + 64 Low Side) are OFF. There is no relay status feedback line — the firmware enforces safety by commanding all outputs low and trusting the open-drain / pull-down circuit design.
+Step 3.1.1: For each MCP23017 at addresses 0x20 through 0x27 via I2C2:
+◦ Write IODIR register A = 0xFF (configure as inputs first to avoid glitch, then switch)
+◦ Write OLAT register A = 0x00
+◦ Write OLAT register B = 0x00
+◦ Write IODIR register A = 0x00 (all port A pins → output)
+◦ Write IODIR register B = 0x00 (all port B pins → output)
+◦ Readback OLAT A and OLAT B: confirm both = 0x00
+Step 3.1.2: If any readback ≠ 0x00: log "MCP23017 write fail at address 0xXX". HALT — do not enable HV.
+Step 3.1.3: Read ADC on HV feedback channel (isolated SPI2). Confirm reading < 0.005 V (HV off, residual only).
+⚠  NOTE: The 2N7002 gate is held LOW by the 10 kΩ pull-down resistor when MCP23017 output = 0. With gate LOW, the 2N7002 is OFF and no current flows through the reed relay coil. This is the inherently safe state.
+3.2 DAC8830 Configuration and HV Ramp
+Step 3.2.1: Via the isolated SPI, write DAC8830 = 0x0000 (minimum output → 0 V reference to CA05P-5 VPGM pin).
+Step 3.2.2: (DAC8830 is write-only; there is no register readback — command 0x0000 and proceed.)
+Step 3.2.3: Enable CA05P-5 (if EN pin is firmware-controlled). DCDC begins ramping from 0 V.
+Step 3.2.4: Increment DAC in controlled steps — 10% of full-scale per step, 100 ms hold per step — to allow DCDC and RC network to stabilize.
+Step 3.2.5: At each step, read the HV_Sense rail-monitor ADC (isolated SPI2). The divider gives V_HV_Sense ≈ 0.00049 × V_HV (≈ 0.245 V at 500 V):
+Target HV (V)
+Expected ADC (V)
+Tolerance
+50 V
+~0.025 V
+± 0.002 V
+100 V
+~0.049 V
+± 0.002 V
+200 V
+~0.098 V
+± 0.003 V
+350 V
+~0.172 V
+± 0.004 V
+500 V
+~0.245 V
+± 0.005 V
+FIRMWARE REVIEW NOTE (v1.3): HV_Sense = HV × R3003 / (R3001 + R3003) = HV × 0.00049 ≈ 0.245 V at 500 V — a 1:2000 divider (R3001 = 10 MΩ, R3003 = 5 kΩ). NOTE: the present HV_Card sheet 2 labels R3003 = 50 kΩ (a 1:200 ratio that would give ≈ 2.49 V, ×10); R3003 is being changed to 5 kΩ in the next schematic revision. Firmware uses the 0.245 V / 0.00049 scaling; the reading sits well inside the 5 V ADC reference.
+⚠  NOTE: ADC values at the HV monitoring point are small (~0.245 V at 500 V) due to the large series resistance chain. The 12-bit ADC (AD7476 on the HV card, Vref = 5.0 V (+5V_ISO)) has an LSB of ~1.22 mV, giving adequate resolution. If readings are out of tolerance at any step: write DAC = 0x0000 immediately, log "HV ramp fault at step X", HALT.
+Step 3.2.6: At full 500 V target: confirm ADC steady-state reading is ~0.245 V ± 0.010 V.
+Step 3.2.7: Log final stabilized ADC reading. HV Card initialization is complete.
+3.3 HV Card Initialization Complete — Checklist
+✓ / ✗
+Item
+☐
+All 8× MCP23017 GPIO expanders written 0x00 (all reed relays OFF)
+☐
+MCP23017 OLAT readback confirms 0x00 on all expanders
+☐
+ADC HV channel reads < 0.005 V before HV enable
+☐
+DAC8830 written 0x0000 (write-only; no readback)
+☐
+HV ramped in 10% steps to 500 V
+☐
+ADC at 500 V reads ~0.245 V ± 0.010 V
+☐
+Final stabilized ADC value logged
+4. HV Card — Harness Insulation Test
+With 500 V established, the insulation integrity of the harness is tested wire by wire. Each High Side line is energized through the HV reed relay (via the 1 MΩ series resistor chain) while the low-side return path is closed (see Sec. 4.0 REVIEW NOTE) and all other high-side reed relays remain OFF. The ADC monitors the voltage across the 1 kΩ bottom resistor. A near-zero reading confirms good insulation. A rising voltage toward ~0.50 V indicates current leakage and thus insulation degradation or failure.
+FIRMWARE REVIEW NOTE (v1.3): Measurement loop / return path. The reading is the voltage across R3004 (1 kΩ) at HV_RET; current flows only when the loop is closed: +500 V → R3002 (1 MΩ) → HS reed relay[n] → HS wire → [insulation] → an adjacent conductor → its LS reed relay → HV_RET → R3004 (1 kΩ) → GND. RETURN SCHEME: energise the HS relay of the net under test and CLOSE ALL LOW-SIDE relays EXCEPT the LS relay(s) belonging to that same net (its own return, per the connection map). Every other conductor is thereby tied to HV_RET, so the energised net is measured against all of them, while excluding its own return prevents a good connection from reading as leakage. With NO low-side relay closed there is no loop and every line reads ~0 V (false PASS).
+FIRMWARE REVIEW NOTE (v1.3): Line count. One HV card tests 64 HS lines (not 256). Run the per-line loop for n = 1..64 on this card, then repeat for each additional HV card via its ISO_HV_CARD_ENx bank-select (see Sec. 1.1/1.2).
+⚠  NOTE: No closed-loop feedback is used during the insulation test. The GPIO expanders are commanded to all-zero and individual reed relays are activated one at a time under direct firmware control. The ADC reading is the sole indicator of insulation condition.
+4.1 Pre-Test Safety Verification
+Step 4.1.1: Confirm all 8× MCP23017 OLAT registers = 0x00 (all reed relays OFF). Read back each expander.
+Step 4.1.2: Confirm HV ADC channel reads ~0.245 V ± 0.010 V (500 V present, no load current).
+Step 4.1.3: Confirm Matrix Card all outputs = 0x00 (no Matrix paths closed — Section 5 prerequisite).
+Step 4.1.4: Prepare the low-side return. The insulation measurement needs every conductor EXCEPT the net under test tied to HV_RET. Accordingly, for each high-side line the procedure below closes all Low-Side reed relays except the LS relay(s) of that net (its own return, from the connection map). A closed return is mandatory — with all LS relays open there is no measurement loop and every line reads ~0 V (false PASS).
+4.2 Sequential Insulation Test Procedure
+Step 4.2.1: Load the harness under test. Identify all High Side lines on this HV card (up to 64; repeat the whole procedure per HV card for a full 256-line harness).
+Step 4.2.2: For each High Side line HS[n], n = 1 to 64 (per HV card):
+◦ Identify the MCP23017 address and port pin corresponding to HS_RELAY[n].
+◦ Close all Low-Side reed relays EXCEPT the LS relay(s) of net n (its own return, per the connection map). This ties every other conductor to HV_RET as the return bundle.
+◦ Write that single bit to 1 on the relevant MCP23017 OLAT register. All other outputs remain 0.
+◦ Wait stabilization: ≥ 50 ms (allows RC settling with stray capacitance on the HV line).
+◦ Read the HV_RET leakage ADC (isolated SPI2). This is V_ADC for HS[n].
+◦ Evaluate result — see table below.
+◦ Write that bit back to 0 (reed relay OFF). Wait 20 ms before next relay.
+4.2.3 Insulation Test ADC Interpretation Table
+V_ADC Reading
+Condition
+Action
+< 0.005 V
+Excellent (> ~100 MΩ)
+PASS — log and continue
+0.005 – 0.045 V
+Good (10 – 100 MΩ)
+PASS — 0.045 V = 10 MΩ limit; log leakage value
+0.045 – 0.10 V
+Degraded (~4 – 10 MΩ)
+FAIL — log F04, disable relay, continue
+0.10 – 0.25 V
+Significant leak (~1 – 4 MΩ)
+FAIL — log F04, disable relay, continue
+0.25 – ~0.50 V
+Severe / near short (< 1 MΩ)
+FAIL — log F04-CRITICAL, disable HV immediately
+⚠  NOTE: Remember: V_ADC INCREASES as insulation resistance DECREASES. Pass/fail is a single threshold at 0.045 V (= 10 MΩ). The physical maximum is ≈ 0.50 V (500 V across R3002 1 MΩ + R3004 1 kΩ) when the wire is directly shorted through the low-side return; the earlier 0.049 V ceiling was a ×10 error. Any reading approaching this value is a serious fault.
+Step 4.2.4: After testing all HS lines on this card (up to 64): confirm all MCP23017 OLAT = 0x00.
+Step 4.2.5: Ramp DAC8830 back to 0x0000 in steps. Confirm ADC reads < 0.002 V (HV off).
+Step 4.2.6: Generate insulation test report: per-line V_ADC, estimated insulation resistance, PASS/FAIL status.
+4.3 Insulation Test Complete — Checklist
+✓ / ✗
+Item
+☐
+All MCP23017 OLAT = 0x00 verified before test start
+☐
+HV confirmed at 500 V (ADC ~0.245 V) before sequential relay activation
+☐
+All 256 HS lines tested sequentially — one reed relay at a time
+☐
+Each relay returned to OFF before next relay activated
+☐
+No ADC reading at or near ~0.50 V (direct-short level)
+☐
+All MCP23017 OLAT = 0x00 after test completion
+☐
+HV ramped back to 0 V and ADC confirmed < 0.002 V
+☐
+Insulation test report generated with per-line values
+5. Matrix Card Initialization
+The Matrix Card routes 256 High Side and 256 Low Side harness connections through 32× CD4067BF3A 16:1 analog multiplexers (16 MUX for HI, 16 MUX for LO), controlled by 2× MCP23017 GPIO expanders. The MUX enable (E pin — active LOW) and 4-bit address (S0–S3) lines select which of the 256 connections is active at any time.
+5.1 GPIO Expander Discovery and All-Zero Init
+Step 5.1.1: Via I2C3: scan for MCP23017 on Matrix Card. Expect 2 expanders:
+◦ U101 — drives HI_EN1–16 (enables for the 16 High Side MUXes)
+◦ U102 — drives LO_EN1–16 (enables for the 16 Low Side MUXes)
+Step 5.1.2: For each expander: write all OLAT registers to 0x00, configure all IODIR = 0x00 (output). Readback to confirm.
+Step 5.1.3: With all EN lines = 0 (active LOW), all 32 CD4067 MUXes are disabled — all 256 HI and 256 LO paths are open.
+Step 5.1.4: Write shared MUX address lines: S0–S3 (HI and LO) = 0x00. These are driven from Control Card GPIO directly (not via expanders). Set to channel 0 as a defined default.
+⚠  NOTE: CD4067 Enable (E) is active LOW. MCP23017 output = 0 means E = LOW = MUX enabled. Therefore all OLAT bits MUST be written HIGH (0xFF) to keep all MUXes DISABLED at init, not LOW. Confirm logic polarity in firmware before commanding expanders.
+5.2 All-Paths-Open Verification
+Step 5.2.1: With Control Card Opto SPDT in 3.3 V pull-up mode (OPTO_CNTR = LOW): all LS measurement nodes are pulled to 3.3 V.
+Step 5.2.2: Read ADC (SPI3) on the continuity channel. With all Matrix paths open: expected ADC ≈ 3.3 V.
+Step 5.2.3: Any reading significantly below 3.0 V indicates a stuck-enabled MUX, wiring fault, or load on the continuity line. Log and HALT.
+5.3 Matrix Card Initialization Complete — Checklist
+✓ / ✗
+Item
+☐
+MCP23017 U101 (HI_EN) found on I2C3
+☐
+MCP23017 U102 (LO_EN) found on I2C3
+☐
+U101 and U102 OLAT written to disable all 32 MUXes (confirm E logic polarity)
+☐
+OLAT readback confirms all MUXes disabled
+☐
+HI_S0–S3 and LO_S0–S3 lines set to defined default (channel 0)
+☐
+ADC continuity channel reads ≈ 3.3 V (all paths open)
+6. Matrix Card — Harness Continuity Operations
+The Control Card provides a 3.3 V pull-up on the ADC measurement input (via Opto SPDT in pull-up mode). When a Matrix path is closed — one CD4067 MUX enabled, one channel selected — the HS pin connects to the LS measurement node. If the harness wire is present, current flows and the ADC reads approximately 1.5 V. An open circuit (missing wire) reads 3.3 V.
+FIRMWARE REVIEW NOTE (v1.3): LO_COM carries a 100 Ω pull-down to GND (hardware decision), which doubles as the current-source return. In continuity mode the "connected" node is the divider of the ~10 kΩ pull-up (Control, to 3.3 V) against (2·mux Rₒₙ + 100 Ω) — so a present wire reads WELL BELOW the old 1.5 V figure (a few hundred mV, or tens of mV with low-Rₒₙ muxes), while an open reads ≈ 3.3 V (pull-up only). Margin is large; set the connected/open thresholds from a bring-up loopback, not a fixed 1.5 V.
+ADC Reading
+State
+Action
+≈ 3.3 V
+Open — no harness connection
+No wire on this path
+< ~0.5 V
+Connected — wire present
+Connection confirmed (level set by mux Rₒₙ vs the 100 Ω LO_COM return)
+~0.5 – 3.0 V
+Anomalous / high-resistance
+Log — partial or degraded connection; investigate
+Selecting a path on the Matrix Card requires two steps:
+• Step A — Write HI_EN or LO_EN bit HIGH (CD4067 E pin LOW = enabled) via MCP23017
+• Step B — Set S0–S3 (4-bit channel address) on the enabled MUX to select one of 16 channels
+The combination of MUX number (1–16) and channel address (0–15) gives 16 × 16 = 256 unique HS or LS connections.
+6A. Operation A — Auto-Discovery Mode (256 × 256 Scan)
+Purpose: Map all connections in an unknown 256-line harness. No pre-defined plan required. The system sequentially enables each of the 256 HS connections and reads all 256 LS paths.
+Step 1: Confirm all Matrix paths disabled and ADC reads 3.3 V (from Section 5.2).
+Step 2: Set OPTO_CNTR = LOW (3.3 V pull-up mode active).
+Step 3: For each High Side connection HS[i], i = 1 to 256:
+◦ Determine MUX number and channel: MUX_HI = ceil(i / 16), CH_HI = (i − 1) mod 16.
+◦ Set HI_S0–S3 = CH_HI on Control Card GPIO.
+◦ Enable MUX_HI: set HI_EN[MUX_HI] bit HIGH via U101 MCP23017.
+◦ For each Low Side connection LS[j], j = 1 to 256:
+     MUX_LO = ceil(j / 16),  CH_LO = (j − 1) mod 16
+     Set LO_S0–S3 = CH_LO. Enable MUX_LO via U102.
+     Read ADC. If reading ≈ 1.5 V → record (HS[i], LS[j]) as connected.
+     Disable MUX_LO (LO_EN[MUX_LO] bit LOW via U102).
+◦ Disable MUX_HI (HI_EN[MUX_HI] bit LOW via U101). Verify ADC returns to 3.3 V.
+Step 4: Build connection map: list all (HS[i], LS[j]) pairs detected.
+Step 5: Log: total connections, multi-destination HS pins, LS pins receiving from multiple HS sources.
+Step 6: Output: Auto-discovered 256-line harness map. Save as reference plan for Operation B if required.
+6B. Operation B — Pre-Defined Plan Verification Mode
+Purpose: Verify a manufactured 256-line harness matches a known-good harness plan.
+Step 1: Load harness plan from uC storage: list of expected (HS[i], LS[j]) pairs for all 256 connections.
+Step 2: Confirm all Matrix paths disabled and ADC reads 3.3 V.
+Step 3: For each expected connection (HS[i] → LS[j]) in the plan:
+◦ Enable MUX_HI and set CH_HI; enable MUX_LO and set CH_LO.
+◦ Read ADC: PASS if ≈ 1.5 V; FAIL-OPEN if ≈ 3.3 V (wire missing).
+◦ Scan all other LS paths (or spot-check known non-connections): any ≈ 1.5 V reading is a FAULT-SHORT.
+◦ Disable both MUXes before next connection.
+Step 4: For each HS pin NOT in the plan: enable its MUX, scan all LO channels. Any 1.5 V reading = FAULT-EXTRA.
+Step 5: Generate test report:
+◦ PASS — connection detected, matches plan.
+◦ OPEN FAIL — expected connection not detected (F06).
+◦ SHORT FAIL — unplanned connection detected (F07).
+7. Matrix Card — Harness Resistance Operations
+Resistance measurement injects a known 10 mA current (from DAC8775 Channel A current-source mode on the Control Card) into each harness connection. The voltage drop across the wire is measured by the ADC. Ohm's Law gives: R = V_drop / 0.010 A.
+FIRMWARE REVIEW NOTE (v1.3) — RESISTANCE PATH & CALIBRATION: Single-ended, 2-wire: U33 reads HI_COM to GND, so the reading = I × (2·mux Rₒₙ + 100 Ω LO_COM return + R_wire). The 100 Ω return lets current flow (the old 100 kΩ made 10 mA impossible). BUT compliance is separate from calibration: if mux Rₒₙ is high (classic CD4067B ≈ 500 Ω → ~1.1 kΩ offset) the node needs ~11 V at 10 mA and clamps at 3.3 V, so the current collapses no matter how you calibrate. Keep I × (offset + R_wire) < ~3.3 V via low-Rₒₙ muxes (~15 Ω) and/or lower current. THEN a reference-resistor self-calibration (planned: a permanent known-resistance path per side, selected by a GPIO-driven CD4067, measured before each test to characterise and subtract the offset) removes the offset and its drift, leaving the ADC step (LSB/I ≈ 80 mΩ at 10 mA) as the floor — good for connection/ohms-range resistance, not milliohm. IMPORTANT: the calibration path must traverse the SAME switches as the measurement path, else the main-mux Rₒₙ is not cancelled. For true milliohm precision, use 4-wire (Kelvin).
+Parameter
+Value
+Notes
+Test Current (I)
+10 mA — REVISE to <=1 mA (see Sec. 7 note)
+DAC8775 Ch.A in current-source mode via SPI2
+Path Switch
+Opto SPDT (TS5A3159)
+OPTO_CNTR = HIGH → I_OUT path active (DAC current)
+ADC measures
+V_drop across wire
+Via HI_COM to the Matrix ADC (SPI1) — ADC_IN is disconnected in I_OUT mode
+Formula
+R = V_drop / 0.010
+Result in Ohms
+Calibration ref
+100 Ω resistor
+Expected V_drop = I × 100 Ω; note this excludes the CD4067 on-resistance (see Sec. 7 note)
+⚠  NOTE: Before resistance measurement: set OPTO_CNTR = HIGH (PC12) to switch from 3.3 V pull-up to DAC current-source path. After all resistance measurements: set OPTO_CNTR = LOW to restore pull-up mode.
+7.1 DAC8775 Current Source Setup
+Step 7.1.1: Via SPI2, program DAC8775 Channel A to current-source mode. Set output to value corresponding to 10 mA.
+Step 7.1.2: Set OPTO_CNTR (PC12) = HIGH. the Matrix ADC (SPI1, HI_COM) now reads the current-source output.
+Step 7.1.3: Connect calibration resistor (100 Ω) across the measurement path. Expected ADC reading = 10 mA × 100 Ω = 1.000 V.
+Step 7.1.4: If ADC reading deviates > 5% from 1.000 V: adjust DAC8775 value and repeat. Log correction factor (F10 if uncorrectable).
+7A. Operation A — Auto-Resistance Discovery Mode
+Purpose: Measure resistance of all 256 connections previously discovered in continuity Operation 6A.
+Step 1: Load auto-discovered connection map from Operation 6A (or re-run 6A first).
+Step 2: Confirm OPTO_CNTR = HIGH (DAC current-source path active).
+Step 3: For each discovered connection (HS[i] → LS[j]):
+◦ Enable MUX_HI (CH_HI) and MUX_LO (CH_LO) as per the connection address.
+◦ Enable DAC8775 Channel A output (10 mA). Current flows: DAC → MUX → harness wire → return.
+◦ Read the Matrix ADC (SPI1, HI_COM): V_drop across the harness wire.
+◦ Calculate: R_wire = V_drop / 0.010 Ω.
+◦ Disable DAC output (Channel A = 0), disable both MUXes.
+◦ Log: HS[i] → LS[j] : V_drop = X mV, R = Y Ω.
+Step 4: After all measurements: set OPTO_CNTR = LOW (restore 3.3 V pull-up mode).
+Step 5: Output: Resistance map of all 256 harness connections.
+7B. Operation B — Pre-Defined Plan Resistance Verification
+Purpose: Verify resistance of each connection in the pre-defined harness plan is within specified limits.
+Step 1: Load harness plan with resistance limits: (HS[i] → LS[j], R_min, R_max) for all connections.
+Step 2: Confirm OPTO_CNTR = HIGH (DAC current-source path active).
+Step 3: For each connection in the plan:
+◦ Enable MUX_HI and MUX_LO. Enable 10 mA current source.
+◦ Read ADC: V_drop. Calculate R_wire = V_drop / 0.010.
+◦ Compare:
+    PASS             : R_min ≤ R_wire ≤ R_max
+    HIGH RESIST FAIL : R_wire > R_max  (partial break, corrosion) → F08
+    LOW RESIST FAIL  : R_wire < R_min  (parallel path or cal error) → F09
+◦ Disable current source and both MUXes.
+Step 4: After all measurements: set OPTO_CNTR = LOW.
+Step 5: Generate resistance test report: per-connection measured value, limits, PASS/FAIL status.
+8. End-to-End Operational Flow
+Step
+Action
+1
+POWER ON — Apply +5 V to Control Card. Verify +3.3 V, +5 V ISO, +12 V rails stable.
+2
+CONTROL CARD INIT — I2C2 scan: verify 8× MCP23017 (HV); DAC8830 on isolated SPI. I2C3 scan: verify 2× MCP23017 (Matrix). SPI1/SPI3: verify ADC channels. Log baselines.
+3
+HV CARD SAFETY — Write all 8× MCP23017 OLAT = 0x00 via I2C2. Readback confirms 0x00. ADC HV channel < 0.005 V confirmed.
+4
+HV RAMP — DAC8830 = 0x0000, enable CA05P-5. Increment DAC in 10% steps to 500 V. At each step verify ADC ~0.245 V ± 0.010 V.
+5
+HV INSULATION TEST — All MCP23017 OLAT = 0x00 confirmed. For each HS line (up to 64 per HV card): activate one reed relay, wait 50 ms, read ADC. Rising V_ADC toward ~0.50 V = fault. Disable relay. Repeat. Ramp HV to 0 V after all lines tested.
+6
+MATRIX CARD INIT — I2C3: verify U101, U102. Write all EN lines to disable all MUXes. S0–S3 = 0. Verify ADC continuity channel ≈ 3.3 V.
+7A
+CONTINUITY OP A (Discovery) — For each HS[i] 1–256: enable MUX_HI[i], scan all LS[j] 1–256 via MUX_LO[j], record 1.5 V hits as connections. Build 256-line map.
+7B
+CONTINUITY OP B (Verification) — Load plan, test each expected HS→LS path, flag OPEN or SHORT failures.
+8A
+RESISTANCE OP A (Discovery) — OPTO_CNTR = HIGH. For each discovered connection: enable MUX pair, inject 10 mA, read ADC, compute R = V/0.010.
+8B
+RESISTANCE OP B (Verification) — Load plan with R limits. Test each connection. Flag HIGH or LOW resistance failures.
+9
+COMPLETE — All MUXes disabled. OPTO_CNTR = LOW. DAC8775 = 0. All MCP23017 OLAT = 0x00. Log final test report.
+9. Fault Codes & Actions
+Fault Code
+Description
+Action
+F01
+I2C device not found at expected address
+Check wiring, pull-ups, isolator supply. HALT.
+F02
+SPI ADC no response or invalid data
+Check CS, CLK, MISO/MOSI, isolator. HALT.
+F03
+HV ramp fault — ADC out of tolerance at step
+Write DAC = 0x0000 immediately. Check CA05P-5 and sense network. HALT.
+F04
+Insulation fault — V_ADC above the 0.045 V (10 MΩ) go/no-go threshold, rising toward the ~0.50 V short level
+Disable reed relay. Log HS line number. Continue other lines. Flag harness for repair.
+F04-CRIT
+V_ADC ≈ 0.50 V (direct short detected)
+Disable HV immediately (DAC = 0). Halt all HV operations. Investigate harness.
+F05
+MCP23017 OLAT readback ≠ 0x00 at init
+Re-command 0x00. If persists: isolate expander, HALT HV operations.
+F06
+Continuity OPEN — expected connection not detected
+Log HS/LS pair, continue remaining tests, include in report.
+F07
+Continuity SHORT — unplanned connection detected
+Log extra connection, continue remaining tests, include in report.
+F08
+Resistance HIGH — R_wire > R_max
+Log measured value, flag wire for inspection or replacement.
+F09
+Resistance LOW — R_wire < R_min
+Log measured value, check for parallel paths or calibration error.
+F10
+Current source calibration fail (> 5% deviation)
+Adjust DAC8775 value. If uncorrectable: log fault, do not perform resistance tests.
+10. Glossary
+Term
+Definition
+HS / HI
+High Side — 256 source/drive lines of the harness under test
+LS / LO
+Low Side — 256 return/sense lines of the harness under test
+DAC8830
+SPI DAC on HV Card — controls CA05P-5 HV output level
+DAC8775
+SPI DAC on Control Card — Ch.A used as 10 mA current source for resistance measurement
+AD7476
+12-bit SPI ADC — reads HV sense voltage and continuity/resistance voltage
+MCP23017
+16-bit I2C GPIO expander — drives reed relay coils (HV Card) and MUX enables (Matrix Card)
+CA05P-5
+High Voltage DCDC module producing up to 500 V DC
+MHV05-1A
+Reed relay (5 V coil) — switches HV to harness HS lines on HV Card
+CD4067BF3A
+16:1 analog multiplexer — 32 units on Matrix Card routing 256 HS and 256 LS connections
+Opto SPDT (TS5A3159)
+Analog SPDT switch — selects 3.3 V pull-up (continuity) or DAC I_OUT (resistance) path
+OPTO_CNTR
+STM32 PC12 — LOW = pull-up mode, HIGH = current-source mode
+R_series (1 MΩ)
+Upper arm of HV sense divider — limits current and sets insulation measurement sensitivity
+R_bottom (1 kΩ)
+Lower arm of HV sense divider — ADC reads voltage across this resistor
+V_HV_RET(limit) = 0.045 V
+Leakage-node go/no-go threshold: 10 MΩ insulation. Below 0.045 V = PASS (>10 MΩ); at/above = FAIL (≤10 MΩ).
+ADUM1205
+Bidirectional I2C digital isolator on Control, HV and Matrix Cards
+Connection Map
+All HS-to-LS pairs discovered by continuity auto-discovery (Op A)
+Harness Plan
+Pre-defined expected connection list for plan-verification mode (Op B)
+MUX_HI / MUX_LO
+CD4067 MUX number (1–16) for High Side or Low Side path selection
+CH_HI / CH_LO
+4-bit channel address (0–15) selecting one of 16 connections within a MUX

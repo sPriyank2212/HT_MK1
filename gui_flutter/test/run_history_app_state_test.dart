@@ -40,10 +40,10 @@ void main() {
       expect(entries.single.passed, 8);
       expect(entries.single.failed, 0);
       expect(entries.single.pass, isTrue);
-      // AppState seeds a demo MTX netlist as loaded at construction (see the
-      // pre-connection placeholder note in AppState.connect) — that's what
-      // should show up here, not a hardcoded value invented by the test.
-      expect(entries.single.mtxNetlist, s.nlMtx.name);
+      // No netlist is loaded at construction (GUI Reality Check, cause A) —
+      // whatever AppState actually has loaded should show up here, not a
+      // hardcoded value invented by the test.
+      expect(entries.single.mtxNetlist, s.nlMtx.loaded ? s.nlMtx.name : null);
     });
 
     test('a failing run is recorded as a fail, not silently dropped', () {
