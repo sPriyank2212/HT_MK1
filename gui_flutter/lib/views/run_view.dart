@@ -4,6 +4,7 @@ library;
 import 'package:flutter/widgets.dart';
 
 import '../app/app_state.dart';
+import '../app/build_tag.dart';
 import '../app/parts.dart';
 import '../design/icons.dart';
 import '../design/tokens.dart';
@@ -81,10 +82,13 @@ class _Domains extends StatelessWidget {
         // in res_hv_views.dart's ResView for the same numbers/reasoning):
         // 2 mA is the IDAC's genuinely fixed excitation (FW-12); PGA gain
         // is auto-ranged per measurement (FW-02), so no single number is
-        // claimed here.
-        cond: '2 mA · 4-wire\n'
-            'ADS124S08 U68 · SPI1 · auto-ranged PGA\n'
-            'OPTO_CNTR = HIGH',
+        // claimed here. The chip/bus/signal detail (ADS124S08, SPI1,
+        // OPTO_CNTR) is developer-only, dropped from customer builds.
+        cond: kCustomerBuild
+            ? '2 mA · 4-wire'
+            : '2 mA · 4-wire\n'
+                'ADS124S08 U68 · SPI1 · auto-ranged PGA\n'
+                'OPTO_CNTR = HIGH',
         stat: s.drN,
         unit: 'out of limit',
         bar: s.drBar,

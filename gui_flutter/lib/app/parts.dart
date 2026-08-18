@@ -11,6 +11,7 @@ import '../design/model.dart';
 import '../design/tokens.dart';
 import '../design/widgets.dart';
 import 'app_state.dart';
+import 'build_tag.dart';
 
 // ---------------------------------------------------------------------------
 // netlist strips — two independent files
@@ -390,24 +391,31 @@ class FixtureFlow extends StatelessWidget {
     final narrow = MediaQuery.sizeOf(context).width <= kMediumBreak;
 
     // MOCK: state/pill are real; the "tests" description text is a fixed
-    // hardware-doc string and doesn't track the schematic.
+    // hardware-doc string and doesn't track the schematic. The mux chip
+    // designator (CD74HC4051) is developer-only, dropped from customer
+    // builds.
     final box1 = _StageBox(
       number: '1',
       state: s.sb1S,
       conn: const Conn('J-MTX'),
       pill: s.sb1Pill,
-      tests: 'Matrix Card rev 8 · 256 HS + 256 LS · CD74HC4051\n'
-          'Continuity → Resistance · one shared netlist',
+      tests: kCustomerBuild
+          ? '256 HS + 256 LS\nContinuity → Resistance · one shared netlist'
+          : 'Matrix Card rev 8 · 256 HS + 256 LS · CD74HC4051\n'
+              'Continuity → Resistance · one shared netlist',
     );
     final gate = _Gate(armed: s.gateArmed, horizontal: narrow);
-    // MOCK: same as box1 - fixed text apart from the real s.stack interpolation.
+    // MOCK: same as box1 - fixed text apart from the real s.stack
+    // interpolation. The reed-relay part number (MHV05) is developer-only.
     final box2 = _StageBox(
       number: '2',
       state: s.sb2S,
       conn: const Conn('J-HV', hv: true),
       pill: s.sb2Pill,
-      tests: 'HV Card rev 1 · ${s.stack}-card stack · MHV05\n'
-          'Insulation at 500 V · its own netlist',
+      tests: kCustomerBuild
+          ? '${s.stack}-card stack\nInsulation at 500 V · its own netlist'
+          : 'HV Card rev 1 · ${s.stack}-card stack · MHV05\n'
+              'Insulation at 500 V · its own netlist',
     );
 
     return HtPanel(

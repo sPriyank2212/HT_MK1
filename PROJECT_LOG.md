@@ -13,7 +13,7 @@ ID prefixes: `HW-` schematic/hardware · `FW-` firmware · `BU-` bring-up/verify
 
 ---
 
-## Status snapshot — 2026-08-17 (GUI-23: continuity's src/dst connector resolution was a real bug — every straight-through net showed the same connector on both ends; Part Number is real now too)
+## Status snapshot — 2026-08-18 (GUI-26: dead "Fault pareto" panel removed from the Results tab)
 
 | Category | Count |
 |---|---|
@@ -23,7 +23,76 @@ ID prefixes: `HW-` schematic/hardware · `FW-` firmware · `BU-` bring-up/verify
 | Firmware work queued | 1 |
 | Awaiting the GUI side | 1 |
 | Verify at bring-up | 9 |
-| Closed to date | 57 |
+| Closed to date | 60 |
+
+**GUI-26 (CL-60): the Results tab's "Fault pareto · this shift" panel removed — it could never show
+anything.** User asked what it was for; it's a Pareto chart of fault types by frequency (a
+standard manufacturing-QA "fix the most common failure first" view), but `RunHistoryEntry`
+(`app/run_history.dart`) only ever stored pass/fail *counts* per run, never per-fault codes or
+locations — so the panel was permanently stuck on its own hardcoded "Not tracked yet" message,
+regardless of how many runs piled up. Confirmed genuinely dead (no test referenced it, nothing
+else read from it) and removed the whole `HtPanel` from `ResultsView`
+(`lib/views/misc_views.dart`) rather than leave known-dead UI around. Reviving it for real would
+mean extending `RunHistoryEntry` to carry fault codes/locations — a real feature addition, not
+something to fake back in. `flutter analyze`: 0 issues. `flutter test`: 229/229 (unchanged).
+
+**GUI-25 (CL-59): the demo simulator's insulation test was hardcoded to `--nets` (12 by default),**
+**completely unaware of the loaded netlist — the same bug class GUI-21 fixed for continuity/
+resistance, just never extended to HV.** User asked why the HV section only ever showed 12 pins
+regardless of how many nets were actually loaded. Checked the real firmware first rather than
+guessing at the fix: `run_insulation_all()` (`Core/Src/app/tasks.c`) iterates
+`Proto_NetlistCount()`/`Proto_NetlistGet()` — the *same* MTX netlist continuity/resistance
+upload via `NETLIST BEGIN/ADD/END`, confirming insulation genuinely shares it on real hardware
+(the HV netlist *file* the GUI lets an operator browse only ever set a card count for
+`stackMatch()` — see GUI-11/required_format's README — it was never the source of per-net
+topology). Each result is reported against the real hi pin (`Proto_EvtInsul(hi, ...)`).
+`htproto/simulator.dart`'s `_runInsul` did neither: it always iterated the fixed
+`scenario.nets` (sized by the launch-time `--nets` flag, 12 by default) and emitted
+`INSUL <sequential index 1..N> ...` instead of the real pin — so loading a netlist with more
+(or just different) nets than 12 either capped the results at 12 or matched the wrong ones
+entirely once `AppState._onInsul`'s `_netByHiPin` tried to resolve that index against real pin
+numbers. Fixed by reusing GUI-21's `_effectiveNets(_st.netlist)` (already positionally applies
+the scenario's scripted pass/fail pattern to whatever was actually uploaded) and reporting each
+result's real `hi` pin instead of a loop index. Verified end to end against a real
+`SimulatorServer`: new `test/insulation_pairing_test.dart` uploads a 20-net MTX netlist, moves to
+J-HV, arms, and runs insulation — all 20 nets resolve now, not just the first (or a mismatched)
+12. `flutter analyze`: 0 issues. `flutter test`: 229/229.
+
+**GUI-24 (CL-58): every internal hardware/bus detail across the whole app is developer-only now,
+not just what's behind the Diagnostics tab.** User asked directly: SPI/I2C/chip-level detail has
+no business in the customer GUI, only the developer build. GUI-14 (2026-08-16) had already split
+customer/developer at compile time (`kCustomerBuild`), but only ever gated the Diagnostics tab as
+a whole — every other view (Run, Continuity, Resistance, HV) still showed chip part numbers, bus
+protocol names, register addresses and internal signal names unconditionally, e.g. Continuity's
+`Band` row `CD74HC4051 · 256 HS × 256 LS`, Resistance's `Sense path` panel tracing
+`ADS124S08 IDAC1 → AIN9 → HI_COM → ... → R131 100 Ω`, HV's `Leakage loop` panel
+(`DAC8830 → CA05P-5 → ... → R3002 1 MΩ ... R3004 1 kΩ`), and the bottom log bar's "Console" tab
+(raw `>CMD`/`<REPLY`/`!EVENT` wire protocol traffic — about as internal as this app gets).
+Audited every view file with a subagent first, then went through the findings one at a time.
+Three patterns: **(1)** whole panels whose only purpose is an internal signal trace —
+Continuity's "Switch path", Resistance's "Sense path", HV's "Leakage loop" — dropped entirely
+(`if (!kCustomerBuild) HtPanel(...)`), including reworking the layouts around them so a customer
+build doesn't leave a blank slot where the panel used to be. **(2)** individual rows inside a
+panel that's otherwise customer-relevant (a `Band` mixing "Connector"/"Scan scope" — real,
+useful — with "Switching"/"Sense" — internal chip names) — the internal rows are conditionally
+spread in (`if (!kCustomerBuild) ...[...]`), the customer-relevant ones stay unconditional.
+**(3)** single strings that mix one legitimate fact with one internal identifier (`"4-wire Kelvin
+· ADS124S08 IDAC1"`, `"500 V DC · R3002 1 MΩ"`, the HV rail's "Leakage" meter caption naming a
+raw trip voltage) — reworded per-build with a ternary rather than dropping the whole row, so the
+customer-relevant half survives. Also gated: the bottom log bar's "Console" tab (raw wire
+traffic — the "Log" tab, human-readable run events, stays for everyone), the Run view's
+domain-card condition text (`AppState.dcCond`/`dhCond`, and a literal string in `run_view.dart`
+itself), the "Fixture sequence" panel's stage-box text (`CD74HC4051`/`MHV05` part numbers,
+`lib/app/parts.dart`), and one stray `I2C2` each in an HV-netlist explainer modal
+(`lib/app/modals.dart`) and a status-bar log line (`AppState.pickStack`). Left the Program view's
+"HV nets" table (which HV card/relay a net lands on) alone — that's a harness/wiring assignment
+an operator setting up a real fixture plausibly needs, not MCU-bus-level detail like the examples
+above; flagged for the user rather than assumed. Verified two ways: the full test suite passes
+unchanged under the normal (developer) default, and re-run with `--dart-define=CUSTOMER_BUILD=true`
+end to end — every view builds/lays out cleanly across wide/medium/narrow and light/dark with the
+internal panels/rows/tabs gone, and the only test failures are the three that are *supposed* to
+fail under that flag (the Diagnostics-tab test, the Console-tab test, and `build_tag_test.dart`'s
+own "defaults to false" check). `flutter analyze`: 0 issues. `flutter test`: 228/228 (default).
 
 **GUI-23 (CL-57): two real bugs found from one user report — src/dst pin resolution, and a Part**
 **Number column that had data available but was never wired up.** User reported the continuity
@@ -621,6 +690,9 @@ primary build** — new items are filed against it. GUI-03 is against the now-su
 
 | ID | Closed | Item | Resolution |
 |---|---|---|---|
+| CL-60 | 2026-08-18 | GUI-26 dead "Fault pareto" panel removed from Results tab | User asked what it was for. It's a Pareto chart of fault types by frequency, but `RunHistoryEntry` only ever stored pass/fail counts per run, never per-fault codes/locations, so the panel was permanently stuck on a hardcoded "Not tracked yet" message. Confirmed dead (no test referenced it) and removed the whole panel from `ResultsView` rather than leave known-dead UI around. Reviving it for real needs `RunHistoryEntry` extended to carry fault codes/locations — a real feature addition. `flutter analyze`: 0 issues. `flutter test`: 229/229 (unchanged). |
+| CL-59 | 2026-08-18 | GUI-25 demo insulation testing was capped at --nets, unaware of the loaded netlist | User asked why the HV section only ever showed 12 pins. Checked real firmware first: `run_insulation_all()` (`Core/Src/app/tasks.c`) iterates `Proto_NetlistCount()`/`Proto_NetlistGet()` — the same MTX netlist continuity/resistance upload — and reports each result against the real hi pin (`Proto_EvtInsul(hi, ...)`); the HV netlist file the GUI lets an operator browse only ever sets a card count for `stackMatch()`, never per-net topology. `htproto/simulator.dart`'s `_runInsul` did neither — always iterated the fixed `scenario.nets` (sized by launch-time `--nets`, 12 by default) and emitted a sequential index instead of the real pin, so more (or just different) nets than 12 either got capped or matched wrong once `AppState._onInsul` tried to resolve the index as a real pin. Fixed by reusing GUI-21's `_effectiveNets(_st.netlist)` and reporting the real `hi` pin per result. New `test/insulation_pairing_test.dart`: uploads a 20-net MTX netlist, moves to J-HV, arms, runs insulation — all 20 resolve now. `flutter analyze`: 0 issues. `flutter test`: 229/229. |
+| CL-58 | 2026-08-18 | GUI-24 internal bus/chip detail dropped from customer builds everywhere, not just Diagnostics | User asked directly: SPI/I2C/chip-level internal detail should only ever show in the developer build. GUI-14 (2026-08-16) had already split customer/developer at compile time (`kCustomerBuild`) but only gated the Diagnostics tab as a whole — every other view still showed chip part numbers, bus names, register addresses, internal signal names unconditionally. Audited every view file, then fixed three patterns: whole panels whose only purpose is an internal signal trace (Continuity's "Switch path", Resistance's "Sense path", HV's "Leakage loop") dropped entirely with layouts reworked so no blank slot is left; individual rows inside an otherwise customer-relevant panel (`Band` mixing "Connector"/"Scan scope" with "Switching"/"Sense") conditionally spread in/out; single strings mixing one legitimate fact with one internal identifier (`"4-wire Kelvin · ADS124S08 IDAC1"`, `"500 V DC · R3002 1 MΩ"`) reworded per-build via ternary. Also gated the log bar's "Console" tab (raw wire protocol traffic), the Run view's domain-card condition text, the Fixture-sequence stage-box text, and two stray `I2C2` mentions (an HV-netlist modal, a status-bar log line). Left the Program view's "HV nets" relay-assignment table alone — an operator setting up a real fixture plausibly needs to know which card/relay a net lands on, unlike MCU-bus-level detail — flagged for the user rather than assumed. Verified against both the normal default and `--dart-define=CUSTOMER_BUILD=true`: every view builds/lays out cleanly with the internal content gone; the only failures under the customer flag are the three tests that are supposed to fail under it. `flutter analyze`: 0 issues. `flutter test`: 228/228 (default). |
 | CL-57 | 2026-08-17 | GUI-23 src/dst connector resolution bug + Part Number wired up | User reported continuity showing "Connector A pin 1 -- Connector A pin 2" instead of crossing to Connector B. Traced to `AppState.rebuildNets`'s `pinNode` searching the same flat connector list for both `hi` and `lo` — HI/LO are independently-addressed 1..256 spaces (matrix_card.h), so a straight-through net always resolved src and dst to whichever connector owned that numeric range, regardless of actual side. Broken since GUI-11 (2026-08-14); existing tests only checked `!= '—'`, never that src/dst differ, and the demo's seeded harness bypasses `pinNode` entirely. Fixed: `_fixtureFromGuess` computes `base` as two separate per-side offsets when a guess has real Source/Destination provenance (`GuessedConnector.side`, GUI-19), falling back to the old combined sequence for ambiguous/symmetric files; `pinNode` takes `isSrc` and searches the matching side first, falling back to unrestricted search — required rewriting `rebuildNets`'s fixture-extension fallback to run that same search (`coversPin`) rather than a precomputed numeric boundary. Second bug found in the same investigation: "Part Number" was hardcoded blank everywhere (CSV/PDF/GUI table) even though the netlist file's own Part Number columns were already parsed and just never threaded through — added a real `ConnectorDef.partNumber` field (separate from `label`, which is a display name/id fallback, not a part number) and wired it through `_fixtureFromGuess`, the fixture-guess confirm step, `_onCont`/`_onRes`, and every report/GUI surface. `Source`/`Destination` free-text columns stay blank — genuinely not parsed anywhere, left alone rather than half-fixed. New `test/pin_resolution_test.dart` (real `SimulatorServer`, real uploaded netlist) plus a `netlist_file_load_test.dart` case at the parser/guess layer. `flutter analyze`: 0 issues. `flutter test`: 228/228. |
 | CL-56 | 2026-08-17 | GUI-22 idle wires in the wiring diagram were nearly invisible | User loaded a netlist and saw pin dots/connector shells but no wires between them. Traced to `painters.dart`'s `_paintWires` drawing untested ("idle") nets in `c.gridEmpty` (`0xFF1B282D` dark theme, meant for empty grid cells) at .55 alpha — barely different from the canvas background `c.sunk` (`0xFF0E171A`), tolerably faint on the old compact 8-connector canvas's short diagonal wires but effectively invisible once GUI-19's vertical ladder made idle wires run most of the canvas's 1060px width. Confirmed by rendering the exact idle state to a PNG and inspecting it, not just reading the code. The pin dots for the same untested nets already used `c.ink3` (a much lighter grey) for the same "present but untested" meaning — fixed the inconsistency by switching idle wires to `c.ink3` too, and bumping alpha .55 → .7. Verified by re-rendering: clearly visible now, still visually subdued relative to pass/fail/hovered. `flutter analyze`: 0 issues. `flutter test`: 225/225 (no test added — a colour choice, verified visually). |
 | CL-55 | 2026-08-17 | GUI-21 demo simulator now honours any uploaded netlist's own pairing convention | Reverses GUI-20's "real hardware only" call — user pushed back that the file should pass in the demo, not be carved out. Root cause: `htproto/simulator.dart`'s `_runCont`/`_runRes` compared an uploaded `(hi, lo)` pair against the scenario's fixed `_goodNets()` pairing (`1↔2, 3↔4, 5↔6, …`) by literal value, so any netlist using a different pairing (real hardware's straight-through `Src Pin # == Dst Pin #`) could never match. Fixed at the root: new `InstrumentSim._effectiveNets(netlist)` reuses the scenario's scripted pass/fail/open/short pattern positionally (row `i` of whatever was uploaded gets row `i`'s scripted outcome, rows past the scenario's own length default to pass) instead of matching by literal pin value; falls back to the scenario's fixed nets unchanged when nothing's uploaded. Applied to `_runCont` verify and `_runRes` (shares the MTX netlist with continuity); `_runInsul` untouched — no wire-protocol netlist upload exists for HV. Side effect, verified: also resolves the older "`--nets` must match the loaded file's net count" constraint for verify-mode runs generally — a 20-row netlist now passes fully against a 12-net-default simulator. New `test/simulator_pairing_test.dart` (straight-through pass, positional fault injection, bigger-than-`--nets` file). `required_format/README.md` and `test_netlists/README.md` corrected. `flutter analyze`: 0 issues. `flutter test`: 224/224. |

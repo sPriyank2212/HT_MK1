@@ -4,6 +4,7 @@ library;
 import 'package:flutter/widgets.dart';
 
 import '../app/app_state.dart';
+import '../app/build_tag.dart';
 import '../app/parts.dart';
 import '../design/model.dart';
 import '../design/painters.dart';
@@ -43,15 +44,19 @@ class ContView extends StatelessWidget {
       // Connector/Switching/Stimulus/Sense/Threshold are fixed hardware-doc
       // text, not read from the instrument (there is no protocol field for
       // any of it) - accurate to the schematic though, not stale. Only
-      // "Scan scope" is real (computed from s.cmode).
+      // "Scan scope" is real (computed from s.cmode). Switching/Stimulus/
+      // Sense name internal chips/bus/component designators (CD74HC4051,
+      // R26, AD7476, SPI3) - developer-only, dropped from customer builds.
       Band([
         const BandItem('Connector', Conn('J-MTX')),
-        BandItem('Switching',
-            Text('CD74HC4051 · 256 HS × 256 LS', style: context.type.bandV)),
-        BandItem('Stimulus',
-            Text('3.3 V via R26 10 kΩ', style: context.type.bandV)),
-        BandItem(
-            'Sense', Text('AD7476 U4 · SPI3', style: context.type.bandV)),
+        if (!kCustomerBuild) ...[
+          BandItem('Switching',
+              Text('CD74HC4051 · 256 HS × 256 LS', style: context.type.bandV)),
+          BandItem('Stimulus',
+              Text('3.3 V via R26 10 kΩ', style: context.type.bandV)),
+          BandItem(
+              'Sense', Text('AD7476 U4 · SPI3', style: context.type.bandV)),
+        ],
         BandItem('Threshold',
             Text('< 0.80 V connected', style: context.type.bandV)),
         BandItem('Scan scope',
@@ -532,16 +537,21 @@ class _ThreeUp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final cols = <Widget>[
-      _Inspector(s: s),
-      _ConnectorList(s: s),
-      Cols([
+    // "Switch path" resolves the internal switch-fabric route (mux banks,
+    // enable-expander addresses) for the selected net - developer-only,
+    // dropped entirely from customer builds, not just its chip/bus text.
+    final thirdCol = <Widget>[
+      if (!kCustomerBuild)
         HtPanel(
           header: const [PanelTitle('Switch path')],
           child: PanelPad(_switchPath(context, s)),
         ),
-        if (s.cmode == 'cross') _DiscoveredNetlist(s: s),
-      ]),
+      if (s.cmode == 'cross') _DiscoveredNetlist(s: s),
+    ];
+    final cols = <Widget>[
+      _Inspector(s: s),
+      _ConnectorList(s: s),
+      if (thirdCol.isNotEmpty) Cols(thirdCol),
     ];
 
     return LayoutBuilder(builder: (context, constraints) {

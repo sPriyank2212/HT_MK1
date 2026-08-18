@@ -6,6 +6,7 @@ import 'dart:math' as math;
 import 'package:flutter/widgets.dart';
 
 import '../app/app_state.dart';
+import '../app/build_tag.dart';
 import '../app/parts.dart';
 import '../design/model.dart';
 import '../design/painters.dart';
@@ -84,11 +85,15 @@ class ResView extends StatelessWidget {
           Text(s.nlMtx.loaded ? '${s.nlMtx.nets} declared pairs' : 'no netlist',
               style: t.bandV),
         ),
-        BandItem('Excitation',
-            Text('2 mA · ADS124S08 IDAC1 → AIN9', style: t.bandV)),
-        BandItem(
-            'Sense', Text('ADS124S08 U68 · SPI1', style: t.bandV)),
-        BandItem('Gain', Text('auto-ranged PGA · 20 SPS', style: t.bandV)),
+        // Excitation/Sense/Gain name internal chips/bus (ADS124S08, SPI1,
+        // PGA) - developer-only, dropped from customer builds.
+        if (!kCustomerBuild) ...[
+          BandItem('Excitation',
+              Text('2 mA · ADS124S08 IDAC1 → AIN9', style: t.bandV)),
+          BandItem(
+              'Sense', Text('ADS124S08 U68 · SPI1', style: t.bandV)),
+          BandItem('Gain', Text('auto-ranged PGA · 20 SPS', style: t.bandV)),
+        ],
         BandItem('Offset cal',
             Text('per measurement · not reported', style: t.bandV)),
       ]),
@@ -126,10 +131,19 @@ class ResView extends StatelessWidget {
           HtPanel(
             header: const [PanelTitle('Measurement conditions')],
             child: PanelPad(Kv([
-              const KvRow('Mode', KvText('4-wire Kelvin · ADS124S08 IDAC1')),
+              KvRow(
+                'Mode',
+                KvText(kCustomerBuild
+                    ? '4-wire Kelvin'
+                    : '4-wire Kelvin · ADS124S08 IDAC1'),
+              ),
               const KvRow('Set current', KvText('2.000 mA')),
-              const KvRow(
-                  'Compliance', KvText('2.7 V ceiling (AVDD − 0.6 V) · 45 % margin at 2 mA')),
+              KvRow(
+                'Compliance',
+                KvText(kCustomerBuild
+                    ? '2.7 V ceiling · 45 % margin at 2 mA'
+                    : '2.7 V ceiling (AVDD − 0.6 V) · 45 % margin at 2 mA'),
+              ),
               KvRow(
                 'Limits from',
                 KvText(s.nlMtx.loaded
@@ -142,22 +156,25 @@ class ResView extends StatelessWidget {
           // current schematic (FW-12: IDAC1 → AIN9 → HI_COM, DAC8775/Opto U3
           // gone). No protocol field reports a sense path to draw live even
           // in principle, so this documents the fixed wiring rather than
-          // standing in for a real reading.
-          HtPanel(
-            header: const [PanelTitle('Sense path')],
-            child: PanelPad(PathBox(const [
-              // FW-12: excitation is the ADS124S08's own IDAC1, routed
-              // directly to AIN9 (= HI_COM) - the DAC8775/Opto U3 path is
-              // gone from the schematic.
-              PathSpan('ADS124S08 IDAC1 → AIN9 → '),
-              PathSpan('HI_COM', bold: true),
-              PathSpan(' → HI mux → HS → harness → LS\n→ LO mux → LO_COM → '),
-              PathSpan('R131 100 Ω 0.01 %', bold: true),
-              PathSpan(' → GND\nsense: HI_SENSE − LO_SENSE → '),
-              PathSpan('ADS124S08 AIN0/AIN1', bold: true),
-              PathSpan('\nR = V / I − R_offset'),
-            ])),
-          ),
+          // standing in for a real reading. Developer-only - it's entirely
+          // internal chip/signal names (ADS124S08, HI_COM, R131, AIN0/AIN1),
+          // dropped from customer builds.
+          if (!kCustomerBuild)
+            HtPanel(
+              header: const [PanelTitle('Sense path')],
+              child: PanelPad(PathBox(const [
+                // FW-12: excitation is the ADS124S08's own IDAC1, routed
+                // directly to AIN9 (= HI_COM) - the DAC8775/Opto U3 path is
+                // gone from the schematic.
+                PathSpan('ADS124S08 IDAC1 → AIN9 → '),
+                PathSpan('HI_COM', bold: true),
+                PathSpan(' → HI mux → HS → harness → LS\n→ LO mux → LO_COM → '),
+                PathSpan('R131 100 Ω 0.01 %', bold: true),
+                PathSpan(' → GND\nsense: HI_SENSE − LO_SENSE → '),
+                PathSpan('ADS124S08 AIN0/AIN1', bold: true),
+                PathSpan('\nR = V / I − R_offset'),
+              ])),
+            ),
           HtPanel(
             header: const [PanelTitle('Actions')],
             child: PanelPad(RowWrap([
@@ -432,15 +449,25 @@ class HvView extends StatelessWidget {
         // resolved first, not a GUI-side unit guess.
         BandItem(
           'Stimulus',
-          Text('500 V DC · R3002 1 MΩ',
-              style: t.bandV.copyWith(color: c.hv)),
+          Text(
+            kCustomerBuild ? '500 V DC' : '500 V DC · R3002 1 MΩ',
+            style: t.bandV.copyWith(color: c.hv),
+          ),
         ),
-        BandItem(
-            'Sense', Text('AD7476 U302 · SPI2-iso', style: t.bandV)),
+        // "Sense" names an internal chip/bus (AD7476, SPI2-iso) with no
+        // customer-relevant fragment to keep - developer-only.
+        if (!kCustomerBuild)
+          BandItem(
+              'Sense', Text('AD7476 U302 · SPI2-iso', style: t.bandV)),
         BandItem('Return',
             Text('all LS closed except own', style: t.bandV)),
-        BandItem('Limit',
-            Text('≥ 10 MΩ · trip 0.045 V', style: t.bandV)),
+        BandItem(
+          'Limit',
+          Text(
+            kCustomerBuild ? '≥ 10 MΩ' : '≥ 10 MΩ · trip 0.045 V',
+            style: t.bandV,
+          ),
+        ),
       ]),
       TwoUp(
         main: Cols([
@@ -453,25 +480,27 @@ class HvView extends StatelessWidget {
           // Static topology diagram, not live data - accurate to the
           // schematic (DAC8830/CA05P-5/R3002/R3004 unaffected by FW-12,
           // unlike the Resistance view's now-corrected stale DAC8775
-          // references).
-          HtPanel(
-            header: const [PanelTitle('Leakage loop')],
-            child: PanelPad(PathBox(
-              const [
-                PathSpan('DAC8830 → CA05P-5 → '),
-                PathSpan('+500 V', bold: true),
-                PathSpan('\n→ R3002 1 MΩ → INS_VIN → '),
-                PathSpan('HS reed[n]', bold: true),
-                PathSpan(
-                    '\n→ net under test → [insulation] → adjacent conductor\n→ '),
-                PathSpan('its LS reed', bold: true),
-                PathSpan(' → HV_RET → R3004 1 kΩ → GND\nclose every LS '),
-                PathSpan('except', bold: true),
-                PathSpan(' net n’s own return'),
-              ],
-              hv: true,
-            )),
-          ),
+          // references). Developer-only - entirely internal component
+          // designators and signal names, dropped from customer builds.
+          if (!kCustomerBuild)
+            HtPanel(
+              header: const [PanelTitle('Leakage loop')],
+              child: PanelPad(PathBox(
+                const [
+                  PathSpan('DAC8830 → CA05P-5 → '),
+                  PathSpan('+500 V', bold: true),
+                  PathSpan('\n→ R3002 1 MΩ → INS_VIN → '),
+                  PathSpan('HS reed[n]', bold: true),
+                  PathSpan(
+                      '\n→ net under test → [insulation] → adjacent conductor\n→ '),
+                  PathSpan('its LS reed', bold: true),
+                  PathSpan(' → HV_RET → R3004 1 kΩ → GND\nclose every LS '),
+                  PathSpan('except', bold: true),
+                  PathSpan(' net n’s own return'),
+                ],
+                hv: true,
+              )),
+            ),
           HtPanel(
             header: const [PanelTitle('Safety')],
             child: PanelPad(Column(
@@ -873,7 +902,11 @@ class _HvRailPanel extends StatelessWidget {
             const SizedBox(height: 12),
             // .meters - both s.mLeak and s.mSense are real, computed in
             // paintLink() from live hvMv and the last-tested net's !INSUL
-            // result via the R3002/R3004 sense divider.
+            // result via the R3002/R3004 sense divider. "HV_Sense" is an
+            // internal signal name with a raw divider ratio - developer-
+            // only, dropped from customer builds; "Leakage" stays (it's
+            // the live fault-threshold indicator an operator watches
+            // during a run) but its caption drops the raw trip voltage.
             Container(
               decoration: BoxDecoration(
                 border: Border.all(color: c.lineSoft),
@@ -891,20 +924,22 @@ class _HvRailPanel extends StatelessWidget {
                           label: 'Leakage',
                           value: s.mLeak,
                           unit: 'V',
-                          range: 'trip ≥ 0.045 V',
+                          range: kCustomerBuild ? 'fault threshold' : 'trip ≥ 0.045 V',
                           bad: s.mLeakBad,
                         ),
                       ),
-                      const SizedBox(width: 1),
-                      Expanded(
-                        child: _Meter(
-                          label: 'HV_Sense',
-                          value: s.mSense,
-                          unit: 'V',
-                          range: 'ratio 0.00049',
-                          bad: false,
+                      if (!kCustomerBuild) ...[
+                        const SizedBox(width: 1),
+                        Expanded(
+                          child: _Meter(
+                            label: 'HV_Sense',
+                            value: s.mSense,
+                            unit: 'V',
+                            range: 'ratio 0.00049',
+                            bad: false,
+                          ),
                         ),
-                      ),
+                      ],
                     ],
                   ),
                 ),

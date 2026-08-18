@@ -34,6 +34,7 @@ import 'package:flutter/foundation.dart';
 
 import '../design/model.dart';
 import '../design/widgets.dart' show PillVariant;
+import 'build_tag.dart';
 import '../htproto/codec.dart' as proto;
 import '../htproto/connection.dart';
 import '../htproto/messages.dart' as msg;
@@ -502,7 +503,8 @@ class AppState extends ChangeNotifier {
 
   void pickStack(int n) {
     setStack(n);
-    log('info', 'bsp', 'I2C2 rescan — $stack-card HV stack detected');
+    log('info', 'bsp',
+        kCustomerBuild ? '$stack-card HV stack set' : 'I2C2 rescan — $stack-card HV stack detected');
   }
 
   // -------------------------------------------------------------------------
@@ -522,11 +524,13 @@ class AppState extends ChangeNotifier {
       ? 'click a cell to inspect the pair'
       : 'one HS energised at a time, all 256 LS read';
 
-  /// `$("#dcCond")`
+  /// `$("#dcCond")` — chip/bus detail (AD7476, SPI3, OPTO_CNTR) is
+  /// developer-only, dropped from customer builds.
   String get dcCond => cmode == 'net'
-      ? 'Netlist mode · ${nlMtx.loaded ? nlMtx.nets : "—"} pairs\n'
-          '3.3 V · AD7476 U4 · SPI3\nOPTO_CNTR = LOW'
-      : 'Cross continuity · 65,536 reads\n3.3 V · AD7476 U4 · SPI3\n'
+      ? 'Netlist mode · ${nlMtx.loaded ? nlMtx.nets : "—"} pairs'
+          '${kCustomerBuild ? "" : "\n3.3 V · AD7476 U4 · SPI3\nOPTO_CNTR = LOW"}'
+      : 'Cross continuity · 65,536 reads'
+          '${kCustomerBuild ? "" : "\n3.3 V · AD7476 U4 · SPI3"}\n'
           'one to many discovery';
 
   /// `$("#dcU")`
@@ -534,9 +538,12 @@ class AppState extends ChangeNotifier {
       ? 'of ${nlMtx.loaded ? nlMtx.nets : "—"} verified'
       : 'nets discovered';
 
-  /// `$("#dhCond")`
-  String get dhCond => '500 V DC · MHV05 reed\nAD7476 U302 · SPI2-iso\n'
-      'own netlist · $stack-card stack';
+  /// `$("#dhCond")` — chip/bus detail (AD7476, SPI2-iso) is developer-only,
+  /// dropped from customer builds.
+  String get dhCond => kCustomerBuild
+      ? '500 V DC\nown netlist · $stack-card stack'
+      : '500 V DC · MHV05 reed\nAD7476 U302 · SPI2-iso\n'
+          'own netlist · $stack-card stack';
 
   // -------------------------------------------------------------------------
   // relays

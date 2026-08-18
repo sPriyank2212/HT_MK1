@@ -13,6 +13,7 @@ import '../design/model.dart';
 import '../design/tokens.dart';
 import '../design/widgets.dart';
 import 'app_state.dart';
+import 'build_tag.dart';
 
 /// `.modal{position:fixed;inset:0;z-index:60;padding:22px;
 ///         background:var(--scrim)}`
@@ -181,7 +182,7 @@ class HvNetlistModal extends StatelessWidget {
               TextSpan(
                   text: '${s.stack}-card',
                   style: t.modalP.copyWith(fontWeight: FontWeight.w600)),
-              const TextSpan(text: ' stack on I2C2.'),
+              TextSpan(text: kCustomerBuild ? ' stack.' : ' stack on I2C2.'),
             ],
           ),
         ),

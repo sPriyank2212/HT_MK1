@@ -947,9 +947,16 @@ class _LogBarState extends State<LogBar> {
                   // Every line here is exactly what the session file's
                   // [tx]/[rx] lines record — see ConnectionManager.onWire —
                   // so "Console" is the live, on-screen twin of that file.
+                  // Raw wire protocol traffic (>CMD/<REPLY/!EVENT) is
+                  // developer-only - the tab that switches to it is dropped
+                  // entirely from customer builds, not just its content;
+                  // s.logView defaults to 'ops' and nothing else can set it
+                  // to 'wire' once this tab is gone.
                   _tab(context, s, 'ops', 'Log'),
-                  Text(' / ', style: t.logButton(c.ink3)),
-                  _tab(context, s, 'wire', 'Console'),
+                  if (!kCustomerBuild) ...[
+                    Text(' / ', style: t.logButton(c.ink3)),
+                    _tab(context, s, 'wire', 'Console'),
+                  ],
                   const SizedBox(width: 10),
                   Expanded(
                     child: Text(

@@ -244,22 +244,6 @@ class ResultsView extends StatelessWidget {
         child: _runHistoryTable(context, s),
       ),
       _testReports(context, s),
-      // No per-fault location history is tracked anywhere (RunHistoryEntry
-      // is pass/fail counts only, not per-fault code/location) - honestly
-      // empty rather than four invented fault locations. A real version
-      // needs RunHistoryEntry extended to carry fault codes/locations, which
-      // is a real feature addition, not a wiring fix.
-      HtPanel(
-        header: const [PanelTitle('Fault pareto · this shift')],
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 22),
-          child: Text(
-            'Not tracked yet — no per-fault location history is recorded.',
-            style: context.type.td.copyWith(color: context.colors.ink3),
-            textAlign: TextAlign.center,
-          ),
-        ),
-      ),
     ]);
   }
 

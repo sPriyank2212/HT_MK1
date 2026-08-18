@@ -604,7 +604,17 @@ class InstrumentSim {
 
   Future<void> _runInsul() async {
     await _rampHv(hvMaxMv);
-    final nets = scenario.nets;
+    // GUI-25: real firmware's run_insulation_all() (tasks.c) iterates
+    // Proto_NetlistCount()/Proto_NetlistGet() - the *same* uploaded MTX
+    // netlist continuity/resistance use, not a fixed count - and reports
+    // each result against the real hi pin (Proto_EvtInsul(hi, ...)), not a
+    // sequential index. This used to always run exactly `--nets` (12 by
+    // default) fake nets regardless of what netlist was actually loaded,
+    // identified 1..12 rather than by real pin number - the same class of
+    // bug GUI-21 fixed for continuity/resistance, just not yet extended
+    // here since HV has no netlist upload of its own (there isn't one -
+    // insulation shares the MTX upload, same as real hardware).
+    final nets = _effectiveNets(_st.netlist);
     final total = nets.length;
     var passed = 0;
     var failed = 0;
@@ -615,13 +625,13 @@ class InstrumentSim {
         await _endRun('insul', passed, failed, true);
         return;
       }
-      _emitEvent('INSUL ${i + 1} ${n.insulLeakMohm} ${n.insulStatus.wire}');
+      _emitEvent('INSUL ${n.hi} ${n.insulLeakMohm} ${n.insulStatus.wire}');
       _emitEvent('PROGRESS ${i + 1} $total');
       if (n.insulStatus == InsulStatus.pass) {
         passed++;
       } else {
         failed++;
-        _emitEvent('FAULT F04 insulation low on net ${i + 1}');
+        _emitEvent('FAULT F04 insulation low on net ${n.hi}');
       }
       await Future<void>.delayed(interval);
     }
