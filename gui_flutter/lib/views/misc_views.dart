@@ -430,6 +430,7 @@ class _DiagViewState extends State<DiagView> {
     final panels = <Widget>[
       _busMap(context, s),
       _cards(context, s),
+      _temperature(context, s),
       _manualSwitch(context, s),
       _manualRelay(context, s),
       _calibration(context, s),
@@ -474,12 +475,13 @@ class _DiagViewState extends State<DiagView> {
     ]);
   }
 
-  // MOCK: pill state and clock speed are still fixed text, not read from
-  // firmware (there is no bus-enumeration command at all, see "Rescan"
-  // below) - but the device list is now current against the schematic and
+  // The rows below (bus/pill/clock speed) are still fixed reference text,
+  // not live - but device names are current against the schematic and
   // spi.c/board.c: SPI1 carries only the ADS124S08 (U33/AD7476 removed,
   // FW-01/FW-02) with CS/RESET/START/DRDY through U69 over I2C, not an
-  // unrouted CS; SPI2 no longer lists DAC8775 (removed, FW-12).
+  // unrouted CS; SPI2 no longer lists DAC8775 (removed, FW-12). "Rescan"
+  // (GUI-06, 2026-08-21) is real now, but only for a subset - see the scan
+  // results section below the fixed rows.
   Widget _busMap(BuildContext context, AppState s) {
     final rows = <(String, PillVariant, String, String, String)>[
       (
@@ -519,9 +521,8 @@ class _DiagViewState extends State<DiagView> {
       header: [
         const PanelTitle('Bus map'),
         const FlexSpacer(),
-        // No bus-enumeration command exists in firmware at all (checked
-        // bsp/board.c directly) — see Doc/GUI_protocol_command_coverage.md §4.
-        Btn('Rescan', disabled: true, onTap: null),
+        Btn(s.busScanning ? 'Scanning…' : 'Rescan',
+            disabled: s.busScanning, onTap: s.busScanning ? null : s.busScan),
       ],
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -531,9 +532,7 @@ class _DiagViewState extends State<DiagView> {
               padding:
                   const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
               decoration: BoxDecoration(
-                border: i == rows.length - 1
-                    ? null
-                    : Border(bottom: BorderSide(color: c.lineSoft)),
+                border: Border(bottom: BorderSide(color: c.lineSoft)),
               ),
               child: Row(
                 children: [
@@ -554,6 +553,30 @@ class _DiagViewState extends State<DiagView> {
                 ],
               ),
             ),
+          // GUI-06/2026-08-21: real per-device results from BUS SCAN — only
+          // the Matrix Card expanders + ADS124S08 (the addresses this
+          // project has actually confirmed against the schematic). Not a
+          // replacement for the fixed rows above, which describe whole
+          // buses this scan doesn't fully cover (HV cards, SPI2/SPI3
+          // devices) — see commands.busScan()'s own doc comment.
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 9, 14, 9),
+            child: s.busScanResults.isEmpty
+                ? Text(
+                    s.busScanAt == null
+                        ? 'No scan yet.'
+                        : 'Last scan found nothing.',
+                    style: t.busDevs)
+                : Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      for (final r in s.busScanResults)
+                        Pill(r.$2 ? PillVariant.ok : PillVariant.bad,
+                            '${r.$1} ${r.$2 ? "ok" : "fault"}'),
+                    ],
+                  ),
+          ),
         ],
       ),
     );
@@ -604,6 +627,56 @@ class _DiagViewState extends State<DiagView> {
             ],
         ],
       ),
+    );
+  }
+
+  /// FW-14/DS18B20 board temperature. Diagnostic sensor only — it doesn't
+  /// gate hardware readiness (Board_IsReady()) and isn't a DUT measurement,
+  /// so this stays developer-only alongside the rest of DiagView.
+  Widget _temperature(BuildContext context, AppState s) {
+    final t = context.type;
+    final deciC = s.boardTempDeciC;
+    final at = s.boardTempAt;
+    return HtPanel(
+      header: [
+        const PanelTitle('Board temperature'),
+        const FlexSpacer(),
+        Pill(deciC != null ? PillVariant.ok : PillVariant.idle,
+            deciC != null ? 'DS18B20' : 'never read'),
+      ],
+      child: PanelPad(Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Kv([
+            KvRow(
+              'Reading',
+              KvText(deciC != null
+                  ? '${(deciC / 10).toStringAsFixed(1)} °C'
+                  : '— not read yet'),
+            ),
+            KvRow(
+              'As of',
+              KvText(at != null
+                  ? '${at.hour.toString().padLeft(2, '0')}:'
+                      '${at.minute.toString().padLeft(2, '0')}:'
+                      '${at.second.toString().padLeft(2, '0')}'
+                  : '—'),
+            ),
+          ]),
+          const SizedBox(height: 10),
+          Text(
+            'A missing/unpowered sensor or a bad CRC answers with nothing at '
+            'all (FW-14) — a stale "As of" is the only sign of that, there is '
+            'no error reply to show instead.',
+            style: t.mono(size: 11, color: context.colors.ink3, height: 1.5),
+          ),
+          const SizedBox(height: 14),
+          RowWrap([
+            Btn('Read temperature',
+                variant: BtnVariant.primary, onTap: s.readTemp),
+          ]),
+        ],
+      )),
     );
   }
 
@@ -680,10 +753,35 @@ class _DiagViewState extends State<DiagView> {
               onTap: () =>
                   s.manualClosePath(_hsPin.round() + 1, _lsPin.round() + 1),
             ),
-            // No protocol command exists for either — see
-            // Doc/GUI_protocol_command_coverage.md §4.
-            Btn('Read ADC', disabled: true, onTap: null),
-            Btn('Sweep this HS', disabled: true, onTap: null),
+            Btn(
+              s.sweeping ? 'Sweeping…' : 'Sweep this HS',
+              disabled: s.sweeping || s.running != null,
+              onTap: s.sweeping || s.running != null
+                  ? null
+                  : () => s.manualSweep(_hsPin.round() + 1),
+            ),
+          ]),
+          const SizedBox(height: 10),
+          // GUI-06/2026-08-21: MANUAL PATH itself reads the ADC as part of
+          // its one-shot connect/settle/read/release sequence and reports
+          // it via !MANUAL - there's no separate "hold the path open, read
+          // it again" state to back a standalone Read-ADC button, so this
+          // just shows the reading Close path already produced.
+          Kv([
+            KvRow(
+              'Last reading',
+              KvText(s.manualAdcMv != null
+                  ? '${s.manualAdcMv} mV · code ${s.manualAdcCode}'
+                  : '— close a path to read it'),
+            ),
+            KvRow(
+              'Last sweep',
+              KvText(s.sweepHi == null
+                  ? '— not run yet'
+                  : 'HS ${pad(s.sweepHi!, 3)} · '
+                      '${s.sweepFound.length} found'
+                      '${s.sweeping ? " (running…)" : ""}'),
+            ),
           ]),
         ],
       )),
@@ -800,15 +898,16 @@ class _DiagViewState extends State<DiagView> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           // Every row here is CAL GET's actual reply (fetched once on
-          // connect, in AppState.connect()) — no field is invented. CAL GET
-          // has exactly three fields; loopback offset, ADC offset and the HV
-          // divider ratio the earlier mock-up showed are not part of the
-          // protocol and are not displayed as if they were real.
+          // connect, in AppState.connect()) — no field is invented. Loopback
+          // offset, ADC offset and the HV divider ratio the earlier mock-up
+          // showed are not part of the protocol and are not displayed as if
+          // they were real.
           Kv([
             KvRow(
-              'Reference resistor',
+              'Reference resistor (R131)',
               KvText(cal != null
-                  ? '${(cal.rrefMohm / 1000).toStringAsFixed(3)} Ω'
+                  ? '${(cal.rrefMohm / 1000).toStringAsFixed(3)} Ω '
+                      '± ${(cal.rrefTolMohm / 1000).toStringAsFixed(3)} Ω'
                   : '— not connected'),
             ),
             KvRow(
@@ -818,32 +917,55 @@ class _DiagViewState extends State<DiagView> {
                   : '— not connected'),
             ),
             KvRow(
-              'PGA gain',
-              KvText(cal != null ? '×${cal.gain}' : '— not connected'),
+              'Resistance method',
+              KvText(cal != null ? cal.method : '— not connected'),
+            ),
+            KvRow(
+              'PGA gain (auto-ranged up to)',
+              KvText(cal != null ? '×${cal.gainMax}' : '— not connected'),
             ),
           ]),
           const SizedBox(height: 10),
           Text(
-            'Loopback offset, ADC offset and HV divider ratio are not '
-            'reported by CAL GET in the current protocol — not shown rather '
-            'than shown as invented numbers.',
+            'Loopback offset and ADC offset are not reported by CAL GET in '
+            'the current protocol — not shown rather than shown as invented '
+            'numbers. PGA gain is not a fixed setting — every measurement '
+            'auto-ranges independently, so only the ceiling is shown.',
             style: t.mono(size: 11, color: context.colors.ink3, height: 1.5),
           ),
           const SizedBox(height: 14),
           RowWrap([
-            // No protocol command exists for any of these three yet.
-            // "Run self-cal" was blocked on hardware reachability - FW-02
-            // closed that gap, so it's buildable now (scope still open, see
-            // PROJECT_LOG.md GUI-06 and "CAL RUN, revisited" in
-            // Doc/GUI_protocol_proposed_commands.md). Compliance sweep is
-            // deliberately staying a bench tool, not becoming a command.
-            // Cal certificate needs a PDF-export dependency this project
-            // doesn't have. See Doc/GUI_protocol_command_coverage.md §4/§5.
-            Btn('Run self-cal',
-                variant: BtnVariant.primary, disabled: true, onTap: null),
+            // GUI-06/2026-08-21: CAL RUN built, unblocked by HW-04 landing
+            // this session — measures whatever pin pair the Manual switch
+            // panel's sliders are set to (same HS/LS state, both panels
+            // live in this DiagView). Compliance sweep deliberately stays a
+            // bench tool, not a command. Cal certificate needs a PDF-export
+            // dependency this project doesn't have. See
+            // Doc/GUI_protocol_command_coverage.md §4/§5.
+            Btn(
+              s.calRunning ? 'Running…' : 'Run self-cal',
+              variant: BtnVariant.primary,
+              disabled: s.calRunning,
+              onTap: s.calRunning
+                  ? null
+                  : () => s.calRun(_hsPin.round() + 1, _lsPin.round() + 1),
+            ),
             Btn('Compliance sweep', disabled: true, onTap: null),
             Btn('Cal certificate', disabled: true, onTap: null),
           ]),
+          if (s.lastCalResult != null) ...[
+            const SizedBox(height: 10),
+            Kv([
+              KvRow(
+                'Last self-cal result',
+                KvText(
+                  '${s.lastCalResult!.rMohm} mΩ · '
+                  '${s.lastCalResult!.ratiometric ? "ratiometric ok" : "ratiometric FAILED — fell back to current estimate"} · '
+                  '${s.lastCalResult!.pass ? "pass" : "fail"}',
+                ),
+              ),
+            ]),
+          ],
         ],
       )),
     );

@@ -11,6 +11,7 @@
 #include "app/tasks.h"
 #include "app/log.h"
 #include "bsp/board.h"
+#include "test/kelvin.h"
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -216,6 +217,24 @@ void Proto_EvtSafe(void)
 void Proto_EvtTemp(int32_t deci_celsius)
 {
   proto_emit('!', "TEMP %ld", (long)deci_celsius);
+}
+
+void Proto_EvtManual(int32_t adc_mv, uint16_t adc_code)
+{
+  proto_emit('!', "MANUAL adc_mv=%ld adc_code=%u", (long)adc_mv,
+             (unsigned)adc_code);
+}
+
+void Proto_EvtBusLine(const char *name, uint8_t ok)
+{
+  proto_emit('!', "BUSLINE %s %s", name, (ok != 0U) ? "ok" : "fault");
+}
+
+void Proto_EvtCalResult(int32_t r_mohm, uint8_t ratiometric, uint8_t pass)
+{
+  proto_emit('!', "CAL_RESULT r_mohm=%ld ratiometric=%u %s", (long)r_mohm,
+             (unsigned)(ratiometric != 0U ? 1U : 0U),
+             (pass != 0U) ? "pass" : "fail");
 }
 
 /* -------------------------------------------------------------------------- */
@@ -608,6 +627,14 @@ static void proto_exec(char *line)
       if (a < 1 || a > 256 || b < 1 || b > 256) { proto_err("ERANGE", "pin"); }
       else { proto_post(CMD_CONTINUITY, (uint16_t)a, (uint16_t)b); }
     }
+    else if (strcmp(t[1], "SWEEP") == 0 && n >= 3U && proto_int(t[2], &a) == 0)
+    {
+      /* Bounded discover=1 - same whole-run gating (EBUSY while another run
+       * is active) as CONT/RES/INSUL RUN, not the single instant reply
+       * MANUAL PATH/OFF use. */
+      if (a < 1 || a > 256) { proto_err("ERANGE", "pin"); }
+      else { proto_post_run(CMD_MANUAL_SWEEP, (uint16_t)a); }
+    }
     else if (strcmp(t[1], "OFF") == 0)
     {
       proto_post(CMD_FORCE_SAFE, 0U, 0U);
@@ -632,7 +659,30 @@ static void proto_exec(char *line)
   }
   else if (strcmp(t[0], "CAL") == 0 && n >= 2U && strcmp(t[1], "GET") == 0)
   {
-    proto_emit('<', "CAL current_ua=3000 gain=32 rref_mohm=100000");
+    /* Every field here is a real constant Kelvin_MeasurePair() actually uses
+     * (kelvin.h), not a separately-maintained copy - there is exactly one
+     * place that defines the instrument's excitation current and reference
+     * resistor, and this reply reads it. gain_max is the top of the PGA
+     * auto-range sequence (kelvin.c); there is no single fixed gain to
+     * report since every measurement ranges independently. */
+    proto_emit('<', "CAL current_ua=%ld method=ratiometric rref_mohm=%ld "
+                     "rref_tol_mohm=%ld gain_max=128",
+               (long)(KELVIN_FORCE_CURRENT_A * 1000000.0f),
+               (long)(KELVIN_CAL_R_REF_OHM * 1000.0f),
+               (long)(KELVIN_CAL_R_REF_OHM * KELVIN_CAL_R_REF_TOL_PCT * 10.0f));
+  }
+  else if (strcmp(t[0], "CAL") == 0 && n >= 4U && strcmp(t[1], "RUN") == 0 &&
+           proto_int(t[2], &a) == 0 && proto_int(t[3], &b) == 0)
+  {
+    /* GUI-06 (2026-08-21), unblocked by HW-04 landing this session: measures
+     * whatever pin pair the operator picks with Kelvin_MeasurePair (the same
+     * function RES RUN calls per point - no new measurement logic) and
+     * reports the one thing !RES doesn't carry: whether the HW-04
+     * ratiometric reference actually worked for this reading. Routed
+     * through the sequencer like MANUAL PATH, not answered inline - it's a
+     * real ADC measurement. */
+    if (a < 1 || a > 256 || b < 1 || b > 256) { proto_err("ERANGE", "pin"); }
+    else { proto_post(CMD_KELVIN, (uint16_t)a, (uint16_t)b); }
   }
   else if (strcmp(t[0], "LIMITS") == 0 && n >= 2U)
   {
@@ -666,6 +716,16 @@ static void proto_exec(char *line)
      * Result arrives as a !TEMP event, same "<OK started then an event"
      * shape as MANUAL PATH. */
     if (proto_hw_ready() != 0) { proto_post(CMD_TEMP_READ, 0U, 0U); }
+  }
+  else if (strcmp(t[0], "BUS") == 0 && n >= 2U && strcmp(t[1], "SCAN") == 0)
+  {
+    /* Routed through the sequencer, not answered inline - it touches the
+     * shared hardware mutex/Matrix Card bus state real I2C transactions
+     * need, same reasoning as TEMP READ. Results stream as !BUSLINE events,
+     * terminated by !DONE bus <ok> <fault> (GUI-06, 2026-08-21). Does not
+     * require Board_IsReady() - a scan is exactly the diagnostic an
+     * un-initialised card would need, not something to refuse because of. */
+    proto_post(CMD_BUS_SCAN, 0U, 0U);
   }
   else if (strcmp(t[0], "FIXTURE") == 0 && n >= 2U)
   {

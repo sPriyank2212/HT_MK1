@@ -132,15 +132,26 @@ class NetEntry extends Message {
   String toString() => 'NetEntry(hi: $hi, lo: $lo)';
 }
 
-/// `<CAL current_ua=<int> gain=<int> rref_mohm=<int>`
+/// `<CAL current_ua=<int> method=<string> rref_mohm=<int>
+/// rref_tol_mohm=<int> gain_max=<int>`
+///
+/// Every field is read straight from `kelvin.h`'s real constants by
+/// `proto.c`'s `CAL GET` handler - there is no separately-maintained copy to
+/// drift out of sync. `method` is `ratiometric` once HW-04 (R131 on AIN8) is
+/// wired; there is no single fixed PGA gain to report (every measurement
+/// auto-ranges), so `gain_max` is the top of that range instead.
 class CalReply extends Message {
   final int currentUa;
-  final int gain;
+  final String method;
   final int rrefMohm;
+  final int rrefTolMohm;
+  final int gainMax;
   const CalReply({
     required this.currentUa,
-    required this.gain,
+    required this.method,
     required this.rrefMohm,
+    required this.rrefTolMohm,
+    required this.gainMax,
   });
   @override
   String get type => 'CalReply';
@@ -148,13 +159,17 @@ class CalReply extends Message {
   bool operator ==(Object other) =>
       other is CalReply &&
       other.currentUa == currentUa &&
-      other.gain == gain &&
-      other.rrefMohm == rrefMohm;
+      other.method == method &&
+      other.rrefMohm == rrefMohm &&
+      other.rrefTolMohm == rrefTolMohm &&
+      other.gainMax == gainMax;
   @override
-  int get hashCode => Object.hash(currentUa, gain, rrefMohm);
+  int get hashCode =>
+      Object.hash(currentUa, method, rrefMohm, rrefTolMohm, gainMax);
   @override
   String toString() =>
-      'CalReply(current_ua: $currentUa, gain: $gain, rref_mohm: $rrefMohm)';
+      'CalReply(current_ua: $currentUa, method: $method, rref_mohm: $rrefMohm, '
+      'rref_tol_mohm: $rrefTolMohm, gain_max: $gainMax)';
 }
 
 /// `<LIMITS r_max_mohm=<int> ins_min_mohm=<int>`
@@ -346,6 +361,91 @@ class HvEvent extends Message {
   int get hashCode => millivolts.hashCode;
   @override
   String toString() => 'HvEvent(millivolts: $millivolts)';
+}
+
+/// `!MANUAL adc_mv=<int> adc_code=<int>`, in reply to `>MANUAL PATH` (GUI-06,
+/// 2026-08-21) — the continuity ADC reading that command's own one-shot
+/// connect/settle/read/release sequence took. There is no separate "hold the
+/// path open, read it again later" state in this firmware, so this arrives
+/// once per `MANUAL PATH`, not on demand.
+class ManualEvent extends Message {
+  final int adcMv;
+  final int adcCode;
+  const ManualEvent({required this.adcMv, required this.adcCode});
+  @override
+  String get type => 'ManualEvent';
+  @override
+  bool operator ==(Object other) =>
+      other is ManualEvent &&
+      other.adcMv == adcMv &&
+      other.adcCode == adcCode;
+  @override
+  int get hashCode => Object.hash(adcMv, adcCode);
+  @override
+  String toString() => 'ManualEvent(adc_mv: $adcMv, adc_code: $adcCode)';
+}
+
+/// `!BUSLINE <name> <ok|fault>`, one per device `BUS SCAN` probed (GUI-06,
+/// 2026-08-21). Terminated by `!DONE bus <ok_count> <fault_count>`.
+class BusLineEvent extends Message {
+  final String name;
+  final bool ok;
+  const BusLineEvent({required this.name, required this.ok});
+  @override
+  String get type => 'BusLineEvent';
+  @override
+  bool operator ==(Object other) =>
+      other is BusLineEvent && other.name == name && other.ok == ok;
+  @override
+  int get hashCode => Object.hash(name, ok);
+  @override
+  String toString() => 'BusLineEvent(name: $name, ok: $ok)';
+}
+
+/// `!CAL_RESULT r_mohm=<int> ratiometric=<0|1> <pass|fail>`, in reply to
+/// `>CAL RUN <hi> <lo>` (GUI-06, 2026-08-21) — a standalone
+/// `Kelvin_MeasurePair` on the given pair, surfacing whether the HW-04
+/// ratiometric reference (R131 via AIN8) actually worked for this reading —
+/// the one field `!RES` doesn't carry.
+class CalResultEvent extends Message {
+  final int rMohm;
+  final bool ratiometric;
+  final bool pass;
+  const CalResultEvent({
+    required this.rMohm,
+    required this.ratiometric,
+    required this.pass,
+  });
+  @override
+  String get type => 'CalResultEvent';
+  @override
+  bool operator ==(Object other) =>
+      other is CalResultEvent &&
+      other.rMohm == rMohm &&
+      other.ratiometric == ratiometric &&
+      other.pass == pass;
+  @override
+  int get hashCode => Object.hash(rMohm, ratiometric, pass);
+  @override
+  String toString() =>
+      'CalResultEvent(r_mohm: $rMohm, ratiometric: $ratiometric, pass: $pass)';
+}
+
+/// `!TEMP <deci_celsius>`, in reply to `>TEMP READ` (FW-14, DS18B20 board
+/// sensor). Only sent on a successful read - a missing/unpowered sensor or a
+/// bad CRC produces no event at all, so callers must time out.
+class TempEvent extends Message {
+  final int deciCelsius;
+  const TempEvent({required this.deciCelsius});
+  @override
+  String get type => 'TempEvent';
+  @override
+  bool operator ==(Object other) =>
+      other is TempEvent && other.deciCelsius == deciCelsius;
+  @override
+  int get hashCode => deciCelsius.hashCode;
+  @override
+  String toString() => 'TempEvent(deci_celsius: $deciCelsius)';
 }
 
 /// `!SAFE`

@@ -51,7 +51,7 @@ class _FakeTransport implements Transport {
         push('<NET ${p[0]} ${p[1]}\n');
       }
     } else if (body == 'CAL GET') {
-      push('<CAL current_ua=3000 gain=32 rref_mohm=100000\n');
+      push('<CAL current_ua=2000 method=ratiometric rref_mohm=100000 rref_tol_mohm=10 gain_max=128\n');
     } else if (body == 'LIMITS GET') {
       push('<LIMITS r_max_mohm=5000 ins_min_mohm=10000000\n');
     } else {

@@ -123,18 +123,40 @@ in the protocol does this.
 >HV SET <millivolts>           -> <OK           0 = off; ramping is the firmware's job
 
 >FIXTURE <none|mtx|hv>         -> <OK           operator confirms the harness location
->MANUAL PATH <hi> <lo>         -> <OK started   close one matrix path, diagnostics only
+>MANUAL PATH <hi> <lo>         -> <OK started   close one matrix path, read it, release -
+                                       !MANUAL adc_mv=<int> adc_code=<int> follows on success
 >MANUAL RELAY <board> <n> <0|1>-> <ERR EHW      refused by design, see section 0
 >MANUAL OFF                    -> <OK started
+>MANUAL SWEEP <hi>             -> <OK started   one HS against all 256 LS - !CONT per match,
+                                       !DONE sweep <found> 0 (whole-run gated, like CONT/RES/INSUL RUN)
 
 >FAULT CLEAR                   -> <OK started   forces safe, then clears the fault latch
 
->CAL GET                       -> <CAL current_ua=<int> gain=<int> rref_mohm=<int>
+>CAL GET                       -> <CAL current_ua=<int> method=<str> rref_mohm=<int>
+                                       rref_tol_mohm=<int> gain_max=<int>
+>CAL RUN <hi> <lo>             -> <OK started   Kelvin_MeasurePair on this pair -
+                                       !CAL_RESULT r_mohm=<int> ratiometric=<0|1> <pass|fail>
 >LIMITS GET                    -> <LIMITS r_max_mohm=<int> ins_min_mohm=<int>
 >LIMITS SET r_max_mohm=<int> ins_min_mohm=<int>  -> <OK
 
 >TEMP READ                     -> <OK started   read the Control Card's DS18B20 (U2, PA0)
+>BUS SCAN                      -> <OK started   probes Matrix Card + ADS124S08 (confirmed
+                                       addresses only, not HV cards) - !BUSLINE per device,
+                                       !DONE bus <ok_count> <fault_count>
 ```
+
+**Updated 2026-08-19 (HW-04):** `CAL GET`'s reply changed shape. It used to be a hardcoded
+`current_ua=3000 gain=32 rref_mohm=100000` string with no relationship to what the instrument
+actually does — `current_ua` didn't match the IDAC's real 2 mA, `gain` claimed a single fixed PGA
+setting when every measurement auto-ranges, and `rref_mohm` implied a reference resistor the
+firmware never actually read. HW-04 (R131 tapped on `AIN8`, Matrix schematic) landed this session,
+so the reply now reads real constants straight out of `kelvin.h`: `current_ua` is the IDAC's actual
+2000 µA, `method` is `ratiometric` once the reference-channel read is live (falls back to computing
+from the excitation current alone if that channel's read fails for a given measurement — see
+`Kelvin_MeasurePair`/`KelvinResult_t.ratiometric`, not reflected in `CAL GET` itself since that's a
+static per-connection query, not per-measurement), `rref_mohm`/`rref_tol_mohm` are R131's real value
+and tolerance, and `gain_max` is the ceiling of the auto-range sequence rather than a fake single
+gain. See `Core/Src/app/proto.c`'s `CAL GET` handler and `Core/Src/test/kelvin.c`.
 
 **New 2026-08-16 (HW-13/FW-14):** `TEMP READ` reads the temperature sensor found on the current
 Control Card schematic (`Doc/Control_Card.pdf`, `uC` sheet) that earlier revisions did not carry.
@@ -272,14 +294,37 @@ anything. A 256×256 discovery scan takes tens of seconds.
 !RES  <hi> <lo> <milliohms> <pass|fail_high|fail_low>
 !INSUL <net> <leak_mohm> <pass|fail>
 !FAULT <code> <text>                   e.g.  !FAULT F04 insulation low on net 37
-!DONE <cont|res|insul> <passed> <failed>
+!DONE <cont|res|insul|sweep|bus> <passed> <failed>   sweep/bus added 2026-08-21, GUI-06 -
+                                        diagnostic actions, not staged tests; see MANUAL SWEEP
+                                        and BUS SCAN above
 
 !TEMP <deci_celsius>                   e.g.  !TEMP 235  ->  23.5 degC. Answers TEMP READ (2026-08-16, HW-13/FW-14)
+
+!MANUAL adc_mv=<int> adc_code=<int>    Answers MANUAL PATH on success (2026-08-21, GUI-06) - the
+                                        continuity ADC reading MANUAL PATH's own one-shot connect/
+                                        settle/read/release sequence took. No separate "hold the
+                                        path open, read it again later" state exists in this
+                                        firmware - the matrix is released again immediately after
+                                        every MANUAL PATH, same as CONT RUN/RES RUN. A `MANUAL READ`
+                                        command was proposed once (Doc/GUI_protocol_proposed_
+                                        commands.md) assuming the opposite; superseded by this once
+                                        that assumption turned out not to match Continuity_TestPair's
+                                        real behaviour.
+
+!BUSLINE <name> <ok|fault>             Answers BUS SCAN, one per device (2026-08-21, GUI-06).
+                                        Terminated by !DONE bus <ok_count> <fault_count>.
+
+!CAL_RESULT r_mohm=<int> ratiometric=<0|1> <pass|fail>   Answers CAL RUN (2026-08-21, GUI-06) -
+                                        Kelvin_MeasurePair on the given pair, surfacing whether
+                                        the HW-04 ratiometric reference actually worked for this
+                                        reading (not carried by !RES). No !DONE - one measurement,
+                                        not a run, same shape as !MANUAL.
 ```
 
-**`!DONE` is the last event of every run**, for all three test types. When it arrives,
-everything about that run has already been reported — including an aborted run, which still
-gets its `!DONE`.
+**`!DONE` is the last event of every run**, for the three staged test types and the two
+diagnostic actions that stream results the same way (`MANUAL SWEEP`, `BUS SCAN`). When it
+arrives, everything about that run has already been reported — including an aborted run, which
+still gets its `!DONE`.
 
 **`!DONE` does not mean "safe to handle". `!SAFE` does.** `!DONE` says the run finished; only
 `!SAFE` says the hardware has been forced safe. Continuity and resistance runs never raise the

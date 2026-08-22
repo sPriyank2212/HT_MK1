@@ -84,6 +84,39 @@ uint8_t Board_IsReady(void);
   */
 void Board_SettleMs(uint32_t ms);
 
+/* -------------------------------------------------------------------------- */
+/* Bus scan (BUS SCAN, GUI-06 2026-08-21)                                     */
+/* -------------------------------------------------------------------------- */
+
+/** One probed device. `name` is a literal, never freed. */
+typedef struct
+{
+  const char *name;
+  uint8_t     addr7;
+  uint8_t     ok;   /* 1 = responded, 0 = fault */
+} BoardBusEntry_t;
+
+/* Matrix Card: 9 expanders (U101/102/105/106 force, U66/67/69/107/108
+ * sense) + U21 (local, no bus-claim) + the ADS124S08 itself (SPI, probed by
+ * identity rather than an I2C ACK) = 11. */
+#define BOARD_BUS_SCAN_MAX  11U
+
+/**
+  * @brief  Probe every device this project has a schematic-confirmed I2C
+  *         address for, without disturbing anything - each is claimed/
+  *         segment-selected/released exactly the way a normal access would
+  *         be, then the bus is left however it was.
+  * @note   HV card expanders are deliberately NOT probed: `hv_card.c`'s own
+  *         strap assignment is still marked "TODO verify" pending bring-up
+  *         (BU-03), so reporting ok/fault against an address that hasn't
+  *         been confirmed would claim a confidence this project doesn't
+  *         have yet. Scope is Matrix Card + the ADS124S08 only.
+  * @param  out : [out] array to fill, at least BOARD_BUS_SCAN_MAX entries.
+  * @param  max : [in]  capacity of @p out.
+  * @retval Number of entries written.
+  */
+uint8_t Board_ScanBus(BoardBusEntry_t *out, uint8_t max);
+
 #ifdef __cplusplus
 }
 #endif

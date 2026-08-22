@@ -347,6 +347,12 @@ through the tree. Run it before believing any layout change.
   [tx] >NETLIST GET  [rx] <NETLIST 0
   ```
 
+  Captured pre-FW-15 (2026-08-19) — kept as-is, it's a real historical capture,
+  not a live spec. `CAL GET`'s reply shape changed that session (HW-04, real
+  reference-resistor read); the current format is
+  `<CAL current_ua=2000 method=ratiometric rref_mohm=100000 rref_tol_mohm=10
+  gain_max=128` — see `Doc/GUI_development_brief.md` §3.2.
+
   The limits match `s_lim_r_mohm` / `s_lim_ins_mohm` in `Core/Src/app/proto.c`,
   so those values came off the board rather than out of the simulator. With the
   firmware heartbeat in place the link then holds indefinitely.

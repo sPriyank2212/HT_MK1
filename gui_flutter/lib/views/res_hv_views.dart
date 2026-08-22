@@ -138,6 +138,19 @@ class ResView extends StatelessWidget {
                     : '4-wire Kelvin · ADS124S08 IDAC1'),
               ),
               const KvRow('Set current', KvText('2.000 mA')),
+              // HW-04: real once CAL GET's method is "ratiometric" — derived
+              // from the same two wire fields the instrument reports, not a
+              // second copy of the tolerance kept in the GUI. Worded without
+              // any chip/pin name so it's safe for a customer build (the
+              // Diagnostics panel below names the part for developers).
+              KvRow(
+                'Accuracy reference',
+                KvText(s.cal != null && s.cal!.method == 'ratiometric'
+                    ? 'verified against a ${(s.cal!.rrefMohm / 1000).toStringAsFixed(0)} '
+                        'Ω reference resistor · ± '
+                        '${(s.cal!.rrefTolMohm / s.cal!.rrefMohm * 100).toStringAsFixed(2)}%'
+                    : '— not connected'),
+              ),
               KvRow(
                 'Compliance',
                 KvText(kCustomerBuild

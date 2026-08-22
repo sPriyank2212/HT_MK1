@@ -608,20 +608,29 @@ float ADS124S08_CodeToVolts(const ADS124S08_t *dev, int32_t code)
 }
 
 /**
-  * @brief  Ratiometric resistance.
-  * @param  dev        : [in] instance; must be non-NULL.
-  * @param  code       : [in] conversion result.
-  * @param  r_ref_ohms : [in] reference resistor carrying the same current.
-  * @retval R_ref * code / (gain * 2^23).
+  * @brief  Ratiometric resistance from two independently-gained conversions.
+  * @param  code_dut  : [in] DUT channel conversion (excited minus zero).
+  * @param  gain_dut  : [in] PGA gain the DUT channel was read at.
+  * @param  code_ref  : [in] reference-resistor channel conversion (excited
+  *                          minus zero).
+  * @param  gain_ref  : [in] PGA gain the reference channel was read at.
+  * @param  r_ref_ohms: [in] reference resistor value carrying the same
+  *                          current as the DUT.
+  * @retval r_ref_ohms * (code_dut / gain_dut) / (code_ref / gain_ref).
   */
-float ADS124S08_OhmsRatiometric(const ADS124S08_t *dev, int32_t code, float r_ref_ohms)
+float ADS124S08_OhmsRatiometric(int32_t code_dut, ADS124S08_Gain_t gain_dut,
+                                int32_t code_ref, ADS124S08_Gain_t gain_ref,
+                                float r_ref_ohms)
 {
-  if (dev == NULL)
+  float dut_ratio, ref_ratio;
+
+  if (code_ref == 0)
   {
     return 0.0f;
   }
-  return (r_ref_ohms * (float)code)
-         / ((float)ADS124S08_GainValue(dev->gain) * 8388608.0f);
+  dut_ratio = (float)code_dut / (float)ADS124S08_GainValue(gain_dut);
+  ref_ratio = (float)code_ref / (float)ADS124S08_GainValue(gain_ref);
+  return r_ref_ohms * (dut_ratio / ref_ratio);
 }
 
 /**

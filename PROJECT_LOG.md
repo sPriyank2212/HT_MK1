@@ -13,17 +13,262 @@ ID prefixes: `HW-` schematic/hardware · `FW-` firmware · `BU-` bring-up/verify
 
 ---
 
-## Status snapshot — 2026-08-18 (GUI-26: dead "Fault pareto" panel removed from the Results tab)
+## Status snapshot — 2026-08-21 (GUI-06 built: MANUAL SWEEP, BUS SCAN, CAL RUN, and MANUAL PATH's own reading)
 
 | Category | Count |
 |---|---|
 | Blocking — firmware cannot proceed | **0** |
 | Agreed, awaiting schematic edit | 3 |
-| Awaiting a decision | 3 |
+| Awaiting a decision | 0 |
 | Firmware work queued | 1 |
 | Awaiting the GUI side | 1 |
 | Verify at bring-up | 9 |
-| Closed to date | 60 |
+| Closed to date | 71 |
+
+**GUI-33 (CL-71): GUI side of all four GUI-06 commands wired through, plus the Bus map/**
+**Calibration/Manual-switch panels updated to use them.** `codec.dart` gained encoders
+(`manualSweep`, `busScan`, `calRun`) and event parsing (`!MANUAL`, `!BUSLINE`, `!CAL_RESULT`, plus
+`TestKind.sweep`/`.bus`). `AppState` deliberately keeps `MANUAL SWEEP`/`BUS SCAN` off the shared
+`_onCont`/`_onDone` machinery the three staged tests use — a sweep's `!CONT` matches and a scan's
+completion must never be mistaken for a real Continuity run finishing, so both get their own
+state (`sweeping`/`sweepFound`, `busScanning`/`busScanResults`) and their own handlers
+(`_onSweepCont`/`_onSweepDone`, `_onBusLine`/`_onBusDone`), checked first and returning early.
+Diagnostics: "Sweep this HS" and "Rescan" are real buttons now (were `disabled: true`); "Run
+self-cal" reuses the Manual switch panel's own HS/LS sliders (both panels live in the same
+`_DiagViewState`) since `CAL RUN` needs an explicit pair, not a held-open path. The Bus map
+panel's fixed per-bus rows are untouched — a real per-device scan result section was added below
+them rather than claimed as a replacement, since the scan only covers the Matrix Card + ADS124S08,
+not whole buses or the HV cards. `simulator.dart` answers all three plausibly (a healthy Matrix
+Card scan, a scripted sweep match, a passing ratiometric cal result) without claiming to be real
+hardware. New end-to-end tests in `protocol_test.dart` exercise the real simulator for all four
+(`!MANUAL` after `MANUAL PATH`, a sweep's matches + `!DONE sweep`, a full bus scan + `!DONE bus`,
+a standalone `!CAL_RESULT` with no `!DONE`). `flutter analyze`: 0 issues. `flutter test`: 239/239
+(9 new).
+
+**FW-16: firmware side of GUI-06's four decided commands — `MANUAL PATH` reports its own ADC**
+**reading, `MANUAL SWEEP`, `BUS SCAN`, and `CAL RUN`.** Two design corrections found and fixed
+along the way, not just implemented as originally proposed:
+- **`MANUAL PATH`/`MANUAL READ`.** The original proposal (`Doc/GUI_protocol_proposed_commands.md`)
+  assumed `MANUAL PATH` holds the path closed until `MANUAL OFF`, so a separate on-demand
+  `MANUAL READ` could re-read it later. Checked `Continuity_TestPair` (`continuity.c`) directly
+  before building anything: it releases the matrix immediately after its own one-shot
+  connect/settle/read, on every exit path — there is no held-open state to read again. A decoupled
+  `MANUAL READ` would only ever read a floating input. Fixed the actual gap instead: `MANUAL PATH`
+  (`CMD_CONTINUITY`, only ever reached from there — `CONT RUN` calls `Continuity_TestPair` directly,
+  confirmed by grep) now reports the reading it already takes internally via a new `!MANUAL
+  adc_mv=<int> adc_code=<int>` event (`Proto_EvtManual`), instead of only logging it. No
+  `MANUAL READ` command exists; none is needed.
+- **`BUS SCAN`.** New `Board_ScanBus()` (`bsp/board.c`/`board.h`) probes every I2C device this
+  project has a schematic-confirmed address for — the Matrix Card's 9 expanders (U101/102/105/106
+  force, U66/67/69/107/108 sense, straps read directly off `matrix_card.h`'s own confirmed-strap
+  comments) plus the ADS124S08 by real identity check (`ADS124S08_CheckId`), not just an I2C ACK.
+  **Deliberately excludes the HV cards** — `hv_card.c`'s own strap assignment is still commented
+  "TODO verify straps," so reporting ok/fault against an unconfirmed address would claim a
+  confidence this project doesn't have yet; scoped down rather than guessed. Routed through the
+  sequencer as `CMD_BUS_SCAN` (not answered inline in `proto.c`) for the same reason `TEMP READ`
+  is — it touches the shared hardware mutex/bus-claim state real I2C transactions need. Streams
+  `!BUSLINE <name> ok|fault` per device, `!DONE bus <ok> <fault>` last.
+- **`MANUAL SWEEP <hi>`.** New `CMD_MANUAL_SWEEP`/`run_manual_sweep()`, a bounded copy of
+  `run_continuity_all(discover=1)`'s inner loop for one HS pin instead of all 256. Whole-run gated
+  (`proto_post_run`, `ERR EBUSY` while another run is active) like `CONT`/`RES`/`INSUL RUN`.
+- **`CAL RUN <hi> <lo>`.** Unblocked by HW-04 landing this session (FW-15) — reuses `CMD_KELVIN`,
+  which already existed in `tasks.c` and already called `Kelvin_MeasurePair`, but was never posted
+  from anywhere in `proto.c` (dead code, confirmed by grep, same shape as `CMD_CONTINUITY` before
+  today). No new measurement logic: the same function `RES RUN` calls per point, now also
+  reachable standalone and reporting the one field `!RES` doesn't carry —
+  `KelvinResult_t.ratiometric`, whether the HW-04 R131 reference actually worked for this specific
+  reading — via new `!CAL_RESULT r_mohm=<int> ratiometric=<0|1> <pass|fail>`
+  (`Proto_EvtCalResult`).
+
+Auto-range PGA's dead button was already removed in an earlier session (GUI-09/CL-40) — confirmed
+by grep before doing anything, not re-done. **Not built or run on real hardware this session** —
+same no-toolchain gap as FW-15; reviewed by hand (mutex/bus-claim discipline on every exit path,
+`CMD_*` dispatch wiring, printf format/cast correctness) instead. Flagged for a real build and
+bench verification, `BUS SCAN` especially — it's new firmware touching shared bus state, not a
+reuse of an already-verified path the other three are.
+
+**GUI-18b (CL-69): decided — no fixed fixture connector spec needed at all, closing without a**
+**code change.** The placeholder blocking this (`AMPHENOL-128CKT (TBD)` in `netlist_full_256x256
+.xlsx`) assumed the project needed to commit to *one* real connector part number/split before
+shipping. User's actual answer: it shouldn't be fixed — whoever sets up a real fixture supplies
+their own netlist Excel file with their own real `Conn ID`/`Part Number` columns, and the GUI
+reads the layout from that file. That mechanism already exists and already works — GUI-11
+(2026-08-14) built exactly this (`netlist_file.dart`'s connector guess, operator confirms/edits
+via `FixtureGuessModal`), and this session's GUI-31/GUI-32 work hardened it further (six `TN-*`
+regression cases, a real id-collision bug fixed). `netlist_full_256x256.xlsx`/
+`fixture_connector_layout_256x256.xlsx` stay in the repo as one worked *example* of a layout the
+mechanism can consume, not a draft awaiting sign-off — nothing there needs a real catalog part
+number resolved before this closes, because the actual spec now lives in whatever file an
+operator brings, not in this repo.
+
+**HW-09: decided — proceed with the discussed plan (5th HV connector fed by spare J1 pins), moved**
+**to "agreed, awaiting schematic edit."** Not implementable yet — the exact pin assignment on the
+unused `ISO_HV_Card_1.0-3` nibble and the new harness branch it needs are schematic/mechanical
+work, same footing as HW-03/HW-10. Carried forward as its own row below rather than closed, since
+there's no code or hardware change to point to yet.
+
+**GUI-06: decided — build the four unblocked small commands and `CAL RUN` now; `MANUAL RELAYTEST`**
+**still needs a safety review first; Compliance sweep stays a bench tool, not an operator control**
+**(both per the existing `Doc/GUI_protocol_proposed_commands.md` recommendation, unchanged).**
+`CAL RUN` was the one item on this list explicitly waiting on HW-04 (ratiometric `AIN8` reference)
+— it landed this session (FW-15), so the design question is real now. See below for each command
+as it's actually built.
+
+**GUI-32 (CL-68): a `Conn ID` reused for two different physical roles could silently corrupt an**
+**unrelated connector's guessed pin range, drawing a real (passing) net as if it were open.**
+Found by the user hand-editing `TN-01_symmetric_dsub_pair.xlsx` — changing one block's
+`Conn ID B` from `DB9-1` to `DB37-1` (an already-native, self-mated connector elsewhere in the
+same file) made the wiring diagram show that wire as unconnected. Root cause traced end to end:
+`netlist_file.dart`'s `_ConnObs` tracked one shared `minPin`/`maxPin` per connector id regardless
+of *how* it was observed, so `DB37-1` being referenced as a foreign Destination for `DB9-1`'s
+pins 1-9 widened its guessed range from its real 37 pins to 46, which shifted its `base` offset in
+`_fixtureFromGuess` enough that pins 1-9 no longer fell inside its own range at all — `pinNode`'s
+last-resort fallback then silently resolved pin 1's Destination side to `DB9-1` instead, so both
+ends of that net drew on the same connector/pin (a zero-length "wire"). Confirmed against the
+user's actual edited file before touching any code, not just reasoned about on paper (`flutter
+test` reproduced `pins=46, side=null` on `DB37-1` exactly as traced). Fixed at the root: `_ConnObs`
+now tracks native (same-row `Conn ID == Conn ID B`, a genuine mated pair) and foreign (cross-
+connector) observations **separately**, so a connector's own block is only ever built from its
+native rows — a foreign reference can no longer widen or shift it. A genuine id collision (native
+rows *and* a foreign role, both present) is detected and exposed as `GuessedConnector.conflicting`;
+`AppState.browseMtxNetlist` logs a clear operator-facing warning naming the id and explaining why,
+instead of the diagram silently drawing those specific wires wrong. New
+`TN-06_conflicting_connector_id.xlsx` turns the exact bug into a permanent regression case (real
+37-pin range preserved, `conflicting=true` asserted) — `TN-01` itself was restored to its original
+committed content rather than left as the ad-hoc edit, since GUI-31's regression test depends on
+it staying a clean symmetric-pair example. `flutter analyze`: 0 issues. `flutter test`: 235/235
+(1 new).
+
+**GUI-31 (CL-67): five `TN-*.xlsx` sample netlists added, each built to land on a different**
+**path in the connector-layout guess.** User asked for varied connector test data and a clear
+answer on where the connector/card pin mapping actually happens. The existing `test_netlists/`
+samples (`AV-880_MTX_*.xlsx`) never had `Conn ID`/`Part Number` columns, so none of them ever
+exercised `netlist_file.dart`'s `_guessFixture`/`_guessShape` at all — only
+`required_format/example_netlist27072026.xlsx` and the 256x256 draft did, both real-world
+samples rather than a spread of edge cases. New `generate_connector_test_netlists.py` builds
+five: `TN-01` a symmetric mating pair (ambiguous src/dst side, one shared pin sequence), `TN-02`
+distinct Source/Destination connectors exercising `allSided=true` and all three shape guesses
+in one file, `TN-03` six small connectors back to back (many block boundaries), `TN-04` one
+100-pin connector (no boundary inference needed), `TN-05` a connector with unused trailing pins
+followed by another — showing the guess correctly extends the earlier connector's range but
+undercounts the last one in the file, a real limit of `_fixtureFromGuess`, not a bug. Caught one
+real generator bug before it shipped: `TN-01`'s first draft restarted pin numbering at 1 for its
+second connector instead of continuing the file's flat sequence, which the parser correctly
+rejected as a duplicate pin pair — fixed, not worked around. Also caught a naming trap in the
+app's own shape-guess: `_guessShape` treats any part number containing `"AMPHENOL"` as
+**circular**, not rectangular (real Amphenol connectors are both) — `TN-02`/`TN-04`'s
+rectangular case uses a TE Connectivity CPC part number instead so it lands on `rect` for real,
+documented inline rather than silently avoided. New `gui_flutter/test/
+connector_test_netlists_test.dart` reads all five off disk through the real parser and pins
+every guess, including `TN-05`'s asymmetric 9-of-9/20-of-37 result. `flutter analyze`: 0 issues.
+`flutter test`: 234/234 (5 new).
+
+**GUI-30 (CL-66): the Console tab's raw wire traffic can now be shown as hex, not just decoded**
+**ASCII text.** User asked for the actual byte data, with an option to switch. `WireLogEntry` only
+ever stored the decoded `String` `ConnectionManager.onWire` was given — but the protocol is
+line-based ASCII, so `text.codeUnits` already *is* the real byte sequence, nothing new needed to
+capture it. Added `WireLogEntry.hexText` (space-separated hex, e.g. `3E 43 41 4C 20 47 45 54 0A`)
+and `AppState.wireLogHex`/`toggleWireHex()`; `shell.dart`'s log bar gained a `TEXT`/`HEX` toggle
+next to the Console tab (developer-only, same gate as Console itself) that switches every rendered
+line — the scrollback body and the one-line collapsed preview both respect it. `flutter analyze`: 0
+issues. `flutter test`: 229/229.
+
+**GUI-29 (CL-65): `TEMP READ` had zero GUI-side support — FW-14 shipped the firmware half**
+**2026-08-16 and nobody wired the other end.** User asked to close the gap the Reality Check audit
+this session found: `codec.dart` had no `tempRead()` encoder and no `!TEMP` case in `_parseEvent`
+at all — a real `!TEMP` line from the instrument would have thrown `ProtocolError('unrecognised
+event...')`. Added `commands.tempRead()`, a `TempEvent` message (`messages.dart`), the `TEMP` parse
+case, `AppState.boardTempDeciC`/`boardTempAt` (both null until a read actually succeeds — FW-14's
+own firmware answers a missing/unpowered sensor or a bad CRC with *no event at all*, so there is no
+error to distinguish "never read" from "stale" other than that), `AppState.readTemp()`, and a new
+developer-only "Board temperature" Diagnostics panel with a Read button — matching FW-14's own
+framing of the DS18B20 as a diagnostic sensor, not a DUT measurement. `simulator.dart` gained a
+matching `TEMP READ` handler (`<OK started` then `!TEMP` ~50 ms later) so the demo build stays
+honest end to end. `flutter analyze`: 0 issues. `flutter test`: 229/229.
+
+**GUI-28 (CL-64): the HV relay grid's red "leak" cell was hardcoded to card 0 / LS index 22,**
+**regardless of which net or relay actually failed.** Found by this session's GUI Reality Check
+re-audit. `!INSUL <net> <leak_mohm> <verdict>` (`proto.c`) reports pass/fail for the net under
+test, not which of the many closed LS return relays the leakage path actually used — the firmware
+has no way to attribute it to one, so there was never real data behind a *specific other relay*
+turning red. `AppState.relayCell()` rewritten: "leak" now marks the one relay a failure is actually
+known to involve — the failing net's own HS source relay (`relayNet.card`/`.relay`, already real),
+red instead of the usual highlight — instead of inventing an unrelated LS cell. No protocol change;
+this was purely a case of the GUI rendering a fixed coordinate no test data had ever pointed at.
+`flutter analyze`: 0 issues. `flutter test`: 229/229. No dedicated regression test added — the fix
+has no protocol-visible signal to assert against beyond `relayCell()`'s own return value, which
+existing coverage never exercised either; flagged rather than left silently untested.
+
+**GUI-27 (CL-63): `CAL GET`'s new real fields wired through the GUI, and a customer-safe**
+**"accuracy reference" fact added to the Resistance view.** Follow-on to FW-15's protocol shape
+change. `CalReply` (`messages.dart`) and its parse case (`codec.dart`) updated for the five-field
+reply (`current_ua`/`method`/`rref_mohm`/`rref_tol_mohm`/`gain_max`, replacing the old three-field
+`current_ua`/`gain`/`rref_mohm`); `simulator.dart`'s defaults corrected to match real firmware
+(current 2000 µA not 1000, method/tolerance/gain-max fields added) so the demo build no longer
+disagrees with real hardware on its own calibration numbers. The Diagnostics "Calibration" panel
+(developer-only, already confined to the Diag tab per GUI-14/24) now shows the reference resistor's
+real tolerance and the resistance method, and no longer claims a single "PGA gain" number. Per the
+user's direction, the raw register-level facts (current in µA, part-level tolerance) stay
+developer-only, but the underlying *capability* — that resistance readings are now checked against
+a precision reference resistor — is a real, customer-relevant fact, so a new "Accuracy reference"
+row was added to the Resistance view's existing "Measurement conditions" panel (already shown in
+both builds), worded without any chip/pin/part name and computed live from the two real wire
+fields (`rrefTolMohm / rrefMohm * 100`) rather than a second hardcoded copy of the tolerance. The
+new reply shape broke six test fixtures that had the old three-field `CAL GET` reply hardcoded as
+fake instrument output (`diag_controls_flow_test.dart`, `manual_and_fault_test.dart`,
+`netlist_file_load_test.dart`, `netlist_select_flow_test.dart`, `netlist_upload_test.dart`,
+`wire_log_test.dart`) — each would have made `AppState.connect()`'s `CAL GET` parse throw
+`ProtocolError('unrecognised reply...')` the moment it hit the new 5-field checker, since the old
+fixture text only ever had 4 tokens. All six updated to the real current reply. `flutter analyze`:
+0 issues. `flutter test`: 229/229.
+
+**FW-15: Kelvin resistance measurement goes ratiometric against R131 (HW-04), and `CAL GET`**
+**stops being a hardcoded, wrong reply.** This session's GUI Reality Check re-audit (see below)
+found `proto.c`'s `CAL GET` handler was a literal string — `current_ua=3000` (the real IDAC is
+2 mA, not 3), `gain=32` (every measurement auto-ranges; no single gain is real), `rref_mohm=100000`
+(numerically what R131 is, but nothing in firmware ever read it) — flowing straight into the
+exported resistance report's "Excitation Current (mA)" field and the Diagnostics panel, both
+labelled as real instrument data. Fixing it required first resolving whether HW-04 (`LO_COM`/R131
+routed to ADS124S08 `AIN8` for a ratiometric read) had actually landed — the user's first two
+attempts at re-exporting `Matrix_Card.pdf` (`Doc/Matrix_Card-9.pdf`) proved textually byte-identical
+to the revision they were meant to replace (same title-block date, same content, confirmed with
+`pdftotext -layout` + `md5sum` — a re-export-without-the-edit, the same false-alarm pattern
+`idac_current_source.md` flagged once before), until the user confirmed the routing directly. Once
+confirmed: `Kelvin_MeasurePair` (`kelvin.c`) now also reads `AIN8` vs `AINCOM` (PGA bypassed —
+2 mA × 100 Ω = 200 mV, well inside range without auto-ranging, per `ADS124S08_BypassPga`'s own
+doc comment, which already anticipated exactly this use) while the same excitation current that
+flows through the DUT also flows through R131 in series (`IDAC → HI_COM → DUT → LO_COM → R131 →
+GND`), and computes resistance as a ratio against R131 (new `ADS124S08_OhmsRatiometric`, rewritten
+to take two independently-gained code/gain pairs instead of its old single-code form that assumed
+a reference-pin architecture this board never had) — cancelling the IDAC's own ±3% worst-case
+tolerance and leaving R131's 0.01% as the accuracy floor instead. Falls back to the older R = V/I
+estimate (`KelvinResult_t.ratiometric` reports which one was used) if the reference-channel read
+fails for any reason, rather than failing the whole pin. The mux is switched to `AIN8`/`AINCOM` and
+back mid-measurement — a first for this driver — so `Kelvin_MeasurePair`'s `release:` path now
+unconditionally restores it to `AIN0`/`AIN1` on every exit, success or error, since nothing else in
+the driver ever would. `CAL GET` now reads `current_ua`/`rref_mohm`/`rref_tol_mohm` straight out of
+`kelvin.h`'s real constants (`KELVIN_FORCE_CURRENT_A`/`KELVIN_CAL_R_REF_OHM`/`_TOL_PCT`) instead of
+a separately-maintained copy, reports `method=ratiometric`, and replaces the fake single `gain`
+with `gain_max` (the real ceiling of the auto-range sequence). `Doc/GUI_development_brief.md` §3.2
+updated for the new reply shape. **Not built or run on real hardware this session** — no ARM
+toolchain was reachable in this environment (same recurring gap noted in FW-14/BU-03); the change
+was reviewed by hand line-by-line instead (register/mux/gain state restoration on every exit path,
+parameter order into `ADS124S08_OhmsRatiometric`, printf format/cast correctness in `proto.c`).
+Flagged for a real build and bench verification against a known resistor before this ships.
+
+**HW-04 (CL-61): the ratiometric calibration channel is confirmed real — after two false alarms.**
+User asked to wire the "known-resistor calibration channel" into the GUI; checking first (per this
+project's standing rule that schematics/firmware, not requests, are ground truth) found HW-04 still
+listed as "agreed, awaiting schematic edit," and the most recent resync (HW-13, 2026-08-18) had
+explicitly found "no content change" on the Matrix Card. The user then added new schematic PDFs
+(`Matrix_Card-9.pdf`/`Control_Card-6.pdf`/`HV_Card-4.pdf`) — diffed via `pdftotext -layout` against
+the revisions they replaced and found **textually byte-identical** (same `md5sum`, same unchanged
+title-block date), a re-export that hadn't actually carried the routing edit. Raised this back to
+the user rather than building against an assumption; the user then confirmed the `LO_COM`↔`AIN8`
+routing directly. Independently corroborated in the firmware itself: `ADS124S08_BypassPga`'s
+existing doc comment already called it "the right mode for a single-ended read such as the
+current-reference measurement" — a driver author's note written in anticipation of exactly this
+channel, before this session touched anything. See FW-15 for the firmware implementation.
 
 **GUI-26 (CL-60): the Results tab's "Fault pareto · this shift" panel removed — it could never show
 anything.** User asked what it was for; it's a Pareto chart of fault types by frequency (a
@@ -612,15 +857,19 @@ window and nothing downstream can be finalised without it.
 |---|---|---|
 | HW-03 | Matrix card moves to the non-isolated domain: `+5V_ISO` → plain `+5V`, no isolators in the Matrix path. Follow-ons: the Matrix card's ADuM1205 (U103) becomes redundant once both sides share ground — DNF with links or keep as a buffer; and feed the slot raw `I2C3_SDA`/`I2C3_SCL` rather than `ISO_SDA3`/`ISO_SCL3`. | 2026-07-29 |
 | HW-10 | Add pull resistors on the three ADC control lines that U69 drives, so they are defined while the MCP23017 is still in its power-on high-Z input state: `ADC_CS_1` and `ADC_RST_1` pulled **up** to +3V3 (CS deasserted, ADC out of reset), `Start_SYNC_1` pulled **down** to GND. Sheet 9 currently carries only 4.7 K (I2C and address strapping) and 47 Ω (series damping) — nothing on these nets. Same argument as the mux enables. | 2026-07-29 |
-| HW-04 | **Decided 2026-08-12: implement in the next schematic revision, using `GPIO0_AIN8` (not the originally-proposed `AIN2`).** Route the `LO_COM` node (top of R131) to ADS124S08 `AIN8` (Matrix sheet 9), with the same RC treatment as originally proposed (1 kΩ series + 100 nF to AINCOM) unless the schematic spec says otherwise. `AIN8` is confirmed free — it's `AIN9`'s old calibration-tap partner, unconnected since FW-12 routed `AIN9` to the IDAC (CL-32). Purpose unchanged: R = V_kelvin / I, and without measuring I across R131 the current comes from the IDAC's programmed magnitude, so resistance accuracy equals the excitation source's tolerance instead of R131's 0.01 %. Firmware side (ratiometric read via `AIN8`, `ADS124S08_OhmsRatiometric`) is not implemented yet — waiting on the schematic edit to land. | 2026-08-12 |
+| ~~HW-04~~ | **DONE 2026-08-19 — see CL-61/CL-62.** `LO_COM`/R131 routed to ADS124S08 `AIN8`, confirmed by the user directly after two re-exported schematic PDFs (`Matrix_Card-9.pdf`, first as `Doc/Matrix_Card.pdf`) both proved textually identical to the revision they replaced — a re-export-without-the-edit false alarm, not a real landing, until the direct confirmation. Firmware side (`Kelvin_MeasurePair`, `ADS124S08_OhmsRatiometric`) implemented the same session. | 2026-08-12 |
+| HW-09 | **Decided 2026-08-21: proceed with a 5th HV connector fed by spare/unused `ISO_HV_Card_1.0-3` J1 pins via a new harness branch** — the plan already discussed 2026-08-12, now confirmed rather than left open. The Control card has 50-pin connectors J1–J4 (confirmed by reading `Control_Card 1.pdf`'s `/Connector/` sheet directly, pin by pin — J1 is not a separate 5th connector, J5 on that sheet is the power barrel jack, not a card slot). J1 carries the Matrix Card's own signals (`LO_S1-4`/`HI_S1-4`/`IN`/`SPI1_*`) plus the spare nibble and its own `EN1` (already claimed for Matrix bus gating) — exact pin assignment for the new branch is still schematic/mechanical work, not started. Also noted: `Matrix_Card-8.pdf`'s `J101` does not use matching pin numbers for the same signals as `Control_Card 1.pdf`'s `J1` — consistent with this project's established pattern (BU-06) of harness-level, not schematic-level, signal mapping. | 2026-07-27 |
 
 ### Awaiting a decision
 
+*(empty — GUI-18b, HW-09 and GUI-06, the three that were open here, are all decided as of
+2026-08-21; see the status snapshot above and CL-69.)*
+
 | ID | Item | Raised |
 |---|---|---|
-| GUI-18b | **Fixture connector part number/shell size not decided.** `required_format/netlist_full_256x256.xlsx` and `fixture_connector_layout_256x256.xlsx` (GUI-18/CL-52) draft a 4-connector layout (128 pins x 2 per side) with `Part Number` = `AMPHENOL-128CKT (TBD)` on every row — a placeholder, not a real catalog number. Needs an actual Amphenol (or equivalent) part number and shell size from mechanical/procurement, or a different split entirely (the user also floated DB37 x N or one large connector) before this becomes the real fixture spec. | 2026-08-17 |
-| HW-09 | **Four card slots, five cards — left open at the user's request 2026-08-12.** The Control card has 50-pin connectors J1–J4 (confirmed by reading `Control_Card 1.pdf`'s `/Connector/` sheet directly, pin by pin — J1 is not a separate 5th connector as this row previously assumed; J5 on that sheet is the power barrel jack, not a card slot). J1 carries the Matrix Card's own signals (`LO_S1-4`/`HI_S1-4`/`IN`/`SPI1_*`) plus an apparently-unused `ISO_HV_Card_1.0-3` nibble and its own `EN1` (already claimed for Matrix bus gating) — the plan discussed is a 5th physical HV connector fed by spare/unused J1 pins via a new harness branch, but the exact mechanism is still being worked out. Also noted: `Matrix_Card-8.pdf`'s `J101` does not use matching pin numbers for the same signals as `Control_Card 1.pdf`'s `J1` — consistent with this project's established pattern (BU-06) of harness-level, not schematic-level, signal mapping. | 2026-07-27 |
-| GUI-06 | **Seven proposed protocol commands** awaiting a firmware-side yes/no: `BUS SCAN`, `MANUAL READ`, `MANUAL SWEEP`, self-cal, PGA auto-range, compliance sweep, relay self-test. Full command-by-command writeup with size estimates in `Doc/GUI_protocol_proposed_commands.md` (2026-08-08, pre-FW-02/FW-12) — two (auto-range PGA, compliance sweep) are recommended against as separate commands at all. **Feasibility re-checked against the current firmware 2026-08-12 — see the note below the table.** Still awaiting the actual per-command yes/no. | 2026-08-08 |
+| ~~GUI-18b~~ | **DECIDED 2026-08-21 — see CL-69. Closed without a code change.** Original scope: `required_format/netlist_full_256x256.xlsx`/`fixture_connector_layout_256x256.xlsx` (GUI-18/CL-52) drafted a 4-connector 128x2 layout with `Part Number` = `AMPHENOL-128CKT (TBD)`, a placeholder needing a real catalog part number or a different split before it became "the" fixture spec. Decision: there is no single "the" fixture spec to commit to — the layout is configurable per-deployment via the operator-supplied netlist Excel file's own `Conn ID`/`Part Number` columns (GUI-11, already built and, this session, hardened further by GUI-31/32). The 256x256 files stay as one worked example, not a draft awaiting sign-off. | 2026-08-17 |
+| ~~HW-09~~ | **Decided — see the row above in "Agreed — awaiting schematic edit."** Moved there 2026-08-21 rather than closed outright, since the actual schematic/harness work hasn't happened yet. | 2026-07-27 |
+| ~~GUI-06~~ | **Decided 2026-08-21 — see CL-69 and the per-command entries below as each is built.** Original scope: seven proposed protocol commands awaiting a firmware-side yes/no. Decision: build `MANUAL READ`, `BUS SCAN`, `MANUAL SWEEP`, and `CAL RUN` now (the last unblocked by HW-04 landing this session); `MANUAL RELAYTEST` still needs a safety review before its wire format is worth finalizing; Compliance sweep stays a bench tool, not an operator control — both per the existing `Doc/GUI_protocol_proposed_commands.md` recommendation. | 2026-08-08 |
 | ~~GUI-08~~ | **DONE 2026-08-14 — see CL-41.** Turned out not to be a decision at all: (1) `netlist_file.dart`'s `hi == lo` guard wrongly rejected the file's straight-through rows — HI and LO are separate mux banks in `matrix_card.h`, so a matching pin number on both sides is not a collision, and the file's pin numbers are already globally flat by connector order, not per-connector-relative as originally assumed; (2) the file also could not be decoded at all — it's `openpyxl`-generated, and `openpyxl`'s default writer emits a package-absolute relationship target the `excel` package (4.0.6) can't resolve. Both fixed; the real `required_format/example_netlist27072026.xlsx` now loads end to end (20 pairs, regression-tested off disk). | 2026-08-10 |
 
 ### Firmware work queued

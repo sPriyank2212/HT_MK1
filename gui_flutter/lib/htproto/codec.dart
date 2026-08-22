@@ -131,7 +131,14 @@ enum InsulStatus {
 enum TestKind {
   cont('cont'),
   res('res'),
-  insul('insul');
+  insul('insul'),
+  /// `MANUAL SWEEP`'s `!DONE sweep <found> 0` (GUI-06, 2026-08-21) — a
+  /// diagnostic action, not one of the three staged tests; `AppState`
+  /// routes it to its own handler rather than the shared `_onDone`.
+  sweep('sweep'),
+  /// `BUS SCAN`'s `!DONE bus <ok_count> <fault_count>` (GUI-06,
+  /// 2026-08-21) — same reasoning as `sweep`.
+  bus('bus');
 
   final String wire;
   const TestKind(this.wire);
@@ -283,7 +290,26 @@ class commands {
 
   static Uint8List manualOff() => _line('MANUAL OFF');
 
+  /// GUI-06 (2026-08-21): one HS pin against all 256 LS — a bounded version
+  /// of cross-continuity discovery. Whole-run gated on the firmware side
+  /// (`ERR EBUSY` while another run is active), unlike `manualPath`/
+  /// `manualOff`'s instant replies.
+  static Uint8List manualSweep(int hi) =>
+      _line('MANUAL SWEEP ${_checkPin(hi, 'hi')}');
+
+  /// GUI-06 (2026-08-21): probes every I2C device the firmware has a
+  /// confirmed schematic address for (Matrix Card + the ADS124S08) —
+  /// deliberately not the HV cards, whose address straps are still
+  /// unverified (`hv_card.c`, BU-03).
+  static Uint8List busScan() => _line('BUS SCAN');
+
   static Uint8List calGet() => _line('CAL GET');
+
+  /// GUI-06 (2026-08-21), unblocked by HW-04: a standalone
+  /// `Kelvin_MeasurePair` on the given pair, surfacing whether the HW-04
+  /// ratiometric reference actually worked for this reading.
+  static Uint8List calRun(int hi, int lo) =>
+      _line('CAL RUN ${_checkPin(hi, 'hi')} ${_checkPin(lo, 'lo')}');
 
   static Uint8List limitsGet() => _line('LIMITS GET');
 
@@ -291,6 +317,12 @@ class commands {
         'LIMITS SET r_max_mohm=${_checkUint(rMaxMohm, 'r_max_mohm')}'
         ' ins_min_mohm=${_checkUint(insMinMohm, 'ins_min_mohm')}',
       );
+
+  /// FW-14: DS18B20 board-temperature read. Answered `<OK started`, then
+  /// (only on success - a missing/unpowered sensor or a bad CRC replies with
+  /// nothing at all, see `Core/Src/app/tasks.c` `CMD_TEMP_READ`) a `!TEMP`
+  /// event some time later. Callers must time out rather than wait forever.
+  static Uint8List tempRead() => _line('TEMP READ');
 }
 
 // ---------------------------------------------------------------------------
@@ -387,11 +419,13 @@ m.Message _parseReply(List<String> tokens, String line) {
       lo: _parseUint(tokens[2], 'NET lo'),
     );
   }
-  if (head == 'CAL' && tokens.length == 4) {
+  if (head == 'CAL' && tokens.length == 6) {
     return m.CalReply(
       currentUa: _kvUint(tokens[1], 'current_ua', 'CAL'),
-      gain: _kvUint(tokens[2], 'gain', 'CAL'),
+      method: _kv(tokens[2], 'method', 'CAL'),
       rrefMohm: _kvUint(tokens[3], 'rref_mohm', 'CAL'),
+      rrefTolMohm: _kvUint(tokens[4], 'rref_tol_mohm', 'CAL'),
+      gainMax: _kvUint(tokens[5], 'gain_max', 'CAL'),
     );
   }
   if (head == 'LIMITS' && tokens.length == 3) {
@@ -458,6 +492,32 @@ m.Message _parseEvent(List<String> tokens, String line) {
   }
   if (head == 'HV' && tokens.length == 2) {
     return m.HvEvent(millivolts: _parseInt(tokens[1], 'HV'));
+  }
+  if (head == 'TEMP' && tokens.length == 2) {
+    return m.TempEvent(deciCelsius: _parseInt(tokens[1], 'TEMP'));
+  }
+  if (head == 'MANUAL' && tokens.length == 3) {
+    return m.ManualEvent(
+      adcMv: _kvInt(tokens[1], 'adc_mv', 'MANUAL'),
+      adcCode: _kvUint(tokens[2], 'adc_code', 'MANUAL'),
+    );
+  }
+  if (head == 'CAL_RESULT' && tokens.length == 4) {
+    if (tokens[3] != 'pass' && tokens[3] != 'fail') {
+      throw ProtocolError(
+          'CAL_RESULT: expected pass|fail, got ${_r(tokens[3])}');
+    }
+    return m.CalResultEvent(
+      rMohm: _kvInt(tokens[1], 'r_mohm', 'CAL_RESULT'),
+      ratiometric: _kvUint(tokens[2], 'ratiometric', 'CAL_RESULT') != 0,
+      pass: tokens[3] == 'pass',
+    );
+  }
+  if (head == 'BUSLINE' && tokens.length == 3) {
+    if (tokens[2] != 'ok' && tokens[2] != 'fault') {
+      throw ProtocolError('BUSLINE: expected ok|fault, got ${_r(tokens[2])}');
+    }
+    return m.BusLineEvent(name: tokens[1], ok: tokens[2] == 'ok');
   }
   if (head == 'SAFE' && tokens.length == 1) return const m.SafeEvent();
   throw ProtocolError('unrecognised event: ${_r(line)}');

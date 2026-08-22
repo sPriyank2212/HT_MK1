@@ -425,3 +425,97 @@ uint8_t Board_IsReady(void)
 {
   return s_board_ready;
 }
+
+/**
+  * @brief  Probe one MCP23017 by address only - a real transaction (a
+  *         register read would need to know each part's own state), so a
+  *         genuine ACK/NAK, not a guess.
+  */
+static uint8_t board_probe(BoardBusEntry_t *e, I2C_HandleTypeDef *hi2c,
+                           uint8_t addr7)
+{
+  e->addr7 = addr7;
+  e->ok = (HAL_I2C_IsDeviceReady(hi2c, (uint16_t)(addr7 << 1U), 2U, 25U)
+           == HAL_OK) ? 1U : 0U;
+  return e->ok;
+}
+
+uint8_t Board_ScanBus(BoardBusEntry_t *out, uint8_t max)
+{
+  uint8_t n = 0U;
+
+  if (out == NULL || max == 0U)
+  {
+    return 0U;
+  }
+
+  /* U21 - channel/segment select. Local to I2C3, no bus-claim needed. Names
+   * are single tokens (no spaces) - Proto_EvtBusLine emits them on the wire,
+   * a space-delimited protocol. */
+  out[n].name = "U21";
+  (void)board_probe(&out[n], g_matrix.sel.hi2c, g_matrix.sel.addr7);
+  n++;
+
+  /* Everything else is on the shared bus behind this card's own segment
+   * enable - claim it for the whole scan, same discipline as any other
+   * multi-register Matrix Card access. */
+  MatrixCard_BusClaim(&g_matrix);
+
+  if (MatrixCard_SelectSegment(&g_matrix, MATRIX_SEG_FORCE) == HAL_OK)
+  {
+    static const char *const force_names[MATRIX_EXP_PER_BANK * 2U] = {
+      "U101", "U105", "U102", "U106"
+    };
+    const MCP23017_t *force[MATRIX_EXP_PER_BANK * 2U] = {
+      &g_matrix.hi_en[0], &g_matrix.hi_en[1], &g_matrix.lo_en[0], &g_matrix.lo_en[1]
+    };
+    uint8_t i;
+    for (i = 0U; i < (MATRIX_EXP_PER_BANK * 2U) && n < max; i++)
+    {
+      out[n].name = force_names[i];
+      (void)board_probe(&out[n], force[i]->hi2c, force[i]->addr7);
+      n++;
+    }
+  }
+
+  if (MatrixCard_SelectSegment(&g_matrix, MATRIX_SEG_SENSE) == HAL_OK)
+  {
+    static const char *const sense_names[MATRIX_EXP_PER_BANK * 2U] = {
+      "U66", "U67", "U107", "U108"
+    };
+    const MCP23017_t *sense[MATRIX_EXP_PER_BANK * 2U] = {
+      &g_matrix.hi_sns[0], &g_matrix.hi_sns[1], &g_matrix.lo_sns[0], &g_matrix.lo_sns[1]
+    };
+    uint8_t i;
+    for (i = 0U; i < (MATRIX_EXP_PER_BANK * 2U) && n < max; i++)
+    {
+      out[n].name = sense_names[i];
+      (void)board_probe(&out[n], sense[i]->hi2c, sense[i]->addr7);
+      n++;
+    }
+    /* U69, the ADS124S08 control expander, lives on this same segment
+     * (board.c's own s_adcctl, not part of MatrixCard_t - see
+     * board_init_ads124s08()). */
+    if (n < max)
+    {
+      out[n].name = "U69";
+      (void)board_probe(&out[n], s_adcctl.hi2c, s_adcctl.addr7);
+      n++;
+    }
+  }
+
+  MatrixCard_BusRelease(&g_matrix);
+
+  /* ADS124S08 itself: a real identity check (DEVID field), not just a bus
+   * ACK - SPI devices don't ACK/NAK the way I2C does. */
+  if (n < max)
+  {
+    uint8_t id = 0U;
+    out[n].name = "U68";
+    out[n].addr7 = 0U; /* SPI, not I2C-addressed */
+    out[n].ok = (ADS124S08_CheckId(&g_ads124s08, &id) == HAL_OK) ? 1U : 0U;
+    n++;
+  }
+
+  return n;
+}

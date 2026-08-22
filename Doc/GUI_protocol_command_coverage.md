@@ -37,13 +37,17 @@ at the protocol layer itself (no command exists for what the button claims to do
 | `INSUL ARM` / `INSUL RUN` | `commands.insulArm/insulRun()` | Yes — `AppState.runHv()` | Works | |
 | `HV SET` | `commands.hvSet()` | Never | **Accepted, does not move the rail** (rail is driven by `INSUL RUN` itself) | Correctly unused for the normal flow; only meaningful as a manual/diagnostic control |
 | `FIXTURE` | `commands.fixture()` | Yes — `AppState.confirmHandover()` | Works | |
-| `MANUAL PATH` | `commands.manualPath()` | **Done** — `AppState.manualClosePath()` | Works | Wired to "Close path"; verified against real hardware (`<OK started`) |
+| `MANUAL PATH` | `commands.manualPath()` | **Done** — `AppState.manualClosePath()` | Works | Wired to "Close path"; verified against real hardware (`<OK started`). **Updated 2026-08-21**: also reports its own reading via a new `!MANUAL` event (GUI-06) — see `MANUAL SWEEP`/`CAL RUN`/`BUS SCAN` below |
+| `MANUAL SWEEP` | `commands.manualSweep()` | **Done** — `AppState.manualSweep()` | Works | New command, GUI-06/2026-08-21. Wired to Diag "Sweep this HS" (was `disabled: true`); one HS pin against all 256 LS, whole-run gated. Kept off the shared Continuity run-state machinery on purpose — see `PROJECT_LOG.md` GUI-33 |
+| `CAL RUN` | `commands.calRun()` | **Done** — `AppState.calRun()` | Works | New command, GUI-06/2026-08-21, unblocked by HW-04 landing this session. Wired to Diag "Run self-cal" (was `disabled: true`); reuses `CMD_KELVIN`, dead firmware code until today |
+| `BUS SCAN` | `commands.busScan()` | **Done** — `AppState.busScan()` | Works, scoped | New command + new firmware (`Board_ScanBus`), GUI-06/2026-08-21. Wired to the Bus map panel's "Rescan" (was `disabled: true`). Only probes the Matrix Card + ADS124S08 — HV cards deliberately excluded, their address straps are still unconfirmed (`hv_card.c`, BU-03) |
 | `MANUAL OFF` | `commands.manualOff()` | **Done** — `AppState.manualOff()` | Works | Wired to "Discharge"; verified against real hardware |
 | `MANUAL RELAY` | `commands.manualRelay()` | Never (by design) | **Refused by design** (`ERR EHW`) | Brief §0 and §8 Q3: *"the firmware refuses, a GUI confirm is not sufficient... **do not offer the control**."* **Done** — "Close HS only"/"Close LS pattern" removed, replaced with an explanatory note |
 | `FAULT CLEAR` | `commands.faultClear()` | **Done** — `AppState.clearFault()` | Works | Wired; a "Clear Fault" control now appears in the status bar while `AppState.inFault` is true. See §2 — kept as the original finding, now resolved |
 | `CAL GET` | `commands.calGet()` | Yes — `AppState.connect()` | Works | **Done** — the Diag "Calibration" panel now reads `s.cal` instead of static mock numbers; the three rows CAL GET doesn't cover (loopback/ADC offset, HV divider) are labelled as not reported rather than shown as invented |
 | `LIMITS GET` | `commands.limitsGet()` | Yes — `AppState.connect()` | Works | |
 | `LIMITS SET` | `commands.limitsSet()` | **Never** | Works | Real gap — there is no way to change `r_max_mohm`/`ins_min_mohm` from the GUI at all |
+| `TEMP READ` | `commands.tempRead()` | **Done** — `AppState.readTemp()` | Works | Firmware (FW-14) shipped 2026-08-16 with no GUI-side encoder or `!TEMP` event parser at all — `codec.dart` would have thrown `ProtocolError` on a real reply. Wired to Diag "Read temperature"; the reading and its own event parsing are new this session |
 
 ## 2. The one that actually mattered: `FAULT CLEAR` didn't exist in the GUI (now fixed)
 

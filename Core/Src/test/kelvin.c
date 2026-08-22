@@ -87,6 +87,9 @@ HAL_StatusTypeDef Kelvin_MeasurePair(uint16_t hi_pin, uint16_t lo_pin,
 {
   HAL_StatusTypeDef st;
   int32_t code_excited, code_zero;
+  int32_t ref_excited = 0, ref_zero = 0;
+  ADS124S08_Gain_t gain_dut = ADS124S08_GAIN_1;
+  uint8_t ref_ok = 0U;
 
   if (res == NULL)
   {
@@ -95,6 +98,7 @@ HAL_StatusTypeDef Kelvin_MeasurePair(uint16_t hi_pin, uint16_t lo_pin,
   res->code           = 0;
   res->volts          = 0.0f;
   res->resistance_ohm = 0.0f;
+  res->ratiometric    = 0U;
   res->verdict        = TEST_ERROR;
 
   st = MatrixCard_SetSensePaired(&g_matrix, 1U);
@@ -128,10 +132,50 @@ HAL_StatusTypeDef Kelvin_MeasurePair(uint16_t hi_pin, uint16_t lo_pin,
   {
     goto release;
   }
+  gain_dut = g_ads124s08.gain;
 
-  /* Same gain, no excitation: the system-offset baseline. */
+  /* HW-04: R131 carries the same excitation current in series with the DUT
+   * (IDAC -> HI_COM -> DUT -> LO_COM -> R131 -> GND) and is tapped on AIN8.
+   * Reading it lets resistance be computed as a ratio against R131 instead of
+   * trusting the IDAC's programmed magnitude - the whole point of HW-04. PGA
+   * bypassed (fixed gain 1): 2 mA * 100 R = 200 mV, well inside range without
+   * auto-ranging. Best-effort - any failure here just falls back to the
+   * IDAC-current estimate below rather than failing the whole pin. */
+  st = ADS124S08_SetMux(&g_ads124s08, ADS124S08_MUX_AIN8, ADS124S08_MUX_AINCOM);
+  if (st == HAL_OK)
+  {
+    st = ADS124S08_BypassPga(&g_ads124s08);
+  }
+  if (st == HAL_OK)
+  {
+    Board_SettleMs(KELVIN_SETTLE_MS);
+    st = ADS124S08_ConvertOnce(&g_ads124s08, &ref_excited);
+  }
+  ref_ok = (st == HAL_OK) ? 1U : 0U;
+
+  /* Zero-current baseline. Same gain/mux as the excited read of each
+   * channel, so the subtraction removes only the current-dependent signal. */
   st = ADS124S08_SetIdac(&g_ads124s08, ADS124S08_IDAC_OFF, ADS124S08_IDAC_OFF,
                          ADS124S08_IMAG_OFF);
+  if (st != HAL_OK)
+  {
+    goto release;
+  }
+  Board_SettleMs(KELVIN_SETTLE_MS);
+
+  if (ref_ok)
+  {
+    /* Mux/PGA are still on AIN8/AINCOM/bypassed from the excited read. */
+    st = ADS124S08_ConvertOnce(&g_ads124s08, &ref_zero);
+    ref_ok = (st == HAL_OK) ? 1U : 0U;
+  }
+
+  st = ADS124S08_SetMux(&g_ads124s08, ADS124S08_MUX_AIN0, ADS124S08_MUX_AIN1);
+  if (st != HAL_OK)
+  {
+    goto release;
+  }
+  st = ADS124S08_SetGain(&g_ads124s08, gain_dut);
   if (st != HAL_OK)
   {
     goto release;
@@ -143,15 +187,29 @@ HAL_StatusTypeDef Kelvin_MeasurePair(uint16_t hi_pin, uint16_t lo_pin,
     goto release;
   }
 
-  res->code           = code_excited - code_zero;
-  res->volts          = ADS124S08_CodeToVolts(&g_ads124s08, res->code);
-  res->resistance_ohm = ADS124S08_OhmsFromCurrent(&g_ads124s08, res->code,
-                                                   KELVIN_FORCE_CURRENT_A);
-  res->verdict        = (res->resistance_ohm <= KELVIN_R_MAX_OHM) ? TEST_PASS
-                                                                   : TEST_FAIL;
+  res->code  = code_excited - code_zero;
+  res->volts = ADS124S08_CodeToVolts(&g_ads124s08, res->code);
+
+  if (ref_ok && (ref_excited - ref_zero) != 0)
+  {
+    res->resistance_ohm = ADS124S08_OhmsRatiometric(
+        res->code, gain_dut, ref_excited - ref_zero, ADS124S08_GAIN_1,
+        KELVIN_CAL_R_REF_OHM);
+    res->ratiometric = 1U;
+  }
+  else
+  {
+    res->resistance_ohm = ADS124S08_OhmsFromCurrent(&g_ads124s08, res->code,
+                                                     KELVIN_FORCE_CURRENT_A);
+  }
+  res->verdict = (res->resistance_ohm <= KELVIN_R_MAX_OHM) ? TEST_PASS
+                                                             : TEST_FAIL;
 
 release:
-  /* Stop forcing current and open the matrix. */
+  /* Stop forcing current, and always leave the mux back on the normal Kelvin
+   * pair (AIN0/AIN1) - the reference-channel read above may have left it on
+   * AIN8/AINCOM, and nothing else in this driver ever sets it back. */
+  (void)ADS124S08_SetMux(&g_ads124s08, ADS124S08_MUX_AIN0, ADS124S08_MUX_AIN1);
   (void)ADS124S08_SetIdac(&g_ads124s08, ADS124S08_IDAC_OFF, ADS124S08_IDAC_OFF,
                           ADS124S08_IMAG_OFF);
   (void)Frontend_SetMode(&g_frontend, FRONTEND_MODE_CONTINUITY);

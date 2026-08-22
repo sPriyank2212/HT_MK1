@@ -51,7 +51,19 @@ typedef enum
    * than answered inline in proto.c because a real conversion blocks for a
    * little over 750 ms - doing that in tComms would stall the protocol
    * parser (and every other command's reply) for most of a second. */
-  CMD_TEMP_READ   = 9
+  CMD_TEMP_READ   = 9,
+  /* One HS pin against all 256 LS - a bounded CMD_CONT_RUN discover=1, for
+   * probing a single suspect line without a full 65,536-point scan
+   * (GUI-06, 2026-08-21). a=hi pin. Whole-run gating (s_busy/EBUSY) applies,
+   * same as the CMD_*_RUN family above. */
+  CMD_MANUAL_SWEEP = 10,
+  /* Probes every I2C device this project has a confirmed address for
+   * (Board_ScanBus, board.c) plus the ADS124S08. Routed through the
+   * sequencer, not answered inline in proto.c, for the same reason
+   * CMD_TEMP_READ is: it touches the shared hardware mutex/bus state the
+   * sequencer already serialises everything else through (GUI-06,
+   * 2026-08-21). */
+  CMD_BUS_SCAN     = 11
 } TestCmdType_t;
 
 /* CMD_FORCE_SAFE.b: ask the sequencer to emit !FIXTURE (value in .a) after the

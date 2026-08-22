@@ -30,9 +30,15 @@ const int protoVersion = 1;
 /// Simulator defaults, standing in for instrument configuration.
 const int defaultLimitRMaxMohm = 1000;
 const int defaultLimitInsMinMohm = 100;
-const int defaultCalCurrentUa = 1000;
-const int defaultCalGain = 16;
+/// Matches the real firmware's kelvin.h constants (KELVIN_FORCE_CURRENT_A,
+/// KELVIN_CAL_R_REF_OHM/_TOL_PCT) and its CAL GET reply shape - see
+/// Core/Src/app/proto.c. Kept in sync by hand; there is no shared source
+/// between Dart and C for this project.
+const int defaultCalCurrentUa = 2000;
+const String defaultCalMethod = 'ratiometric';
 const int defaultCalRrefMohm = 100000;
+const int defaultCalRrefTolMohm = 10;
+const int defaultCalGainMax = 128;
 
 /// HV rail range accepted by HV SET (500 V in millivolts).
 const int hvMaxMv = 500000;
@@ -128,8 +134,11 @@ class _InstrumentState {
   int rMaxMohm = defaultLimitRMaxMohm;
   int insMinMohm = defaultLimitInsMinMohm;
   int calCurrentUa = defaultCalCurrentUa;
-  int calGain = defaultCalGain;
+  String calMethod = defaultCalMethod;
   int calRrefMohm = defaultCalRrefMohm;
+  int calRrefTolMohm = defaultCalRrefTolMohm;
+  int boardTempDeciC = 250; // 25.0 C, a plausible bench room temperature
+  int calGainMax = defaultCalGainMax;
 }
 
 /// Protocol state machine. Transport feeds it lines and it sends lines back.
@@ -289,22 +298,61 @@ class InstrumentSim {
         if (!(hi >= 1 && hi <= 256 && lo >= 1 && lo <= 256)) {
           return 'ERR ERANGE pin out of range';
         }
-        return 'OK';
+        // Real firmware queues MANUAL PATH (CMD_CONTINUITY) - <OK started,
+        // then a !MANUAL event once the one-shot connect/read/release
+        // finishes (GUI-06, 2026-08-21). A connected pair reads a plausible
+        // "wire present" voltage (~1.5 V of the CONTINUITY_CONNECTED_V_MIN..
+        // _MAX band in continuity.h); this fake harness has no real
+        // pass/fail model per pin outside a run, so it always reports as
+        // connected - honest within what a --sim connection can simulate.
+        _deferred = () async {
+          await Future.delayed(const Duration(milliseconds: 20));
+          const mv = 1500;
+          const code = (mv * 4096) ~/ 3300; // AD7476 12-bit, VREF 3.3 V
+          _emitEvent('MANUAL adc_mv=$mv adc_code=$code');
+        };
+        return 'OK started';
       }
       if (head == 'MANUAL' && t.length == 5 && t[1] == 'RELAY') {
         // Refused by design (brief section 0).
         return 'ERR EHW manual relay control refused by design';
       }
+      if (head == 'MANUAL' && t.length == 3 && t[1] == 'SWEEP') {
+        final hi = int.parse(t[2]);
+        if (hi < 1 || hi > 256) return 'ERR ERANGE pin out of range';
+        return _startSweep(hi);
+      }
       if (head == 'MANUAL' && t.length == 2 && t[1] == 'OFF') return 'OK';
+      if (head == 'CAL' && t.length == 4 && t[1] == 'RUN') {
+        final hi = int.parse(t[2]);
+        final lo = int.parse(t[3]);
+        if (!(hi >= 1 && hi <= 256 && lo >= 1 && lo <= 256)) {
+          return 'ERR ERANGE pin out of range';
+        }
+        // No real ADS124S08 to ratio against - reports a plausible healthy
+        // reading, same honesty level as MANUAL PATH's fixed !MANUAL value.
+        _deferred = () async {
+          await Future.delayed(const Duration(milliseconds: 30));
+          _emitEvent('CAL_RESULT r_mohm=45 ratiometric=1 pass');
+        };
+        return 'OK started';
+      }
       if (head == 'CAL' && t.length == 2 && t[1] == 'GET') {
-        return 'CAL current_ua=${_st.calCurrentUa} gain=${_st.calGain} '
-            'rref_mohm=${_st.calRrefMohm}';
+        return 'CAL current_ua=${_st.calCurrentUa} method=${_st.calMethod} '
+            'rref_mohm=${_st.calRrefMohm} rref_tol_mohm=${_st.calRrefTolMohm} '
+            'gain_max=${_st.calGainMax}';
       }
       if (head == 'LIMITS' && t.length == 2 && t[1] == 'GET') {
         return 'LIMITS r_max_mohm=${_st.rMaxMohm} ins_min_mohm=${_st.insMinMohm}';
       }
       if (head == 'LIMITS' && t.length == 4 && t[1] == 'SET') {
         return _limitsSet(t[2], t[3]);
+      }
+      if (head == 'TEMP' && t.length == 2 && t[1] == 'READ') {
+        return _readTemp();
+      }
+      if (head == 'BUS' && t.length == 2 && t[1] == 'SCAN') {
+        return _busScan();
       }
     } on FormatException {
       // fall through to ESYNTAX
@@ -411,6 +459,76 @@ class InstrumentSim {
       _runFuture = fn();
       await _runFuture;
       _runFuture = null;
+    };
+    return 'OK started';
+  }
+
+  /// `MANUAL SWEEP <hi>` (GUI-06, 2026-08-21) — one HS pin against all 256
+  /// LS. Same whole-run EBUSY gating as `_startRun`, but its own dispatch:
+  /// `!DONE sweep ...` isn't one of `_startRun`'s three kinds and shouldn't
+  /// touch `AppState`'s main run state either (`TestKind.sweep`).
+  String _startSweep(int hi) {
+    if (_st.state == State.running) {
+      return 'ERR EBUSY a run is already in progress';
+    }
+    _runStop = false;
+    _st.state = State.running;
+    _deferred = () async {
+      _emitEvent('STATE ${State.running.wire}');
+      _runFuture = _runSweep(hi);
+      await _runFuture;
+      _runFuture = null;
+    };
+    return 'OK started';
+  }
+
+  Future<void> _runSweep(int hi) async {
+    final matches = scenario.nets.where((n) => n.hi == hi);
+    var found = 0;
+    for (final n in matches) {
+      if (_runStop) break;
+      if (n.cont == ContStatus.pass) {
+        _emitEvent('CONT ${n.hi} ${n.lo} ${n.cont.wire}');
+        found++;
+      }
+      await Future<void>.delayed(interval);
+    }
+    _emitEvent('PROGRESS 256 256');
+    await _endRun('sweep', found, 0, _runStop);
+  }
+
+  /// `BUS SCAN` (GUI-06, 2026-08-21). The demo has no real bus to probe, so
+  /// this reports the same device set the real firmware's `Board_ScanBus`
+  /// does, all healthy — a plausible instrument's answer, not a claim that
+  /// this is reading real hardware.
+  static const List<String> _busDevices = [
+    'U21', 'U101', 'U105', 'U102', 'U106', 'U66', 'U67', 'U107', 'U108',
+    'U69', 'U68',
+  ];
+
+  String _busScan() {
+    if (_st.state == State.running) {
+      return 'ERR EBUSY a run is already in progress';
+    }
+    _deferred = () async {
+      _emitEvent('STATE ${State.running.wire}');
+      for (final name in _busDevices) {
+        _emitEvent('BUSLINE $name ok');
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+      _emitEvent('STATE ${State.idle.wire}');
+      _emitEvent('DONE bus ${_busDevices.length} 0');
+    };
+    return 'OK started';
+  }
+
+  /// FW-14/DS18B20: `<OK started` immediately, `!TEMP` once the (simulated)
+  /// ~750 ms conversion completes - same "OK started then an event" shape as
+  /// _startRun, just for a single reading instead of a streamed run.
+  String _readTemp() {
+    _deferred = () async {
+      await Future.delayed(const Duration(milliseconds: 50));
+      _emitEvent('TEMP ${_st.boardTempDeciC}');
     };
     return 'OK started';
   }

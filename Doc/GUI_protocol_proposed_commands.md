@@ -1,5 +1,29 @@
 # Proposed New Protocol Commands
 
+## Resolved 2026-08-21 (GUI-06 decided and built)
+
+`MANUAL READ`, `BUS SCAN`, `MANUAL SWEEP <hi>` and `CAL RUN` are all built now (`PROJECT_LOG.md`
+FW-16/GUI-33; see `Doc/GUI_development_brief.md` §3.2/§3.3 for the shipped wire formats, which
+differ from two of the drafts below in real ways, not just naming):
+
+- **`MANUAL READ` was never built as its own command.** The draft below assumed `MANUAL PATH`
+  holds the path closed until `MANUAL OFF`, so a separate on-demand read made sense. Checking
+  `Continuity_TestPair` directly found that assumption wrong — the matrix is released again
+  immediately after `MANUAL PATH`'s own one-shot read, on every exit path. Fixed the real gap
+  instead: `MANUAL PATH` now reports the reading it already takes internally, via a new `!MANUAL`
+  event.
+- **`BUS SCAN`** shipped scoped down from "every bus" to the Matrix Card + ADS124S08 only — the
+  HV cards' address straps are still unconfirmed (`hv_card.c`, BU-03), and reporting ok/fault
+  against them would have claimed a confidence this project doesn't have yet.
+- **`MANUAL SWEEP <hi>`** and **`CAL RUN <hi> <lo>`** shipped close to the drafts below — `CAL RUN`
+  once HW-04 (the ratiometric R131 reference this section's write-up was waiting on) landed the
+  same session.
+- Auto-range PGA's button was already removed in an earlier session (GUI-09/CL-40), confirmed
+  before doing anything, not re-done. Compliance sweep and `MANUAL RELAYTEST` are unchanged —
+  still a bench tool and still pending a safety review, respectively.
+
+The rest of this document is kept as the original analysis record, not updated in place.
+
 ## Re-checked 2026-08-12 against current firmware (GUI-06)
 
 This document was written 2026-08-08, before **FW-02** (Kelvin measurement path wired up,

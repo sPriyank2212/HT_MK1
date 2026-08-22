@@ -19,9 +19,17 @@
   *          hard ceiling (IDACMAG code 1001, there is no higher code; see
   *          Doc/idac_current_source.md S3). Not a TUNE placeholder like the
   *          old DAC8775 code was - this is the actual, only current the
-  *          hardware can produce. Ratiometric measurement (R = R_ref * code /
-  *          (gain * 2^23), which would cancel IDAC error entirely) needs
-  *          HW-04 and is not available yet - see ads124s08.h.
+  *          hardware can produce.
+  *
+  *          HW-04 (landed): R131 (KELVIN_CAL_R_REF_OHM, 0.01%) sits in the
+  *          same current loop as the DUT (IDAC -> HI_COM -> DUT -> LO_COM ->
+  *          R131 -> GND) and is tapped on AIN8. Every measurement also reads
+  *          that channel and computes R ratiometrically against R131
+  *          (ADS124S08_OhmsRatiometric) - this cancels the IDAC's own
+  *          tolerance (+/-3% worst case) entirely, leaving R131's 0.01% as
+  *          the accuracy floor instead. If the reference-channel read fails
+  *          for any reason, the result falls back to the older R = V / I_force
+  *          estimate (KelvinResult_t.ratiometric reports which one was used).
   ******************************************************************************
   */
 /* USER CODE END Header */
@@ -52,6 +60,16 @@ extern "C" {
 #define KELVIN_FORCE_CURRENT_A  0.002f       /* amps actually forced at KELVIN_IDAC_MAG */
 #endif
 
+/* HW-04: R131, the LO_COM pull-down (Matrix sheet, 1206 0.01%), tapped on
+ * AIN8 for a ratiometric read. Carries the same excitation current as the
+ * DUT, so its own tolerance - not the IDAC's - sets the accuracy floor. */
+#ifndef KELVIN_CAL_R_REF_OHM
+#define KELVIN_CAL_R_REF_OHM    100.0f
+#endif
+#ifndef KELVIN_CAL_R_REF_TOL_PCT
+#define KELVIN_CAL_R_REF_TOL_PCT 0.01f
+#endif
+
 /* Acceptance limits (ohms). TUNE per harness spec. */
 #ifndef KELVIN_R_MAX_OHM
 #define KELVIN_R_MAX_OHM        5.0f
@@ -68,6 +86,10 @@ typedef struct
   int32_t       code;           /* ADS124S08 code, excited minus zero-current */
   float         volts;          /* corresponding volts at the ADC input       */
   float         resistance_ohm; /* computed wire resistance                   */
+  uint8_t       ratiometric;    /* 1 = resistance_ohm came from the real HW-04
+                                  * ratiometric read against R131; 0 = the
+                                  * reference-channel read failed and this
+                                  * fell back to R = V / KELVIN_FORCE_CURRENT_A */
   TestVerdict_t verdict;
 } KelvinResult_t;
 

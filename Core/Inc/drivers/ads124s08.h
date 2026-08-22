@@ -7,7 +7,9 @@
   *          Matrix Card U68. Reads AIN0 (HI_SENSE) - AIN1 (LO_SENSE)
   *          differentially: the 4-wire Kelvin measurement. AINCOM is tied to
   *          GND through jumper JP1; REFP0/REFN0 are no-connect, so the internal
-  *          2.5 V reference is used.
+  *          2.5 V reference is used. HW-04: AIN8 also taps LO_COM (the top of
+  *          R131, 100 R 0.01%) for a ratiometric read against a known
+  *          resistor - see ADS124S08_OhmsRatiometric() and kelvin.c.
   *
   *          THE CONTROL LINES ARE NOT GPIO. CS, RESET and START/SYNC are driven
   *          by MCP23017 U69 over I2C, and DRDY is an expander INPUT. That has
@@ -84,6 +86,8 @@ extern "C" {
 #define ADS124S08_MUX_AIN1       0x1U
 #define ADS124S08_MUX_AIN2       0x2U
 #define ADS124S08_MUX_AIN3       0x3U
+#define ADS124S08_MUX_AIN8       0x8U   /* HW-04: LO_COM tap, top of R131 - the
+                                          * ratiometric calibration reference */
 #define ADS124S08_MUX_AIN9       0x9U   /* Kelvin excitation output - see IDACMUX */
 #define ADS124S08_MUX_AINCOM     0xCU
 
@@ -277,13 +281,31 @@ HAL_StatusTypeDef ADS124S08_ConvertAverage(ADS124S08_t *dev, uint16_t n, int32_t
 float ADS124S08_CodeToVolts(const ADS124S08_t *dev, int32_t code);
 
 /**
-  * @brief  Ratiometric resistance: R = R_ref * code / (gain * 2^23).
-  * @note   Valid only when the reference is derived from the same current that
-  *         flows through the DUT. With the internal 2.5 V reference this does
-  *         NOT hold - use ADS124S08_OhmsFromCurrent() instead until HW-04 is
-  *         implemented.
+  * @brief  Ratiometric resistance from two single-ended conversions taken
+  *         while the same excitation current flows through the DUT and a
+  *         known reference resistor in series - HW-04: R131 (0.01%) tapped on
+  *         AIN8, in series with the IDAC's return path through the DUT.
+  * @note   VREF is not used at all - both codes are expressed as fractions of
+  *         their own full scale (code / gain) and divided, so the internal
+  *         2.5 V reference and the IDAC's absolute current both cancel.
+  *         Accuracy is set by r_ref_ohms's tolerance, not the excitation
+  *         source's. The two reads may use different PGA gains (the DUT
+  *         channel auto-ranges; the reference channel is read with the PGA
+  *         bypassed, see ADS124S08_BypassPga) - each is normalised by its own
+  *         gain before the ratio is taken.
+  * @param  code_dut  : [in] DUT channel conversion (excited minus zero).
+  * @param  gain_dut  : [in] PGA gain the DUT channel was read at.
+  * @param  code_ref  : [in] reference-resistor channel conversion (excited
+  *                          minus zero).
+  * @param  gain_ref  : [in] PGA gain the reference channel was read at.
+  * @param  r_ref_ohms: [in] reference resistor value carrying the same
+  *                          current as the DUT.
+  * @retval r_ref_ohms * (code_dut / gain_dut) / (code_ref / gain_ref), or 0
+  *         if code_ref is 0 (no valid reference reading).
   */
-float ADS124S08_OhmsRatiometric(const ADS124S08_t *dev, int32_t code, float r_ref_ohms);
+float ADS124S08_OhmsRatiometric(int32_t code_dut, ADS124S08_Gain_t gain_dut,
+                                int32_t code_ref, ADS124S08_Gain_t gain_ref,
+                                float r_ref_ohms);
 
 /**
   * @brief  Resistance from a known excitation current: R = V / I.

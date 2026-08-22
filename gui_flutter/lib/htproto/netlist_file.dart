@@ -81,12 +81,24 @@ class GuessedConnector {
   /// different ones, so there is no real src/dst distinction to report.
   final String? side;
 
+  /// True when this id names two different physical roles in the same file
+  /// — its own mated pair (native, straight-through rows) *and* the far end
+  /// of a genuinely different connector's wires (foreign rows) — a real id
+  /// collision in the source data, not an ordinary ambiguous-side pair.
+  /// [pins]/[side] above already account for it (native range only, side
+  /// null), but the wires on the *foreign* rows still can't be placed on
+  /// this connector in the diagram — there's no second block for them to
+  /// live in. Surfaced here so the caller can warn the operator instead of
+  /// silently drawing those specific wires wrong.
+  final bool conflicting;
+
   const GuessedConnector({
     required this.id,
     required this.pins,
     required this.shapeGuess,
     required this.partNumber,
     this.side,
+    this.conflicting = false,
   });
 }
 
@@ -238,24 +250,34 @@ ParsedNetlist _parse(Uint8List bytes, String fileName) {
   final pairs = <ParsedNetPair>[];
   int? cards;
   final connObs = <String, _ConnObs>{};
+  // A row's Conn ID/Conn ID B being equal is what actually means "one mated
+  // connector pair, straight through" - not just "this id was seen as both
+  // src and dst somewhere in the file." Tracked per row (isMirror) so a
+  // connector's own native block (observed on its own mirrored rows) can
+  // never be corrupted by it also being referenced, on OTHER rows, as the
+  // far end of a completely different connector's wires - see the "foreign"
+  // observation handling below and _guessFixture's use of it.
   void observe(int? col, int? partCol, List<Data?> row, int pin,
-      {required bool isSrc}) {
+      {required bool isSrc, required bool isMirror}) {
     if (col == null) return;
     final id = _cellText(at(row, col));
     if (id == null) return;
     final partNumber = partCol == null ? null : _cellText(at(row, partCol));
-    final o = connObs[id];
-    if (o == null) {
-      connObs[id] = _ConnObs(pin, pin, partNumber, isSrc: isSrc);
+    final o = connObs.putIfAbsent(id, _ConnObs.new);
+    o.partNumber ??= partNumber;
+    if (isMirror) {
+      o.nativeMin = o.nativeMin == null ? pin : math.min(o.nativeMin!, pin);
+      o.nativeMax = o.nativeMax == null ? pin : math.max(o.nativeMax!, pin);
+    } else if (isSrc) {
+      o.foreignSrcMin =
+          o.foreignSrcMin == null ? pin : math.min(o.foreignSrcMin!, pin);
+      o.foreignSrcMax =
+          o.foreignSrcMax == null ? pin : math.max(o.foreignSrcMax!, pin);
     } else {
-      if (pin < o.minPin) o.minPin = pin;
-      if (pin > o.maxPin) o.maxPin = pin;
-      o.partNumber ??= partNumber;
-      if (isSrc) {
-        o.seenSrc = true;
-      } else {
-        o.seenDst = true;
-      }
+      o.foreignDstMin =
+          o.foreignDstMin == null ? pin : math.min(o.foreignDstMin!, pin);
+      o.foreignDstMax =
+          o.foreignDstMax == null ? pin : math.max(o.foreignDstMax!, pin);
     }
   }
 
@@ -276,8 +298,11 @@ ParsedNetlist _parse(Uint8List bytes, String fileName) {
       final n = _cellInt(at(row, cardCol));
       if (n != null) cards = cards == null ? n : math.max(cards, n);
     }
-    observe(connACol, partACol, row, hi, isSrc: true);
-    observe(connBCol, partBCol, row, lo, isSrc: false);
+    final srcId = connACol == null ? null : _cellText(at(row, connACol));
+    final dstId = connBCol == null ? null : _cellText(at(row, connBCol));
+    final isMirror = srcId != null && srcId == dstId;
+    observe(connACol, partACol, row, hi, isSrc: true, isMirror: isMirror);
+    observe(connBCol, partBCol, row, lo, isSrc: false, isMirror: isMirror);
     pairs.add(ParsedNetPair(hi, lo, name));
   }
 
@@ -297,21 +322,33 @@ ParsedNetlist _parse(Uint8List bytes, String fileName) {
   return ParsedNetlist(pairs, cards, _guessFixture(connObs));
 }
 
-/// Running (min pin, max pin, first-seen part number) for one `Conn ID`
-/// seen while scanning rows — [_guessFixture] turns this into a
-/// [GuessedConnector] once every row has been visited. [seenSrc]/[seenDst]
-/// track whether this id ever showed up under `Conn ID` (source column) or
-/// `Conn ID B` (destination column) — both can end up true for one id (a
-/// symmetric connector pair reusing one designator on both mating halves).
+/// Per-`Conn ID` pin observations while scanning rows — [_guessFixture] turns
+/// this into a [GuessedConnector] once every row has been visited.
+///
+/// A row's `Conn ID`/`Conn ID B` being equal is what actually means "one
+/// mated connector pair, straight through" (the ordinary case) — not merely
+/// "this id was seen as both src and dst somewhere in the file." So pin
+/// observations are kept in two separate buckets, not one merged min/max:
+///
+/// - [nativeMin]/[nativeMax]: pins from rows where this id mirrored itself
+///   (`Conn ID == Conn ID B`) — the connector's own true block.
+/// - [foreignSrcMin]/[foreignSrcMax] and [foreignDstMin]/[foreignDstMax]:
+///   pins from rows where this id was on one side while the *other* side
+///   named a genuinely different connector — a real box-to-box wire, not a
+///   mated pair.
+///
+/// Keeping these apart means one connector's own block can never be
+/// corrupted just because it also happens to be the far end of some other
+/// connector's wires on different rows (see `PROJECT_LOG.md`'s note on the
+/// TN-01 connector-id-reuse finding) — without this, editing one row's
+/// `Conn ID B` to point at an already-native connector silently expanded
+/// that connector's guessed pin range and offset, misplacing *unrelated*
+/// pins on the wiring diagram.
 class _ConnObs {
-  int minPin;
-  int maxPin;
+  int? nativeMin, nativeMax;
+  int? foreignSrcMin, foreignSrcMax;
+  int? foreignDstMin, foreignDstMax;
   String? partNumber;
-  bool seenSrc;
-  bool seenDst;
-  _ConnObs(this.minPin, this.maxPin, this.partNumber, {required bool isSrc})
-      : seenSrc = isSrc,
-        seenDst = !isSrc;
 }
 
 /// Turns per-connector pin observations into an ordered connector list.
@@ -327,20 +364,49 @@ class _ConnObs {
 /// edits before this becomes the active fixture (`AppState`).
 List<GuessedConnector>? _guessFixture(Map<String, _ConnObs> connObs) {
   if (connObs.isEmpty) return null;
+
+  // A connector's own range comes from its native (mirrored) block whenever
+  // it has one — foreign observations never widen it. Only a connector with
+  // no native block at all falls back to the old src-or-dst-only range.
+  int minPinOf(_ConnObs o) =>
+      o.nativeMin ?? math.min(o.foreignSrcMin ?? 1 << 30, o.foreignDstMin ?? 1 << 30);
+  int maxPinOf(_ConnObs o) =>
+      o.nativeMax ?? math.max(o.foreignSrcMax ?? 0, o.foreignDstMax ?? 0);
+
   final ids = connObs.keys.toList()
-    ..sort((a, b) => connObs[a]!.minPin.compareTo(connObs[b]!.minPin));
+    ..sort((a, b) => minPinOf(connObs[a]!).compareTo(minPinOf(connObs[b]!)));
   final out = <GuessedConnector>[];
   for (var i = 0; i < ids.length; i++) {
     final o = connObs[ids[i]]!;
+    final oMin = minPinOf(o);
+    final oMax = maxPinOf(o);
     final blockEnd =
-        i + 1 < ids.length ? connObs[ids[i + 1]]!.minPin - 1 : o.maxPin;
-    final pins = math.max(o.maxPin, blockEnd) - o.minPin + 1;
+        i + 1 < ids.length ? minPinOf(connObs[ids[i + 1]]!) - 1 : oMax;
+    final pins = math.max(oMax, blockEnd) - oMin + 1;
+    final hasNative = o.nativeMin != null;
+    final hasForeign = o.foreignSrcMin != null || o.foreignDstMin != null;
+    final String? side;
+    if (hasNative) {
+      // A mated pair by nature - even one also referenced elsewhere as a
+      // foreign far end (that reference just doesn't affect its own block).
+      side = null;
+    } else {
+      final seenSrc = o.foreignSrcMin != null;
+      final seenDst = o.foreignDstMin != null;
+      side = seenSrc == seenDst ? null : (seenSrc ? 'src' : 'dst');
+    }
     out.add(GuessedConnector(
       id: ids[i],
       pins: pins,
       shapeGuess: _guessShape(o.partNumber),
       partNumber: o.partNumber ?? '',
-      side: o.seenSrc == o.seenDst ? null : (o.seenSrc ? 'src' : 'dst'),
+      side: side,
+      // Only the native+foreign combination is a genuine id collision (one
+      // designator standing for two different physical roles) - foreignSrc
+      // and foreignDst together with no native block is just the ordinary
+      // "this connector's other half lives under a different id" case
+      // (e.g. TN-02) and isn't flagged.
+      conflicting: hasNative && hasForeign,
     ));
   }
   return out;

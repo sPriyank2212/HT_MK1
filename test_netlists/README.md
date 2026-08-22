@@ -98,3 +98,37 @@ python test_netlists/generate_test_netlists.py
 
 The generator is committed alongside the `.xlsx` files so the test data stays
 reviewable in diffs even though the binary workbooks are not.
+
+## Connector-layout test files (`TN-*.xlsx`)
+
+The files above only ever exercise the plain `NET`/`HI`/`LO` shape — none of them
+have `Conn ID`/`Part Number` columns, so none of them exercise the connector-layout
+*guess* (`netlist_file.dart`'s `_guessFixture`/`_guessShape`, the thing that turns a
+netlist file into named connectors like "DB9"/"DB37" instead of raw flat pin
+numbers — see `PROJECT_LOG.md` GUI-11/GUI-23). These five do, each built to land on
+a different code path in that guess:
+
+| File | Nets | What it tests |
+|---|---|---|
+| `TN-01_symmetric_dsub_pair.xlsx` | 46 | One mating connector pair per block (same `Conn ID` on Source and Destination — an in-line splice, not box-to-box). `GuessedConnector.side` ends up `null` (ambiguous), one shared base sequence. DB9 (9p) then DB37 (37p), both shape-guess `dsub`. |
+| `TN-02_distinct_src_dst_connectors.xlsx` | 46 | Box-to-box harness — Source and Destination are genuinely different connectors. Exercises `allSided=true` (separate Source/Destination base sequences) and all three shape guesses at once: DB9 (`dsub`), a 37-pin MIL circular (`circ`), one 46-pin TE CPC block (`rect`). |
+| `TN-03_many_small_connectors.xlsx` | 54 | Six small DB9 mating pairs back to back — six separate 9-pin blocks, not one merged connector; stresses block-boundary inference across several consecutive connectors. |
+| `TN-04_single_large_connector.xlsx` | 100 | One 100-pin connector, both ends — the "everything is one block" case, no boundary inference needed at all. |
+| `TN-05_partial_unused_pins.xlsx` | 26 | A real 9-pin DB9 with only 6 pins wired, followed by a real 37-pin DB37 with only 20 wired. The DB9's unused trailing pins are correctly inferred (extended to just before the DB37 starts) since something else bounds it; the DB37's are **not** — it's the last connector in the file, so nothing bounds its guess and it comes out as a 20-pin connector, not 37. A genuine, documented limit of the guess (see `_fixtureFromGuess` in `app_state.dart`), not a bug in this fixture. |
+| `TN-06_conflicting_connector_id.xlsx` | 46 | A real bug, found by hand-editing `TN-01` and turned into a permanent regression case: `DB37-1` is used two different ways in one file — as its own mated pair (pins 10-46, native, like `TN-01`) **and** as the Destination for `DB9-1`'s pins 1-9 (a genuine box-to-box wire, like `TN-02`). Before the fix this corrupted `DB37-1`'s guessed pin count (46 instead of 37) and shifted its offset so pins 1-9's Destination side could never resolve back to it — both ends of that net silently resolved to `DB9-1` instead, drawing as a zero-length "wire" that looked exactly like an open/not-connected net despite passing electrically. Now `DB37-1` keeps its correct 37-pin native range and `GuessedConnector.conflicting` flags the id collision so the operator gets a warning instead of a silently wrong diagram. |
+
+Regenerate with:
+
+```bash
+python test_netlists/generate_connector_test_netlists.py
+```
+
+`gui_flutter/test/connector_test_netlists_test.dart` reads all six off disk through
+the real parser and pins every guess above — including TN-05's asymmetric
+6-of-9/20-of-37 result and TN-06's conflict detection — so a change to the guessing
+logic can't silently drift without a test noticing.
+
+**Part-number pitfall worth knowing:** `_guessShape` treats any part number
+containing `"AMPHENOL"` as **circular**, not rectangular — real Amphenol connectors
+come in both. TN-02/TN-04's rectangular case deliberately uses a TE Connectivity CPC
+part number instead, so it doesn't trip that keyword.

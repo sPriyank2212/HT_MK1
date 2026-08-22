@@ -957,13 +957,28 @@ class _LogBarState extends State<LogBar> {
                     Text(' / ', style: t.logButton(c.ink3)),
                     _tab(context, s, 'wire', 'Console'),
                   ],
+                  if (!kCustomerBuild && s.logView == 'wire') ...[
+                    const SizedBox(width: 10),
+                    MouseRegion(
+                      cursor: SystemMouseCursors.click,
+                      child: GestureDetector(
+                        onTap: s.toggleWireHex,
+                        child: Text(
+                          s.wireLogHex ? 'HEX' : 'TEXT',
+                          style: t.logButton(
+                              s.wireLogHex ? c.accent : c.ink3),
+                        ),
+                      ),
+                    ),
+                  ],
                   const SizedBox(width: 10),
                   Expanded(
                     child: Text(
                       s.logView == 'wire'
                           ? (s.wireLog.isEmpty
                               ? 'no wire traffic yet'
-                              : '${s.wireLog.last.dir}: ${s.wireLog.last.text}')
+                              : '${s.wireLog.last.dir}: '
+                                  '${s.wireLogHex ? s.wireLog.last.hexText : s.wireLog.last.text}')
                           : s.logLineText,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
@@ -1025,7 +1040,8 @@ class _LogBarState extends State<LogBar> {
                                   ),
                                   const SizedBox(width: 10),
                                   Expanded(
-                                    child: Text(e.text,
+                                    child: Text(
+                                        s.wireLogHex ? e.hexText : e.text,
                                         style: t.logBody(c.ink2)),
                                   ),
                                 ],

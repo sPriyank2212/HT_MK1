@@ -94,6 +94,45 @@ void Proto_EvtSafe(void);
   */
 void Proto_EvtTemp(int32_t deci_celsius);
 
+/**
+  * @brief  Report the continuity ADC reading `MANUAL PATH` just took.
+  * @note   GUI-06/CAL RUN decision (2026-08-21): `MANUAL PATH`
+  *         (`CMD_CONTINUITY` in `tasks.c`) already reads the ADC as part of
+  *         its own one-shot connect/settle/read/release sequence - this
+  *         reports that same reading instead of only logging it. There is
+  *         no separate held-open state for a later on-demand re-read: the
+  *         matrix is released again immediately after every `MANUAL PATH`,
+  *         same as every other test in this firmware, so a decoupled
+  *         `MANUAL READ` command would only ever read a floating input.
+  * @param  adc_mv   : [in] millivolts at the ADC input.
+  * @param  adc_code : [in] raw AD7476 12-bit code.
+  */
+void Proto_EvtManual(int32_t adc_mv, uint16_t adc_code);
+
+/**
+  * @brief  Report one device probed by `BUS SCAN` (GUI-06, 2026-08-21).
+  * @param  name : [in] short device token, no spaces (e.g. "U101").
+  * @param  ok   : [in] non-zero if the device responded.
+  */
+void Proto_EvtBusLine(const char *name, uint8_t ok);
+
+/**
+  * @brief  Report a `CAL RUN` result (GUI-06, 2026-08-21).
+  * @note   `CAL RUN <hi> <lo>` is `Kelvin_MeasurePair` (the exact same
+  *         measurement `RES RUN` makes per point - no new measurement
+  *         logic), surfaced as a standalone diagnostic with the one field
+  *         `!RES` doesn't carry: whether the HW-04 ratiometric reference
+  *         (R131 via AIN8) actually worked for this reading, or it fell
+  *         back to the IDAC-current estimate (`KelvinResult_t.ratiometric`,
+  *         kelvin.c). Lets an operator confirm the precision calibration
+  *         path is alive against a known test point on demand, instead of
+  *         only ever trusting it silently inside a full RES RUN.
+  * @param  r_mohm      : [in] measured resistance, milliohms.
+  * @param  ratiometric : [in] non-zero if the R131 reference read succeeded.
+  * @param  pass        : [in] non-zero if r_mohm is within KELVIN_R_MAX_OHM.
+  */
+void Proto_EvtCalResult(int32_t r_mohm, uint8_t ratiometric, uint8_t pass);
+
 /* Liveness heartbeat. The GUI calls five seconds of silence a lost link
  * (brief 3.5.3); an idle instrument is otherwise mute. Call periodically,
  * comfortably inside that window - see PROTO_HEARTBEAT_MS. */

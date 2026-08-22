@@ -183,6 +183,7 @@ static void SafetyTask(void *arg)
 static void run_continuity_all(uint8_t discover);
 static void run_resistance_all(void);
 static void run_insulation_all(void);
+static void run_manual_sweep(uint16_t hi);
 
 /**
   * @brief  Execute one test command under the hardware mutex.
@@ -219,9 +220,10 @@ static void run_command(const TestCmd_t *c)
      * is over, and say why, before returning (FW-10). */
     switch (c->type)
     {
-      case CMD_CONT_RUN:  Proto_EvtState("fault"); Proto_EvtDone("cont",  0U, 0U); break;
-      case CMD_RES_RUN:   Proto_EvtState("fault"); Proto_EvtDone("res",   0U, 0U); break;
-      case CMD_INSUL_RUN: Proto_EvtState("fault"); Proto_EvtDone("insul", 0U, 0U); break;
+      case CMD_CONT_RUN:     Proto_EvtState("fault"); Proto_EvtDone("cont",  0U, 0U); break;
+      case CMD_RES_RUN:      Proto_EvtState("fault"); Proto_EvtDone("res",   0U, 0U); break;
+      case CMD_INSUL_RUN:    Proto_EvtState("fault"); Proto_EvtDone("insul", 0U, 0U); break;
+      case CMD_MANUAL_SWEEP: Proto_EvtState("fault"); Proto_EvtDone("sweep", 0U, 0U); break;
       default: break;
     }
     return;
@@ -236,6 +238,10 @@ static void run_command(const TestCmd_t *c)
       if (Continuity_TestPair(c->a, c->b, &r) == HAL_OK)
       {
         LOG_I("CONT", "%u-%u %dmV v=%d", c->a, c->b, (int)(r.volts * 1000.0f), (int)r.verdict);
+        /* CMD_CONTINUITY is only ever reached via MANUAL PATH (proto.c) -
+         * CONT RUN calls Continuity_TestPair directly in its own loop, never
+         * through the command queue - so this event can't fire mid-scan. */
+        Proto_EvtManual((int32_t)(r.volts * 1000.0f), r.code);
       }
       else { LOG_E("CONT", "%u-%u bus err", c->a, c->b); }
       break;
@@ -246,6 +252,11 @@ static void run_command(const TestCmd_t *c)
       if (Kelvin_MeasurePair(c->a, c->b, &r) == HAL_OK)
       {
         LOG_I("KELV", "%u-%u %dmohm v=%d", c->a, c->b, (int)(r.resistance_ohm * 1000.0f), (int)r.verdict);
+        /* CMD_KELVIN is only ever reached via CAL RUN (proto.c) - RES RUN
+         * calls Kelvin_MeasurePair directly in its own loop, same reasoning
+         * as CMD_CONTINUITY/MANUAL PATH above. */
+        Proto_EvtCalResult((int32_t)(r.resistance_ohm * 1000.0f),
+                           r.ratiometric, (r.verdict == TEST_PASS) ? 1U : 0U);
       }
       else { LOG_E("KELV", "%u-%u bus err", c->a, c->b); }
       break;
@@ -258,6 +269,22 @@ static void run_command(const TestCmd_t *c)
       (void)Insulation_TestPair(c->board, (uint8_t)c->a, (uint8_t)c->b, c->vfrac, &r);
       s_hv_active = 0U;
       LOG_I("INS", "b%u sense=%dmV v=%d", c->board, (int)(r.sense_volts * 1000.0f), (int)r.verdict);
+      break;
+    }
+    case CMD_BUS_SCAN:
+    {
+      BoardBusEntry_t entries[BOARD_BUS_SCAN_MAX];
+      uint8_t total = Board_ScanBus(entries, BOARD_BUS_SCAN_MAX);
+      uint8_t i, ok_count = 0U, fault_count = 0U;
+      Proto_EvtState("running");
+      for (i = 0U; i < total; i++)
+      {
+        Proto_EvtBusLine(entries[i].name, entries[i].ok);
+        if (entries[i].ok != 0U) { ok_count++; } else { fault_count++; }
+      }
+      Proto_EvtState("idle");
+      Proto_EvtDone("bus", ok_count, fault_count);
+      LOG_I("BUS", "scan: %u ok, %u fault", ok_count, fault_count);
       break;
     }
     case CMD_TEMP_READ:
@@ -299,6 +326,9 @@ static void run_command(const TestCmd_t *c)
       break;
     case CMD_INSUL_RUN:
       run_insulation_all();
+      break;
+    case CMD_MANUAL_SWEEP:
+      run_manual_sweep(c->a);
       break;
     default:
       break;
@@ -374,6 +404,37 @@ static void run_continuity_all(uint8_t discover)
 
   Proto_EvtState("idle");
   Proto_EvtDone("cont", pass, fail);
+}
+
+/**
+  * @brief  One HS pin against all 256 LS - a bounded version of
+  *         run_continuity_all(discover=1)'s inner loop, for `MANUAL SWEEP`
+  *         (GUI-06, 2026-08-21). Reports only matches found, same reasoning
+  *         as full discovery: a 256-line dump of everything NOT found would
+  *         swamp the link for no reason.
+  * @param  hi : [in] the one HS pin to sweep, 1..256 (already range-checked
+  *                    by proto.c).
+  * @retval None
+  */
+static void run_manual_sweep(uint16_t hi)
+{
+  ContinuityResult_t r;
+  uint16_t lo;
+  uint16_t found = 0U;
+
+  Proto_EvtState("running");
+  for (lo = 1U; lo <= 256U; lo++)
+  {
+    if (Continuity_TestPair(hi, lo, &r) == HAL_OK && r.verdict == TEST_PASS)
+    {
+      Proto_EvtCont(hi, lo, "pass");
+      found++;
+    }
+    if ((lo % 16U) == 0U) { Proto_EvtProgress(lo, 256U); }
+    if (s_fault != 0U || Proto_AbortRequested() != 0U) { break; }
+  }
+  Proto_EvtState("idle");
+  Proto_EvtDone("sweep", found, 0U);
 }
 
 /**

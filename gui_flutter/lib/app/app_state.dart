@@ -62,6 +62,14 @@ class WireLogEntry {
   final String dir;
   final String text;
   const WireLogEntry(this.t, this.dir, this.text);
+
+  /// The real bytes this line was sent/received as, space-separated hex.
+  /// The wire protocol is ASCII, so `text`'s code units already are those
+  /// bytes — this is not a reconstruction, just a different rendering of the
+  /// same real data `text` holds.
+  String get hexText => text.codeUnits
+      .map((u) => u.toRadixString(16).padLeft(2, '0').toUpperCase())
+      .join(' ');
 }
 
 class PillState {
@@ -155,6 +163,16 @@ class AppState extends ChangeNotifier {
   /// complete and unbounded; this doesn't need to be too.
   static const int wireLogCap = 2000;
   final List<WireLogEntry> wireLog = <WireLogEntry>[];
+
+  /// Console tab option: render each wire line as the actual bytes sent/
+  /// received (space-separated hex) instead of the decoded ASCII text. The
+  /// protocol is line-based ASCII, so `text.codeUnits` already is the real
+  /// byte sequence — no separate raw-byte capture needed to show it.
+  bool wireLogHex = false;
+  void toggleWireHex() {
+    wireLogHex = !wireLogHex;
+    notifyListeners();
+  }
 
   final math.Random _rand = math.Random();
 
@@ -256,6 +274,42 @@ class AppState extends ChangeNotifier {
   int totalCount = 0;
   msg.LimitsReply? limits;
   msg.CalReply? cal;
+
+  /// FW-14/DS18B20 board temperature, from the last `!TEMP` event. Null until
+  /// a read has actually succeeded — a missing/unpowered sensor or a bad CRC
+  /// answers `>TEMP READ` with nothing at all, so there is no reply to show
+  /// "unknown" from either; the UI must tell "never read" from "stale" using
+  /// [boardTempAt] rather than invent a value.
+  int? boardTempDeciC;
+  DateTime? boardTempAt;
+
+  /// The continuity ADC reading from the last `MANUAL PATH` (`!MANUAL`
+  /// event, GUI-06). Null until one has actually arrived — cleared on
+  /// `MANUAL OFF` since the path that produced it is no longer closed.
+  int? manualAdcMv;
+  int? manualAdcCode;
+
+  /// `MANUAL SWEEP` state (GUI-06) — a diagnostic action, not one of the
+  /// three staged tests, so it's tracked separately from `running`/
+  /// `runKind` and never touches `_contRows`/the Continuity report.
+  bool sweeping = false;
+  int? sweepHi;
+  final List<int> sweepFound = [];
+
+  /// `BUS SCAN` state (GUI-06) — real per-device results, only for the
+  /// subset the firmware actually probes (Matrix Card + ADS124S08; HV cards
+  /// are deliberately excluded, see `commands.busScan()`). Separate from
+  /// the Bus map panel's own fixed reference text, which this does not
+  /// replace or validate.
+  bool busScanning = false;
+  final List<(String name, bool ok)> busScanResults = [];
+  DateTime? busScanAt;
+
+  /// `CAL RUN` state (GUI-06) — the last standalone Kelvin measurement's
+  /// result, including whether the HW-04 ratiometric reference worked (the
+  /// one field `!RES` doesn't carry). Null until a result has arrived.
+  bool calRunning = false;
+  msg.CalResultEvent? lastCalResult;
 
   /// From `>ID`, fetched once on connect. Null until then - the status bar
   /// falls back to a "not yet known" label rather than a guessed version.
@@ -572,15 +626,25 @@ class AppState extends ChangeNotifier {
 
   /// The class `setRelays` puts on one cell.
   /// "" | "closed" | "src" | "leak" | "absent"
+  ///
+  /// `!INSUL <net> <leak_mohm> <verdict>` reports a pass/fail for the net
+  /// under test, not which of the many closed LS return relays the leakage
+  /// path actually used — the firmware has no way to attribute it to one.
+  /// So "leak" marks the one relay a failure genuinely is known to involve:
+  /// the failing net's own HS source relay, red instead of the usual
+  /// highlight. This used to hardcode a fixed (card 0, index 22) cell on the
+  /// LS grid regardless of which net or relay actually failed.
   String relayCell({required bool low, required int card, required int index}) {
     if (card >= stack) return 'absent';
     final net = relayNet;
     if (net == null) return '';
+    final isNetRelay = card == net.card && index == net.relay;
     if (!low) {
-      return (card == net.card && index == net.relay) ? 'src' : '';
+      if (!isNetRelay) return '';
+      return relayLeak ? 'leak' : 'src';
     }
-    if (card == net.card && index == net.relay) return '';
-    return (relayLeak && card == 0 && index == 22) ? 'leak' : 'closed';
+    if (isNetRelay) return '';
+    return 'closed';
   }
 
   // -------------------------------------------------------------------------
@@ -765,6 +829,20 @@ class AppState extends ChangeNotifier {
       mdFixtureOpen = true;
       log('info', 'nl',
           'connector layout guessed from $name — ${guess.length} connectors, review before running');
+      // A conflicting id names two different physical roles in this file —
+      // its own mated pair AND the far end of a different connector's
+      // wires (GuessedConnector.conflicting, netlist_file.dart). That id's
+      // own block is still guessed correctly, but the wires on its
+      // "foreign" rows have nowhere real to land in the diagram and may
+      // draw wrong there — warn rather than let that look like a genuine
+      // open/not-connected wire with no explanation.
+      for (final c in guess.where((g) => g.conflicting)) {
+        log('warn', 'nl',
+            'Conn ID "${c.id}" is used two different ways in $name — as its '
+            'own connector AND as the far end of a different connector\'s '
+            'wires. Those cross-connector wires may not draw correctly; '
+            'give that far end its own Conn ID to fix it.');
+      }
     }
     await _uploadNetlistPairs(
       [for (final p in parsed.pairs) (p.hi, p.lo)],
@@ -1575,7 +1653,36 @@ class AppState extends ChangeNotifier {
     return null;
   }
 
+  void _onSweepCont(msg.ContResult m) {
+    if (m.status == proto.ContStatus.pass) sweepFound.add(m.lo);
+    notifyListeners();
+  }
+
+  void _onSweepDone(msg.Done m) {
+    sweeping = false;
+    log('info', 'diag',
+        'sweep HS ${pad(sweepHi ?? 0, 3)} done — ${sweepFound.length} found');
+    notifyListeners();
+  }
+
+  void _onBusLine(msg.BusLineEvent m) {
+    busScanResults.add((m.name, m.ok));
+    notifyListeners();
+  }
+
+  void _onBusDone(msg.Done m) {
+    busScanning = false;
+    busScanAt = DateTime.now();
+    log('info', 'diag',
+        'bus scan done — ${m.passed} ok, ${m.failed} fault');
+    notifyListeners();
+  }
+
   void _onCont(msg.ContResult m) {
+    if (sweeping) {
+      _onSweepCont(m);
+      return;
+    }
     final n = _netByPins(m.hi, m.lo);
     if (n != null) n.open = m.status != proto.ContStatus.pass;
     final pass = m.status == proto.ContStatus.pass;
@@ -1691,6 +1798,14 @@ class AppState extends ChangeNotifier {
   }
 
   void _onDone(msg.Done m) {
+    if (m.kind == proto.TestKind.sweep) {
+      _onSweepDone(m);
+      return;
+    }
+    if (m.kind == proto.TestKind.bus) {
+      _onBusDone(m);
+      return;
+    }
     final kind = m.kind.wire; // cont | res | insul
     final key = kind == 'insul' ? 'hv' : kind;
     if (inFault) {
@@ -1832,6 +1947,23 @@ class AppState extends ChangeNotifier {
           handling = 'unknown';
         }
         paintLink();
+      case msg.TempEvent():
+        boardTempDeciC = m.deciCelsius;
+        boardTempAt = DateTime.now();
+        notifyListeners();
+      case msg.ManualEvent():
+        manualAdcMv = m.adcMv;
+        manualAdcCode = m.adcCode;
+        notifyListeners();
+      case msg.BusLineEvent():
+        _onBusLine(m);
+      case msg.CalResultEvent():
+        calRunning = false;
+        lastCalResult = m;
+        log('info', 'diag',
+            'cal run: ${m.rMohm} mOhm, ratiometric=${m.ratiometric}, '
+            '${m.pass ? "pass" : "fail"}');
+        notifyListeners();
       case msg.Fault():
         log('fail', 'seq', '${m.code} ${m.text}');
         notifyListeners();
@@ -2362,12 +2494,72 @@ class AppState extends ChangeNotifier {
         'manual path closed: HS ${pad(hiPin, 3)} -> LS ${pad(loPin, 3)}');
   }
 
+  /// Diagnostics — "Run self-cal" (Calibration panel): `CAL RUN <hi> <lo>`,
+  /// a standalone `Kelvin_MeasurePair` on the given pair. Unblocked by
+  /// HW-04 landing this session — surfaces whether the ratiometric R131
+  /// reference actually worked for this one reading, not carried by `!RES`.
+  Future<void> calRun(int hiPin, int loPin) async {
+    if (calRunning) return;
+    final res = await _cmd(proto.commands.calRun(hiPin, loPin));
+    if (_reportRefusal('cal run', res)) return;
+    calRunning = true;
+    log('info', 'diag',
+        'cal run started: HS ${pad(hiPin, 3)} -> LS ${pad(loPin, 3)}');
+    notifyListeners();
+  }
+
+  /// Diagnostics — "Rescan" (Bus map panel): `BUS SCAN`, probing every
+  /// device the firmware has a confirmed address for.
+  Future<void> busScan() async {
+    if (busScanning) return;
+    busScanResults.clear();
+    notifyListeners();
+    final res = await _cmd(proto.commands.busScan());
+    if (_reportRefusal('bus scan', res)) return;
+    busScanning = true;
+    log('info', 'diag', 'bus scan started');
+    notifyListeners();
+  }
+
+  /// Diagnostics — "Sweep this HS": `MANUAL SWEEP <hi>`, one HS pin against
+  /// all 256 LS. Whole-run gated on the firmware side (`ERR EBUSY` while a
+  /// real test is active); refused client-side too if a sweep is already
+  /// running, since nothing else locally prevents a second tap.
+  Future<void> manualSweep(int hiPin) async {
+    if (sweeping) return;
+    sweepHi = hiPin;
+    sweepFound.clear();
+    notifyListeners();
+    final res = await _cmd(proto.commands.manualSweep(hiPin));
+    if (_reportRefusal('manual sweep', res)) {
+      sweepHi = null;
+      return;
+    }
+    sweeping = true;
+    log('info', 'diag', 'sweep started: HS ${pad(hiPin, 3)}');
+    notifyListeners();
+  }
+
   /// Diagnostics — "Discharge": `MANUAL OFF`, opens the manually driven path
   /// and forces the rail safe.
   Future<void> manualOff() async {
     final res = await _cmd(proto.commands.manualOff());
     if (_reportRefusal('manual off', res)) return;
+    manualAdcMv = null;
+    manualAdcCode = null;
     log('info', 'diag', 'manual off — path opened, rail forced safe');
+  }
+
+  /// Diagnostics — "Read temperature": `TEMP READ`. `<OK started` just means
+  /// the sequencer accepted it; the actual reading arrives later as a
+  /// `!TEMP` event ([onEvent]'s `TempEvent` case) and updates [boardTempDeciC]
+  /// then. A missing/unpowered sensor or a bad CRC produces no event at all
+  /// (see `commands.tempRead()`), so a stale [boardTempAt] is the only signal
+  /// of that — there is nothing to await or time out here.
+  Future<void> readTemp() async {
+    final res = await _cmd(proto.commands.tempRead());
+    if (_reportRefusal('temperature read', res)) return;
+    log('info', 'diag', 'temperature read requested');
   }
 
   /// `$("#actBtn")` click.
