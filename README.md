@@ -42,11 +42,17 @@ and 500 V insulation testing across a Control Card, a Matrix Card and up to four
 
 | Card | File | Notes |
 |---|---|---|
-| Control | `Doc/Control_Card.pdf` | STM32G474, mux addressing via MCP23017 U21, 6 connectors (J1–J6). **DAC8775 removed** — Kelvin excitation now sources from the ADS124S08's own IDAC instead (HW-11 closed; firmware updated, FW-12 closed — see `Doc/idac_current_source.md`). **New (HW-13, 2026-08-16): U2, a DS18B20U+T&R 1-Wire temperature sensor, on `PA0`** (R2 4.7 kΩ pull-up, R3 47 Ω series on `DQ`) — driven (FW-14 closed): `drivers/ds18b20`, `>TEMP READ`/`!TEMP`, unverified on real hardware |
-| Matrix | `Doc/Matrix_Card.pdf` | 128× CD74HC4051, 4-wire sense array, ADS124S08 (U68, sheet 9 — confirmed present, see HW-12); AIN9 now wired to `HI_COM` for the IDAC excitation path. Unchanged in the 2026-08-16 schematic sync |
-| HV | `Doc/HV_Card.pdf` | 500 V, 64 HS + 64 LS reed relays per card, R3003 = 5 kΩ, confirmed (HW-08 closed). 2026-08-16 sync: cosmetic resistor-refdes renumbering only (R503/R546 area), no net/topology change |
+| Control | `Doc/Control_Card-6.pdf` | STM32G474, mux addressing via MCP23017 U21, 6 connectors (J1–J6). **DAC8775 removed** — Kelvin excitation now sources from the ADS124S08's own IDAC instead (HW-11 closed; firmware updated, FW-12 closed — see `Doc/idac_current_source.md`). **New (HW-13, 2026-08-16): U2, a DS18B20U+T&R 1-Wire temperature sensor, on `PA0`** (R2 4.7 kΩ pull-up, R3 47 Ω series on `DQ`) — driven (FW-14 closed): `drivers/ds18b20`, `>TEMP READ`/`!TEMP`, unverified on real hardware |
+| Matrix | `Doc/Matrix_Card-9.pdf` | 128× CD74HC4051, 4-wire sense array, ADS124S08 (U68, sheet 9 — confirmed present, see HW-12); AIN9 wired to `HI_COM` for the IDAC excitation path, **AIN8 wired to `LO_COM`/R131 for the HW-04 ratiometric reference** (confirmed by the user directly 2026-08-21, not visible in the PDF text itself — see the note below and `Doc/idac_current_source.md`) |
+| HV | `Doc/HV_Card-4.pdf` | 500 V, 64 HS + 64 LS reed relays per card, R3003 = 5 kΩ, confirmed (HW-08 closed). 2026-08-16 sync: cosmetic resistor-refdes renumbering only (R503/R546 area), no net/topology change |
 
 **2026-08-16: schematic set resynced, filenames normalized** — `Control_Card 1.pdf`/`HV_Card-3.pdf`/`Matrix_Card-8.pdf` → `Control_Card.pdf`/`HV_Card.pdf`/`Matrix_Card.pdf`, dropping the `-N`/` 1` suffixes flagged as an inconsistency since CL-27/CL-32. See HW-13 in `PROJECT_LOG.md` for the full diff against the previous revision.
+
+**2026-08-21: re-added with `-N` suffixes again** — `Control_Card.pdf`/`Matrix_Card.pdf`/`HV_Card.pdf` →
+`Control_Card-6.pdf`/`Matrix_Card-9.pdf`/`HV_Card-4.pdf`. Confirmed by `pdftotext` + `md5sum` to be
+text-identical to the revision replaced — a re-export event, not a schematic content change (the
+files don't visibly show the HW-04 `AIN8`/`LO_COM` routing). That routing is real, confirmed by the
+user directly rather than by anything readable in these PDFs — see `PROJECT_LOG.md` HW-04/CL-61.
 
 ## Firmware layout
 

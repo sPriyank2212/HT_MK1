@@ -13,7 +13,7 @@ ID prefixes: `HW-` schematic/hardware · `FW-` firmware · `BU-` bring-up/verify
 
 ---
 
-## Status snapshot — 2026-08-21 (GUI-06 built: MANUAL SWEEP, BUS SCAN, CAL RUN, and MANUAL PATH's own reading)
+## Status snapshot — 2026-08-22 (DOC-05: fw_status.txt/README synced to FW-15/FW-16/GUI-06)
 
 | Category | Count |
 |---|---|
@@ -23,7 +23,25 @@ ID prefixes: `HW-` schematic/hardware · `FW-` firmware · `BU-` bring-up/verify
 | Firmware work queued | 1 |
 | Awaiting the GUI side | 1 |
 | Verify at bring-up | 9 |
-| Closed to date | 71 |
+| Closed to date | 72 |
+
+**DOC-05 (CL-72): `fw_status.txt` and `README.md` synced to this session's firmware work —**
+**both still described the pre-HW-04 measurement and the pre-2026-08-21 schematic filenames.**
+Found while double-checking "anything else pending" before a commit: `fw_status.txt`'s
+resistance-test entry still said `ADS124S08_OhmsFromCurrent (not the ratiometric form - HW-04...
+is not done)` and described `KELVIN_FORCE_CURRENT_A` as "still a TUNE/VERIFY placeholder (0.010f
+in code)" — both wrong (ratiometric against R131 is the primary path now, FW-15; the real constant
+is a fixed 0.002f/2 mA, not a placeholder, since FW-12). Corrected in place with a `[x] FURTHER
+SUPERSEDED` marker, this project's own established convention for a stale `fw_status.txt` section
+(DOC-01/CL-27) rather than a silent rewrite. Also added the four new GUI-06 commands to the
+top-of-file banner (matching the existing DS18B20/HW-13 banner's style) and fixed both files'
+schematic filenames — `Control_Card.pdf`/`Matrix_Card.pdf`/`HV_Card.pdf` no longer exist in the
+repo (renamed to `-6`/`-9`/`-4` suffixes in the same commit that closed HW-04), so both "source of
+truth" pointers were broken links to files that don't exist. Both files now also carry the same
+honest caveat this session's log entries already had: the 2026-08-21 re-export is text-identical
+to the revision it replaced (confirmed by `pdftotext`/`md5sum` earlier this session) — the real
+`AIN8`/`LO_COM` routing is true because the user confirmed it directly, not because it's visible
+on the page, and both docs now say so rather than implying the PDF itself is the evidence.
 
 **GUI-33 (CL-71): GUI side of all four GUI-06 commands wired through, plus the Bus map/**
 **Calibration/Manual-switch panels updated to use them.** `codec.dart` gained encoders

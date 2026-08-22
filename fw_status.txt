@@ -1,37 +1,72 @@
 ================================================================================
  HT_MK1  -  AUTOMATED HARNESS TEST SYSTEM  -  FIRMWARE STATUS
  MCU: STM32G474RET6 (Cortex-M4F, FreeRTOS, STM32CubeIDE / HAL)
- Last updated: 2026-08-16 (HW-13 schematic resync)
+ Last updated: 2026-08-22 (FW-15/FW-16, GUI-06: ratiometric resistance + new commands)
 ================================================================================
  LIVE TRACKING IS PROJECT_LOG.md, NOT THIS FILE. This file is a snapshot of
  the architecture and driver status for quick orientation; open items, dates
  and decisions are tracked in PROJECT_LOG.md and may have moved on since the
  "Last updated" line above. If the two disagree, PROJECT_LOG.md wins.
 ================================================================================
- SUPERSEDED SINCE THE 2026-08-12 SYNC: DAC8775 is GONE from the schematic.
- Every DAC8775 reference below (current-source register map, SPI2 8-bit
- framing, control_frontend.c's IDAC half) describes hardware that no longer
- exists. The Kelvin excitation current now comes from the ADS124S08's own
- internal IDAC (routed to HI_COM via AIN9), capped at 2 mA - not the
- DAC8775's supposedly-open range. Firmware has NOT been updated for this yet
- - see Doc/idac_current_source.md for the full account and PROJECT_LOG.md for
- the open item. Do not trust this file's DAC8775 sections until that lands.
+ RESOLVED (was "firmware NOT updated yet" as of the 2026-08-12 sync): DAC8775
+ is GONE from the schematic; every DAC8775 reference below (current-source
+ register map, SPI2 8-bit framing, control_frontend.c's IDAC half) describes
+ hardware that no longer exists and is dead in the codebase too. Kelvin
+ excitation is the ADS124S08's own internal IDAC (AIN9 -> HI_COM), fixed at
+ 2 mA - the hardware ceiling, not a tunable target (FW-12, CL-33).
+ FURTHER RESOLVED 2026-08-21 (HW-04/FW-15): resistance is now measured
+ RATIOMETRICALLY against R131 (100 R, 0.01%, tapped on AIN8) instead of from
+ the IDAC's own programmed current - see the PENDING-FIRMWARE resistance
+ entry below for the full account. Not yet built or run on real hardware; no
+ ARM toolchain was reachable in the session that made this change - see
+ PROJECT_LOG.md FW-15/FW-16.
 ================================================================================
- NEW SINCE THE ABOVE (2026-08-16, HW-13/FW-14): the Control Card gained a
- DS18B20 1-Wire temperature sensor (U2) on PA0 - see the BUS/PERIPHERAL MAP
- below for the pin/net detail. Driven: drivers/ds18b20.{h,c} (bit-banged,
- CRC8-checked), board.c's board_init_temp()/g_ds18b20, new protocol command
- >TEMP READ / event !TEMP (CMD_TEMP_READ in tasks.c). Unverified on real
- hardware - no DS18B20 to bit-bang against yet.
+ NEW (2026-08-16, HW-13/FW-14): the Control Card gained a DS18B20 1-Wire
+ temperature sensor (U2) on PA0 - see the BUS/PERIPHERAL MAP below for the
+ pin/net detail. Driven: drivers/ds18b20.{h,c} (bit-banged, CRC8-checked),
+ board.c's board_init_temp()/g_ds18b20, protocol command >TEMP READ / event
+ !TEMP (CMD_TEMP_READ in tasks.c). Unverified on real hardware - no DS18B20
+ to bit-bang against yet.
+================================================================================
+ NEW (2026-08-21, GUI-06): four more protocol commands, all routed through
+ the sequencer like TEMP READ (they touch the shared hardware mutex/bus
+ state):
+   - MANUAL PATH now also reports its own continuity-ADC reading, via a new
+     !MANUAL event - CMD_CONTINUITY (only reachable from MANUAL PATH; CONT
+     RUN calls Continuity_TestPair directly) already took this reading and
+     only ever logged it before.
+   - MANUAL SWEEP <hi> - one HS pin against all 256 LS, a bounded copy of
+     CONT RUN discover's inner loop. New CMD_MANUAL_SWEEP/run_manual_sweep().
+   - BUS SCAN - probes every I2C device with a schematic-confirmed address
+     (Matrix Card's 9 expanders + the ADS124S08 by identity check). New
+     Board_ScanBus() in bsp/board.c/.h. Deliberately does NOT probe the HV
+     cards - their address straps are still marked TODO-verify in
+     hv_card.c (BU-03), so reporting ok/fault there would claim a confidence
+     this project doesn't have yet.
+   - CAL RUN <hi> <lo> - a standalone Kelvin_MeasurePair on an operator-
+     chosen pair, reporting whether the ratiometric R131 reference actually
+     worked for that one reading (KelvinResult_t.ratiometric) - the one
+     field RES RUN's per-point !RES event doesn't carry. Reuses CMD_KELVIN,
+     which existed in tasks.c but was never posted from proto.c until now.
+ None of the four built or run on real hardware yet - see PROJECT_LOG.md
+ FW-16. Full wire formats: Doc/GUI_development_brief.md SS3.2/3.3.
 ================================================================================
 
 SOURCE OF TRUTH
 --------------------------------------------------------------------------------
 The Doc/ folder is now authoritative:
-  - Control_Card.pdf, Matrix_Card.pdf, HV_Card.pdf   (finalised KiCad, current
-    as of this update - renamed 2026-08-16, dropping the old -N/" 1" suffixes;
-    supersede all earlier-numbered PDFs, including the -1/-2/-3/-4/-5/-6/-7/-8
-    series and "Control_Card 1" referenced by older revisions of this file)
+  - Control_Card-6.pdf, Matrix_Card-9.pdf, HV_Card-4.pdf   (finalised KiCad,
+    current as of this update - re-added with -N suffixes 2026-08-21,
+    replacing the un-suffixed Control_Card.pdf/Matrix_Card.pdf/HV_Card.pdf
+    named here since 2026-08-16; supersede all earlier-numbered PDFs)
+  - NOTE: the 2026-08-21 re-export is TEXT-IDENTICAL to the revision it
+    replaces (confirmed by pdftotext + md5sum on all three sheets, same
+    unchanged 2026-07-11/2026-08-06 title-block dates) - it does NOT visibly
+    show the HW-04 AIN8/LO_COM routing on the page. That routing is confirmed
+    true by the user directly (PROJECT_LOG.md HW-04/CL-61), not by anything
+    readable in these PDFs; treat this revision as a filename/export event,
+    not evidence of a schematic content change, until a schematic that
+    actually differs shows up.
   - Harness_Tester_Operation_Document.docx  (v1.1 original)
   - Harness_Tester_Operation_Document_v1.3.docx  (was v1.2_corrected; renamed
     and updated to v1.3 - firmware review, see the v1.3 section below)
@@ -218,14 +253,30 @@ PER-BUS SPI SETTINGS NEEDED (change in CubeMX - generated default is 4-bit!)
        forces excitation, auto-ranges the PGA (highest gain first, stepping
        down on saturation), takes a second same-gain reading with excitation
        off as a per-point zero-current baseline, subtracts it, then converts
-       with ADS124S08_OhmsFromCurrent (not the ratiometric form - HW-04, which
-       would let R131 serve as a current reference, is not done). Excitation
-       current is KELVIN_FORCE_CURRENT_A in kelvin.h - still a TUNE/VERIFY
-       placeholder (0.010f in code) pending BU-01 on real hardware; the
-       validated *target* is 3 mA (usable window ~1-8 mA), not 10 mA - see
-       Doc/4wire_resistance_validation.md. Current reversal for thermal EMF
+       with ADS124S08_OhmsFromCurrent as a fallback only.
+   [x] FURTHER SUPERSEDED 2026-08-21 (HW-04/FW-15): the ratiometric form is
+       done. R131 (100 R, 0.01%, Matrix sheet) is tapped on the ADS124S08's
+       AIN8, carrying the same excitation current as the DUT in series
+       (IDAC -> HI_COM -> DUT -> LO_COM -> R131 -> GND). Kelvin_MeasurePair
+       now reads AIN8 (PGA bypassed - 2 mA x 100 R = 200 mV, no auto-range
+       needed) as well as the DUT pair, and computes resistance as a ratio
+       (ADS124S08_OhmsRatiometric) - this cancels the IDAC's own tolerance
+       (typ +/-0.5%, worst-case +/-3%) entirely, leaving R131's 0.01% as the
+       accuracy floor. Falls back to ADS124S08_OhmsFromCurrent (the IDAC's
+       programmed 2 mA) only if the AIN8 read fails for that one point -
+       KelvinResult_t.ratiometric reports which one was actually used, and
+       CAL RUN (GUI-06) surfaces it per point on demand. CAL GET's reply
+       reads current_ua/rref_mohm/rref_tol_mohm/gain_max from kelvin.h's
+       real constants now too, not a hardcoded string (proto.c). Excitation
+       current is KELVIN_FORCE_CURRENT_A in kelvin.h = 0.002f (2 mA) - the
+       IDAC's hard ceiling, not a tunable target (see FW-12 above); the
+       0.010f/10 mA/"TUNE placeholder" language this paragraph used to carry
+       was already stale before HW-04 and is corrected here, not just
+       superseded. **None of this is built or run on real hardware yet** -
+       see PROJECT_LOG.md FW-15/FW-16. Current reversal for thermal EMF
        (BU-10) is deliberately NOT implemented yet - it needs the DAC8775
-       bipolar range, whose register map is still VERIFY (dac8775.h).
+       bipolar range, whose register map is still VERIFY (dac8775.h) - and
+       dac8775.h itself is dead code now the chip is gone from the board.
    [x] continuity level (v1.3): LO_COM pull-down = 100R. Connected node = divider of
        ~10k pull-up (3.3 V) vs (2*mux_Ron + 100R) -> WELL below the old 1.5 V (a few
        hundred mV, or tens of mV with low-Ron mux); open ~3.3 V. Large margin - set

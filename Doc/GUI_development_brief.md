@@ -159,7 +159,7 @@ and tolerance, and `gain_max` is the ceiling of the auto-range sequence rather t
 gain. See `Core/Src/app/proto.c`'s `CAL GET` handler and `Core/Src/test/kelvin.c`.
 
 **New 2026-08-16 (HW-13/FW-14):** `TEMP READ` reads the temperature sensor found on the current
-Control Card schematic (`Doc/Control_Card.pdf`, `uC` sheet) that earlier revisions did not carry.
+Control Card schematic (`Doc/Control_Card-6.pdf`, `uC` sheet) that earlier revisions did not carry.
 Diagnostic only — not part of any continuity/resistance/insulation run, and not gated on fixture
 or netlist state, same footing as `MANUAL PATH`/`CAL GET`. Answered `<OK started` (it is handed to
 the sequencer because a real conversion blocks a little over 750 ms — see `CMD_TEMP_READ` in
