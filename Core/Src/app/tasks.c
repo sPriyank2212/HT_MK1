@@ -266,7 +266,17 @@ static void run_command(const TestCmd_t *c)
       InsulationResult_t r;
       s_hv_active = 1U;
       LOG_I("INS", "b%u %u-%u vf=%d start", c->board, c->a, c->b, (int)(c->vfrac * 100.0f));
-      (void)Insulation_TestPair(c->board, (uint8_t)c->a, (uint8_t)c->b, c->vfrac, &r);
+      if (c->a < 1U || c->a > HV_PINS_PER_SIDE || c->b < 1U || c->b > HV_PINS_PER_SIDE)
+      {
+        /* Pins are local to one HV card (1..64); never truncate into uint8_t. */
+        LOG_E("INS", "b%u pins %u-%u outside 1..%u", c->board, c->a, c->b, HV_PINS_PER_SIDE);
+        r.sense_volts = 0.0f;
+        r.verdict = TEST_ERROR;
+      }
+      else
+      {
+        (void)Insulation_TestPair(c->board, (uint8_t)c->a, (uint8_t)c->b, c->vfrac, &r);
+      }
       s_hv_active = 0U;
       LOG_I("INS", "b%u sense=%dmV v=%d", c->board, (int)(r.sense_volts * 1000.0f), (int)r.verdict);
       break;
@@ -486,6 +496,63 @@ static void run_resistance_all(void)
   Proto_EvtDone("res", pass, fail);
 }
 
+/* Wire value for an insulation reading. The protocol field is int32 milliohms,
+ * which tops out at 2.147 MOhm (INT32_MAX mOhm), so a larger float must be
+ * clamped BEFORE the cast - an out-of-range float->int32 conversion is
+ * undefined behaviour. INT32_MAX therefore means "2.147 MOhm or more" (this
+ * includes every reading above the 10 MOhm pass line); the pass/fail verdict
+ * sent beside it is authoritative, not this number. Widening the field needs a
+ * protocol + GUI change. 2147483520.0f is the largest float below 2^31. */
+static int32_t insul_mohm_to_wire(float mohm)
+{
+  float v = mohm * 1.0e9f;      /* Mohm -> mohm */
+  if (!(v > 0.0f)) { return 0; }                    /* also catches NaN */
+  if (v >= 2147483520.0f) { return INT32_MAX; }
+  return (int32_t)v;
+}
+
+static uint8_t pin_test(const uint8_t *set, uint16_t pin) { return (uint8_t)((set[(pin - 1U) >> 3] >> ((pin - 1U) & 7U)) & 1U); }
+static void    pin_set(uint8_t *set, uint16_t pin)        { set[(pin - 1U) >> 3] |= (uint8_t)(1U << ((pin - 1U) & 7U)); }
+
+/**
+  * @brief  Return-relay mask for one net: every LS pin on @p board EXCEPT the
+  *         net's own return(s).
+  * @note   The net is the connected component of the netlist containing
+  *         (hi, lo): pairs sharing an HS pin or an LS pin are the same net.
+  *         The leakage of the net is then measured against all other conductors
+  *         (fw_status.txt, "insulation return scheme"). Closing no return relay
+  *         would read ~0 V and report a false PASS.
+  */
+static uint64_t insul_return_mask(uint16_t hi, uint16_t lo, uint8_t board)
+{
+  uint8_t  hs[32] = {0}, ls[32] = {0};   /* pin 1..256 bitsets */
+  uint16_t n = Proto_NetlistCount(), i, h, l, p;
+  uint8_t  changed;
+  uint64_t mask = 0ULL;
+
+  pin_set(hs, hi);
+  pin_set(ls, lo);
+  do
+  {
+    changed = 0U;
+    for (i = 0U; i < n; i++)
+    {
+      if (Proto_NetlistGet(i, &h, &l) != 0 || h < 1U || h > 256U || l < 1U || l > 256U) { continue; }
+      if (pin_test(hs, h) != pin_test(ls, l))
+      {
+        pin_set(hs, h); pin_set(ls, l); changed = 1U;
+      }
+    }
+  } while (changed != 0U);
+
+  for (p = 1U; p <= HV_PINS_PER_SIDE; p++)
+  {
+    uint16_t flat = (uint16_t)(board * HV_PINS_PER_SIDE + p);
+    if (flat <= 256U && pin_test(ls, flat) == 0U) { mask |= (1ULL << (p - 1U)); }
+  }
+  return mask;
+}
+
 /**
   * @brief  Insulation over the loaded netlist.
   * @note   Refuses to run unless HV was armed, and always drops the rail and
@@ -510,14 +577,35 @@ static void run_insulation_all(void)
    * second clear at run start silently swallows an abort that arrived in
    * between - and comms runs above the sequencer, so it lands there easily
    * (FW-09). Proto_EvtDone() clears it again on the way out. */
-  Proto_EvtState("running");
   n = Proto_NetlistCount();
 
+  /* Refuse up front if any HS pin is beyond the HV cards fitted (each card has
+   * HV_PINS_PER_SIDE relays): reporting that as a per-net measurement failure
+   * would be a spurious fault on most of a 256-line netlist. */
   for (i = 0U; i < n; i++)
   {
     if (Proto_NetlistGet(i, &hi, &lo) != 0) { continue; }
+    if (hi < 1U || lo < 1U || (hi - 1U) / HV_PINS_PER_SIDE >= (uint16_t)BOARD_HV_COUNT)
+    {
+      Proto_EvtFault("F05", "netlist pin outside fitted HV cards");
+      Proto_ClearArm();
+      Proto_EvtDone("insul", 0U, 0U);
+      return;
+    }
+  }
+  Proto_EvtState("running");
 
-    if (Insulation_TestPair(0U, (uint8_t)hi, (uint8_t)lo, 0.5f, &r) != HAL_OK)
+  for (i = 0U; i < n; i++)
+  {
+    uint8_t  board, local;
+    uint64_t rmask;
+    if (Proto_NetlistGet(i, &hi, &lo) != 0) { continue; }
+
+    board = (uint8_t)((hi - 1U) / HV_PINS_PER_SIDE);
+    local = (uint8_t)((hi - 1U) % HV_PINS_PER_SIDE + 1U);
+    rmask = insul_return_mask(hi, lo, board);
+
+    if (Insulation_TestNet(board, local, rmask, 0.5f, &r) != HAL_OK)
     {
       Proto_EvtInsul(hi, 0, "fail");
       Proto_EvtFault("F04", "insulation measurement failed");
@@ -528,7 +616,7 @@ static void run_insulation_all(void)
       const char *v = (r.verdict == TEST_PASS) ? "pass" : "fail";
       /* insulation_mohm is the header's megohm estimate; the protocol
        * carries milliohms, so scale by 1e9. */
-      Proto_EvtInsul(hi, (int32_t)(r.insulation_mohm * 1.0e9f), v);
+      Proto_EvtInsul(hi, insul_mohm_to_wire(r.insulation_mohm), v);
       if (r.verdict == TEST_PASS) { pass++; }
       else { Proto_EvtFault("F04", "insulation low"); fail++; }
     }

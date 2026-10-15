@@ -255,6 +255,43 @@ HAL_StatusTypeDef HvCard_CloseReturn(HvCard_t *hv, uint8_t pin)
 }
 
 /**
+  * @brief  Close every return-side relay whose bit is set in @p mask,
+  *         break-before-make (the whole side is opened first).
+  * @note   Insulation needs the net under test measured against EVERY other
+  *         conductor, so more than one return relay must be closed at once. With
+  *         no return relay closed the leakage node reads ~0 V and the test would
+  *         report a false PASS, so an empty mask is refused.
+  * @param  hv   : [in] HV-card instance; must be non-NULL.
+  * @param  mask : [in] bit (pin-1) set = close that return pin (pins 1..64).
+  * @retval HAL_OK    side opened and the masked relays closed.
+  * @retval HAL_ERROR @p hv is NULL or @p mask is empty.
+  * @retval other     first failing HAL status from the expander writes.
+  */
+HAL_StatusTypeDef HvCard_CloseReturnMask(HvCard_t *hv, uint64_t mask)
+{
+  HAL_StatusTypeDef st;
+  uint8_t e;
+
+  if (hv == NULL || mask == 0ULL)
+  {
+    return HAL_ERROR;
+  }
+  hv_bus_claim(hv);
+  st = hv_side_open(hv->ret);
+  for (e = 0U; (st == HAL_OK) && (e < HV_MCP_PER_SIDE); e++)
+  {
+    /* Same linear layout as hv_map(): pin 1..64 -> expander 0..3, bit 0..15. */
+    uint16_t slice = (uint16_t)((mask >> (16U * e)) & 0xFFFFULL);
+    if (slice != 0U)
+    {
+      st = MCP23017_WritePins(&hv->ret[e], slice);
+    }
+  }
+  hv_bus_release(hv);
+  return st;
+}
+
+/**
   * @brief  Connect one inject/return conductor pair for an insulation test.
   * @note   Closes the inject-side relay first, then the return-side relay; each
   *         side is broken before making internally. Intended to be called while

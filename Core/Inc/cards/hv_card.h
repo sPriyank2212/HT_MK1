@@ -91,6 +91,8 @@ HAL_StatusTypeDef HvCard_Init(HvCard_t *hv, const HvCardCfg_t *cfg);
 HAL_StatusTypeDef HvCard_OpenAllRelays(HvCard_t *hv);
 HAL_StatusTypeDef HvCard_CloseInject(HvCard_t *hv, uint8_t pin);
 HAL_StatusTypeDef HvCard_CloseReturn(HvCard_t *hv, uint8_t pin);
+/* Close every return relay whose bit (pin-1) is set in mask; empty mask refused. */
+HAL_StatusTypeDef HvCard_CloseReturnMask(HvCard_t *hv, uint64_t mask);
 HAL_StatusTypeDef HvCard_ConnectPair(HvCard_t *hv, uint8_t inject_pin, uint8_t return_pin);
 
 /* HV stimulus. Programming the DAC IS the HV control: a non-zero code raises the

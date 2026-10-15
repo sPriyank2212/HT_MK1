@@ -28,34 +28,38 @@ static void insulation_safe(HvCard_t *hv)
 }
 
 /**
-  * @brief  Run a 500 V insulation-resistance test on one conductor pair.
+  * @brief  Shared 500 V insulation sequence: energise one inject (HS) pin and
+  *         measure leakage into every return (LS) relay in @p return_mask.
   * @warning Energises real high voltage. The sequence connects the reed relays
   *          while the line is dead, THEN programs the DAC (which is the HV
   *          control), to avoid hot-switching the contacts at 500 V.
-  * @note   Sequence: force safe, connect the pair dead, ramp HV to @p v_fraction,
-  *         settle INSULATION_RAMP_MS, then read the LEAKAGE node (HV_RET, U302 -
-  *         not the rail). Insulation resistance is estimated from the leakage
-  *         node (approximate; the transimpedance is unconfirmed). Verdict is
-  *         TEST_FAIL when leakage voltage >= INSULATION_V_PASS_MAX, else TEST_PASS.
-  *         The card is always de-energised, discharged and opened before return.
-  * @param  board      : [in]  HV board index (0..BOARD_HV_COUNT-1).
-  * @param  inject_pin : [in]  1-based pin on the inject side.
-  * @param  return_pin : [in]  1-based pin on the return side.
-  * @param  v_fraction : [in]  applied HV as a fraction of full scale (0..1).
-  * @param  res        : [out] result (leakage code/volts, insulation Mohm,
-  *                           verdict). Left TEST_ERROR on early failure. Non-NULL.
+  * @note   Sequence: force safe, connect dead, ramp HV to @p v_fraction, settle
+  *         INSULATION_RAMP_MS, then read the LEAKAGE node (HV_RET, U302 - not
+  *         the rail). Verdict is TEST_FAIL when leakage voltage >=
+  *         INSULATION_V_PASS_MAX, else TEST_PASS. The card is always
+  *         de-energised, discharged and opened before return.
+  * @param  board       : [in]  HV board index (0..BOARD_HV_COUNT-1).
+  * @param  inject_pin  : [in]  1-based pin on the inject side (1..64).
+  * @param  return_mask : [in]  bit (pin-1) set = close that return relay. Must
+  *                             be non-zero: no closed return relay reads ~0 V,
+  *                             i.e. a false PASS.
+  * @param  v_fraction  : [in]  applied HV as a fraction of full scale (0..1).
+  * @param  res         : [out] result. Left TEST_ERROR on early failure.
   * @retval HAL_OK    test completed (inspect res->verdict for the outcome).
-  * @retval HAL_ERROR @p res is NULL or @p board is out of range.
+  * @retval HAL_ERROR @p res is NULL, @p board out of range, @p inject_pin out
+  *                   of 1..64, or @p return_mask empty.
   * @retval other     first failing HAL status from relay/HV/ADC access.
   */
-HAL_StatusTypeDef Insulation_TestPair(uint8_t board, uint8_t inject_pin,
-                                      uint8_t return_pin, float v_fraction,
-                                      InsulationResult_t *res)
+static HAL_StatusTypeDef insulation_run(uint8_t board, uint8_t inject_pin,
+                                        uint64_t return_mask, float v_fraction,
+                                        InsulationResult_t *res)
 {
   HvCard_t *hv;
   HAL_StatusTypeDef st;
 
-  if (res == NULL || board >= (uint8_t)BOARD_HV_COUNT)
+  if (res == NULL || board >= (uint8_t)BOARD_HV_COUNT ||
+      inject_pin < 1U || inject_pin > (uint8_t)HV_PINS_PER_SIDE ||
+      return_mask == 0ULL)
   {
     return HAL_ERROR;
   }
@@ -72,7 +76,11 @@ HAL_StatusTypeDef Insulation_TestPair(uint8_t board, uint8_t inject_pin,
   /* Connect the conductor pair FIRST, while the line is dead. There is no HV
    * enable line: programming the DAC is what raises HV. Closing the reed relays
    * after energising would hot-switch them at 500 V and erode the contacts. */
-  st = HvCard_ConnectPair(hv, inject_pin, return_pin);
+  st = HvCard_CloseInject(hv, inject_pin);
+  if (st == HAL_OK)
+  {
+    st = HvCard_CloseReturnMask(hv, return_mask);
+  }
   if (st != HAL_OK)
   {
     goto safe_exit;
@@ -118,4 +126,34 @@ safe_exit:
   /* Always de-energise, discharge and open relays before returning. */
   insulation_safe(hv);
   return st;
+}
+/**
+  * @brief  Insulation test of one inject pin against ONE return pin (manual
+  *         pair test). See insulation_run().
+  * @retval HAL_ERROR if either pin is outside 1..64, else as insulation_run().
+  */
+HAL_StatusTypeDef Insulation_TestPair(uint8_t board, uint8_t inject_pin,
+                                      uint8_t return_pin, float v_fraction,
+                                      InsulationResult_t *res)
+{
+  if (return_pin < 1U || return_pin > (uint8_t)HV_PINS_PER_SIDE)
+  {
+    return HAL_ERROR;
+  }
+  return insulation_run(board, inject_pin, 1ULL << (return_pin - 1U),
+                        v_fraction, res);
+}
+
+/**
+  * @brief  Insulation test of one net against every OTHER conductor: energise
+  *         the net's inject pin and close all return relays in @p return_mask
+  *         (every return pin except the net's own). This is the scheme the
+  *         project requires - a single return relay only sees one neighbour.
+  * @retval as insulation_run().
+  */
+HAL_StatusTypeDef Insulation_TestNet(uint8_t board, uint8_t inject_pin,
+                                     uint64_t return_mask, float v_fraction,
+                                     InsulationResult_t *res)
+{
+  return insulation_run(board, inject_pin, return_mask, v_fraction, res);
 }

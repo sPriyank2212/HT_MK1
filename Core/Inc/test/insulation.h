@@ -78,6 +78,17 @@ HAL_StatusTypeDef Insulation_TestPair(uint8_t board, uint8_t inject_pin,
                                       uint8_t return_pin, float v_fraction,
                                       InsulationResult_t *res);
 
+/**
+  * @brief  Test one net against every other conductor on the board.
+  * @param  inject_pin   1..64 inject side (the net's HS pin)
+  * @param  return_mask  bit (pin-1) set = close that return relay; build it as
+  *                      "every return pin except the net's own". Must be non-zero
+  *                      (no closed return relay reads ~0 V = false PASS).
+  */
+HAL_StatusTypeDef Insulation_TestNet(uint8_t board, uint8_t inject_pin,
+                                     uint64_t return_mask, float v_fraction,
+                                     InsulationResult_t *res);
+
 #ifdef __cplusplus
 }
 #endif
