@@ -59,11 +59,16 @@ static HAL_StatusTypeDef insulation_run(uint8_t board, uint8_t inject_pin,
 
   if (res == NULL || board >= (uint8_t)BOARD_HV_COUNT ||
       inject_pin < 1U || inject_pin > (uint8_t)HV_PINS_PER_SIDE ||
-      return_mask == 0ULL)
+      return_mask == 0ULL || v_fraction < INSULATION_MIN_FRACTION)
   {
     return HAL_ERROR;
   }
   hv = &g_hv[board];
+
+  /* Keep this card's enable asserted for the whole sequence: its chip-select
+   * buffers are gated by the same line, so the DAC and ADCs are unreachable
+   * without it. */
+  HvCard_Hold(hv);
 
   res->sense_code      = 0U;
   res->sense_volts     = 0.0f;
@@ -119,14 +124,53 @@ static HAL_StatusTypeDef insulation_run(uint8_t board, uint8_t inject_pin,
     }
 
     /* Verdict: higher leakage voltage = worse insulation. */
-    res->verdict = (v_leak >= INSULATION_V_PASS_MAX) ? TEST_FAIL : TEST_PASS;
+    res->verdict = (v_leak >= Insulation_PassLimitVolts(v_fraction)) ? TEST_FAIL : TEST_PASS;
   }
 
 safe_exit:
   /* Always de-energise, discharge and open relays before returning. */
   insulation_safe(hv);
+  HvCard_Unhold(hv);
   return st;
 }
+HAL_StatusTypeDef Insulation_HvSelfTest(uint8_t board, float *v_idle, float *v_hv)
+{
+  HvCard_t *hv;
+  HAL_StatusTypeDef st;
+  uint16_t code = 0U;
+  float idle = 0.0f, rail = 0.0f;
+  const float expect = INSULATION_SELFTEST_FRACTION * INSULATION_V_FULL *
+                       INSULATION_HV_SENSE_RATIO;
+
+  if (board >= (uint8_t)BOARD_HV_COUNT)
+  {
+    return HAL_ERROR;
+  }
+  hv = &g_hv[board];
+  HvCard_Hold(hv);
+
+  insulation_safe(hv);                       /* 0 V, relays open */
+  st = HvCard_ReadRailRaw(hv, &code);
+  if (st == HAL_OK)
+  {
+    idle = AD7476_CodeToVolts(code, hv->cfg.vref);
+    st = HvCard_SetVoltageFraction(hv, INSULATION_SELFTEST_FRACTION);
+  }
+  if (st == HAL_OK)
+  {
+    Board_SettleMs(INSULATION_SELFTEST_SETTLE_MS);
+    st = HvCard_ReadRailRaw(hv, &code);
+    rail = AD7476_CodeToVolts(code, hv->cfg.vref);
+  }
+  insulation_safe(hv);                       /* always back to 0 V */
+  HvCard_Unhold(hv);
+
+  if (v_idle != NULL) { *v_idle = idle; }
+  if (v_hv   != NULL) { *v_hv   = rail; }
+  if (st != HAL_OK) { return st; }
+  return Insulation_RailPlausible(idle, rail, expect) ? HAL_OK : HAL_ERROR;
+}
+
 /**
   * @brief  Insulation test of one inject pin against ONE return pin (manual
   *         pair test). See insulation_run().

@@ -90,8 +90,13 @@ static uint8_t s_board_ready = 0U;
 /* SPI3_CSB2 (PB2) drove the DAC8775 CS; FW-12 removed the last reference to
  * it in board_init_frontend() below. Left configured in CubeMX rather than
  * repurposed - that's a hardware-config decision, not a firmware one. */
-#define BOARD_HV_DAC_CS_PORT  I2C2_CS_GPIO_Port   /* PC2 placeholder (CS_ISO); VERIFY */
-#define BOARD_HV_DAC_CS_PIN   I2C2_CS_Pin
+/* DAC8830 CS = HV card net ISO_HV_CARD_4 = Control Card HV_Card_1.3 = PC0
+ * (CubeMX calls it HV_CARD_DT_2_1). The old placeholder, PC2 (I2C2_CS), goes
+ * only to an isolator and reaches no connector pin, so it could never select
+ * the DAC. The n -> HV_Card_1.(n-1) correspondence is the same one the ADC
+ * chip-selects below already rely on; Insulation_HvSelfTest() proves it. */
+#define BOARD_HV_DAC_CS_PORT  HV_CARD_DT_2_1_GPIO_Port   /* PC0 */
+#define BOARD_HV_DAC_CS_PIN   HV_CARD_DT_2_1_Pin
 
 /* HV-card ADC chip-selects = the two per-board control lines (isolated).
  *   HV_Card_x.1 -> RAIL ADC (U301 HV_Sense) ; HV_Card_x.0 -> LEAK ADC (U302 HV_RET).

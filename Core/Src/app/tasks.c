@@ -624,6 +624,24 @@ static void run_insulation_all(void)
       return;
     }
   }
+  /* Prove the HV path before trusting a single reading: a wrong DAC/ADC
+   * chip-select or a dead card enable would otherwise read ~0 V = PASS. */
+  for (i = 0U; i < (uint16_t)BOARD_HV_COUNT; i++)
+  {
+    float v_idle = 0.0f, v_hv = 0.0f;
+    if (Insulation_HvSelfTest((uint8_t)i, &v_idle, &v_hv) != HAL_OK)
+    {
+      LOG_E("INS", "b%u HV self-test FAILED idle=%dmV rail=%dmV", (unsigned)i,
+            (int)(v_idle * 1000.0f), (int)(v_hv * 1000.0f));
+      Proto_EvtFault("F06", "HV path self-test failed");
+      force_safe_all();
+      Proto_ClearArm();
+      Proto_EvtHv(0);
+      Proto_EvtSafe();
+      Proto_EvtDone("insul", 0U, 0U);
+      return;
+    }
+  }
   Proto_EvtState("running");
 
   for (i = 0U; i < n; i++)
@@ -636,7 +654,7 @@ static void run_insulation_all(void)
     local = (uint8_t)((hi - 1U) % HV_PINS_PER_SIDE + 1U);
     rmask = insul_return_mask(hi, lo, board);
 
-    if (Insulation_TestNet(board, local, rmask, 0.5f, &r) != HAL_OK)
+    if (Insulation_TestNet(board, local, rmask, INSULATION_RUN_FRACTION, &r) != HAL_OK)
     {
       Proto_EvtInsul(hi, 0, "fail");
       Proto_EvtFault("F04", "insulation measurement failed");

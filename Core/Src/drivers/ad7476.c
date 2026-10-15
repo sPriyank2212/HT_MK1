@@ -9,6 +9,21 @@
 
 #include "drivers/ad7476.h"
 
+/* The HV-card chip-selects arrive as GPIO pins that CubeMX leaves in INPUT mode
+ * (PC13/PC14/PC0). WritePin on an input only changes the output latch, so the
+ * device would never be selected: make the pin a push-pull output, idle high.
+ * The latch is set first so CS never glitches low while the pin turns output. */
+static void cs_output_init(GPIO_TypeDef *port, uint16_t pin)
+{
+  GPIO_InitTypeDef g = {0};
+  HAL_GPIO_WritePin(port, pin, GPIO_PIN_SET);
+  g.Pin   = pin;
+  g.Mode  = GPIO_MODE_OUTPUT_PP;
+  g.Pull  = GPIO_NOPULL;
+  g.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(port, &g);
+}
+
 /**
   * @brief  Bind an AD7476 instance to its SPI bus and chip-select line.
   * @note   Does not perform any bus traffic; it only records the handles and
@@ -32,7 +47,7 @@ HAL_StatusTypeDef AD7476_Init(AD7476_t *dev, SPI_HandleTypeDef *hspi,
   dev->cs_pin  = cs_pin;
 
   /* Park CS high so the device is deselected / not converting. */
-  HAL_GPIO_WritePin(dev->cs_port, dev->cs_pin, GPIO_PIN_SET);
+  cs_output_init(dev->cs_port, dev->cs_pin);
   return HAL_OK;
 }
 

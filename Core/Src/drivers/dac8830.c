@@ -36,6 +36,21 @@ HAL_StatusTypeDef DAC8830_WriteCode(DAC8830_t *dev, uint16_t code)
   return st;
 }
 
+/* The HV-card chip-selects arrive as GPIO pins that CubeMX leaves in INPUT mode
+ * (PC13/PC14/PC0). WritePin on an input only changes the output latch, so the
+ * device would never be selected: make the pin a push-pull output, idle high.
+ * The latch is set first so CS never glitches low while the pin turns output. */
+static void cs_output_init(GPIO_TypeDef *port, uint16_t pin)
+{
+  GPIO_InitTypeDef g = {0};
+  HAL_GPIO_WritePin(port, pin, GPIO_PIN_SET);
+  g.Pin   = pin;
+  g.Mode  = GPIO_MODE_OUTPUT_PP;
+  g.Pull  = GPIO_NOPULL;
+  g.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(port, &g);
+}
+
 /**
   * @brief  Bind a DAC8830 instance and drive its output to 0 V.
   * @note   Records the handles, parks CS high, then writes code 0 so the part
@@ -59,7 +74,7 @@ HAL_StatusTypeDef DAC8830_Init(DAC8830_t *dev, SPI_HandleTypeDef *hspi,
   dev->cs_port = cs_port;
   dev->cs_pin  = cs_pin;
 
-  HAL_GPIO_WritePin(dev->cs_port, dev->cs_pin, GPIO_PIN_SET);
+  cs_output_init(dev->cs_port, dev->cs_pin);
   return DAC8830_WriteCode(dev, 0U);   /* start at 0 V */
 }
 

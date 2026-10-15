@@ -78,6 +78,7 @@ typedef struct
   AD7476_t    adc_rail;      /* HV_Sense  - rail monitor          */
   AD7476_t    adc_leak;      /* HV_RET    - leakage / insulation  */
   HvCardCfg_t cfg;
+  uint8_t     bus_depth;     /* nested enable claims; EN stays high while > 0 */
 } HvCard_t;
 
 /**
@@ -88,6 +89,13 @@ HAL_StatusTypeDef HvCard_Init(HvCard_t *hv, const HvCardCfg_t *cfg);
 
 /* Relay control (pin = 1..64). Each Close opens the whole side first so exactly
  * one relay on that side is ever closed. */
+/* Hold the card's enable line high across a whole sequence (nests with the
+ * per-call claims inside the relay functions). The card's chip-select buffers
+ * are gated by the same enable on the schematic, so SPI access to its DAC and
+ * ADCs needs it asserted too. Always pair Hold with Unhold. */
+void HvCard_Hold(HvCard_t *hv);
+void HvCard_Unhold(HvCard_t *hv);
+
 HAL_StatusTypeDef HvCard_OpenAllRelays(HvCard_t *hv);
 HAL_StatusTypeDef HvCard_CloseInject(HvCard_t *hv, uint8_t pin);
 HAL_StatusTypeDef HvCard_CloseReturn(HvCard_t *hv, uint8_t pin);

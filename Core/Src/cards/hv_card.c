@@ -37,8 +37,12 @@ static void hv_bus_claim(HvCard_t *hv)
   {
     return;
   }
-  HAL_GPIO_WritePin(hv->cfg.en_port, hv->cfg.en_pin, GPIO_PIN_SET);
-  HAL_Delay(HV_BUS_ENABLE_SETTLE_MS);
+  if (hv->bus_depth == 0U)
+  {
+    HAL_GPIO_WritePin(hv->cfg.en_port, hv->cfg.en_pin, GPIO_PIN_SET);
+    HAL_Delay(HV_BUS_ENABLE_SETTLE_MS);
+  }
+  hv->bus_depth++;
 }
 
 /**
@@ -55,8 +59,21 @@ static void hv_bus_release(HvCard_t *hv)
   {
     return;
   }
-  HAL_GPIO_WritePin(hv->cfg.en_port, hv->cfg.en_pin, GPIO_PIN_RESET);
+  if (hv->bus_depth > 0U)
+  {
+    hv->bus_depth--;
+  }
+  if (hv->bus_depth == 0U)
+  {
+    HAL_GPIO_WritePin(hv->cfg.en_port, hv->cfg.en_pin, GPIO_PIN_RESET);
+  }
 }
+
+/** @brief  Public hold: keep this card's enable asserted until HvCard_Unhold(). */
+void HvCard_Hold(HvCard_t *hv)   { hv_bus_claim(hv); }
+
+/** @brief  Release one HvCard_Hold(); EN drops when the last claim is released. */
+void HvCard_Unhold(HvCard_t *hv) { hv_bus_release(hv); }
 
 /**
   * @brief  Map a 1-based side pin to its expander index and bit position.
@@ -170,6 +187,7 @@ HAL_StatusTypeDef HvCard_Init(HvCard_t *hv, const HvCardCfg_t *cfg)
     return HAL_ERROR;
   }
   hv->cfg = *cfg;
+  hv->bus_depth = 0U;
 
   hv_bus_claim(hv);
   for (i = 0U; i < HV_MCP_PER_SIDE; i++)
