@@ -101,8 +101,12 @@ int main(void)
   MX_USART3_UART_Init();
   /* USER CODE BEGIN 2 */
   /* Bring every card/driver to a safe idle state (HV off, relays/muxes open).
-   * Return value intentionally not trapped during bring-up so a NAK from the
-   * (open-point) matrix I2C isolator does not hang the unit. */
+   * Return value intentionally not trapped here so a NAK from the (open-point)
+   * matrix I2C isolator does not hang the unit at boot - a card that fails to
+   * come up (unseated/missing/faulty) must not stop the rest of the instrument
+   * from starting. Board_IsReady() latches the outcome; the sequencer
+   * (proto.c) checks it before any hardware command and refuses with a clean
+   * ERR EHW instead of running against un-initialised card state. */
   (void)Board_Init();
   /* USER CODE END 2 */
 

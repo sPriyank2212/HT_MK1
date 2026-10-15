@@ -1,49 +1,155 @@
 ================================================================================
  HT_MK1  -  AUTOMATED HARNESS TEST SYSTEM  -  FIRMWARE STATUS
  MCU: STM32G474RET6 (Cortex-M4F, FreeRTOS, STM32CubeIDE / HAL)
- Last updated: 2026-06-17
+ Last updated: 2026-08-22 (FW-15/FW-16, GUI-06: ratiometric resistance + new commands)
+================================================================================
+ LIVE TRACKING IS PROJECT_LOG.md, NOT THIS FILE. This file is a snapshot of
+ the architecture and driver status for quick orientation; open items, dates
+ and decisions are tracked in PROJECT_LOG.md and may have moved on since the
+ "Last updated" line above. If the two disagree, PROJECT_LOG.md wins.
+================================================================================
+ RESOLVED (was "firmware NOT updated yet" as of the 2026-08-12 sync): DAC8775
+ is GONE from the schematic; every DAC8775 reference below (current-source
+ register map, SPI2 8-bit framing, control_frontend.c's IDAC half) describes
+ hardware that no longer exists and is dead in the codebase too. Kelvin
+ excitation is the ADS124S08's own internal IDAC (AIN9 -> HI_COM), fixed at
+ 2 mA - the hardware ceiling, not a tunable target (FW-12, CL-33).
+ FURTHER RESOLVED 2026-08-21 (HW-04/FW-15): resistance is now measured
+ RATIOMETRICALLY against R131 (100 R, 0.01%, tapped on AIN8) instead of from
+ the IDAC's own programmed current - see the PENDING-FIRMWARE resistance
+ entry below for the full account. Not yet built or run on real hardware; no
+ ARM toolchain was reachable in the session that made this change - see
+ PROJECT_LOG.md FW-15/FW-16.
+================================================================================
+ NEW (2026-08-16, HW-13/FW-14): the Control Card gained a DS18B20 1-Wire
+ temperature sensor (U2) on PA0 - see the BUS/PERIPHERAL MAP below for the
+ pin/net detail. Driven: drivers/ds18b20.{h,c} (bit-banged, CRC8-checked),
+ board.c's board_init_temp()/g_ds18b20, protocol command >TEMP READ / event
+ !TEMP (CMD_TEMP_READ in tasks.c). Unverified on real hardware - no DS18B20
+ to bit-bang against yet.
+================================================================================
+ NEW (2026-08-21, GUI-06): four more protocol commands, all routed through
+ the sequencer like TEMP READ (they touch the shared hardware mutex/bus
+ state):
+   - MANUAL PATH now also reports its own continuity-ADC reading, via a new
+     !MANUAL event - CMD_CONTINUITY (only reachable from MANUAL PATH; CONT
+     RUN calls Continuity_TestPair directly) already took this reading and
+     only ever logged it before.
+   - MANUAL SWEEP <hi> - one HS pin against all 256 LS, a bounded copy of
+     CONT RUN discover's inner loop. New CMD_MANUAL_SWEEP/run_manual_sweep().
+   - BUS SCAN - probes every I2C device with a schematic-confirmed address
+     (Matrix Card's 9 expanders + the ADS124S08 by identity check). New
+     Board_ScanBus() in bsp/board.c/.h. Deliberately does NOT probe the HV
+     cards - their address straps are still marked TODO-verify in
+     hv_card.c (BU-03), so reporting ok/fault there would claim a confidence
+     this project doesn't have yet.
+   - CAL RUN <hi> <lo> - a standalone Kelvin_MeasurePair on an operator-
+     chosen pair, reporting whether the ratiometric R131 reference actually
+     worked for that one reading (KelvinResult_t.ratiometric) - the one
+     field RES RUN's per-point !RES event doesn't carry. Reuses CMD_KELVIN,
+     which existed in tasks.c but was never posted from proto.c until now.
+ None of the four built or run on real hardware yet - see PROJECT_LOG.md
+ FW-16. Full wire formats: Doc/GUI_development_brief.md SS3.2/3.3.
 ================================================================================
 
 SOURCE OF TRUTH
 --------------------------------------------------------------------------------
-The finalised KiCad schematics (Control_Card.pdf, Matrix_Card.pdf, HV_Card.pdf)
-are authoritative. The SAD Word document (Harness_Tester_SAD_v1.0) is STALE and
-must NOT be relied on where it disagrees with the schematics.
+The Doc/ folder is now authoritative:
+  - Control_Card-6.pdf, Matrix_Card-9.pdf, HV_Card-4.pdf   (finalised KiCad,
+    current as of this update - re-added with -N suffixes 2026-08-21,
+    replacing the un-suffixed Control_Card.pdf/Matrix_Card.pdf/HV_Card.pdf
+    named here since 2026-08-16; supersede all earlier-numbered PDFs)
+  - NOTE: the 2026-08-21 re-export is TEXT-IDENTICAL to the revision it
+    replaces (confirmed by pdftotext + md5sum on all three sheets, same
+    unchanged 2026-07-11/2026-08-06 title-block dates) - it does NOT visibly
+    show the HW-04 AIN8/LO_COM routing on the page. That routing is confirmed
+    true by the user directly (PROJECT_LOG.md HW-04/CL-61), not by anything
+    readable in these PDFs; treat this revision as a filename/export event,
+    not evidence of a schematic content change, until a schematic that
+    actually differs shows up.
+  - Harness_Tester_Operation_Document.docx  (v1.1 original)
+  - Harness_Tester_Operation_Document_v1.3.docx  (was v1.2_corrected; renamed
+    and updated to v1.3 - firmware review, see the v1.3 section below)
+  - Operation.txt  (short operation notes)
+The old root-level schematic PDFs were removed. Where the Operation Document
+prose disagreed with the schematics, the SCHEMATICS WIN; the corrected doc was
+carried v1.1 -> v1.2 -> v1.3 (change lists at the bottom of this file).
 
 ARCHITECTURE (key fact)
 --------------------------------------------------------------------------------
 Single-MCU design. The STM32G474 on the Control Card is the ONLY processor in
-the instrument. The Matrix Card and HV Cards have NO MCU - they are just I2C
-GPIO expanders (MCP23017), analogue muxes (CD4067), reed relays, DACs and ADCs
-driven by this one firmware over I2C / SPI / GPIO. All test logic lives here.
+the instrument. The Matrix Card and HV Cards have NO MCU - they are I2C GPIO
+expanders (MCP23017), analogue muxes (CD4067), reed relays (MHV05), DACs and
+ADCs driven by this one firmware over I2C / SPI / GPIO. All test logic lives here.
 
-Code layout (new layers compile automatically - "Core" is a recursive CubeIDE
-source path; include as "drivers/xxx.h" / "cards/xxx.h"):
     Core/Inc/drivers, Core/Src/drivers   - device drivers
     Core/Inc/cards,   Core/Src/cards     - per-card abstraction
-    (planned) Core/.../test              - continuity / kelvin / insulation
+    Core/Inc/test,    Core/Src/test      - continuity / kelvin / insulation
+    Core/Inc/bsp,     Core/Src/bsp       - board bring-up (bindings)
+    Core/Inc/app,     Core/Src/app       - logging + RTOS tasks
 
-MCU PERIPHERAL MAP (from generated Core/ config)
+BUS / PERIPHERAL MAP  (CURRENT as of FW-02 / CL-23, 2026-08-11)
 --------------------------------------------------------------------------------
-    I2C2  PC4(SCL)/PA8(SDA), CS PC2      I2C3  PC8(SCL)/PC9(SDA), CS PC3
-    SPI1  PA5/6/7                        SPI2  PB13/14/15
-    SPI3  PB3/4/5, CS PB1/PB2            GPIO  OPT0_CNTR=PC12, GPIO0..3_ISO,
-                                               HV_CARD_DT_x lines
+    I2C2  PC4(SCL)/PA8(SDA)   -> SHARED isolated bus (ADUM1250): all four HV
+                                 cards' MCP23017s AND the Matrix Card's own
+                                 eight expanders (hi_en/lo_en/hi_sns/lo_sns,
+                                 U101/102/105/106/66/67/107/108) AND U69 (the
+                                 ADS124S08's I2C-expander io lines) all live
+                                 here at the same hard-strapped 0x20-0x27
+                                 range. Firmware gates it one card/segment at a
+                                 time via HV_Card_EN1..4 (Matrix Card = EN1) -
+                                 see Doc/i2c_bus_sharing.md.
+    I2C3  PC8(SCL)/PC9(SDA)   -> LOCAL to the Control Card, never shared: U20/
+                                 U21 (mux address lines HI_S1-4/LO_S1-4).
+    SPI1  PA5/6/7, soft-CS via I2C (U69) -> ADS124S08 U68 on the Matrix Card,
+                                 reading HI_SENSE/LO_SENSE = RESISTANCE measure
+                                 (4-wire Kelvin, 24-bit delta-sigma, PGA auto-
+                                 ranged). Matrix U33 (AD7476, HI_COM) was
+                                 REMOVED from the schematic in the Matrix rev
+                                 that added the Kelvin sense array - it no
+                                 longer exists on the card at all.
+                                 8-bit, SPI mode 1, <=10 MHz (the part's
+                                 ceiling; CubeMX's leftover 4-bit/mode-0/32 MHz
+                                 default from the deleted U33 was wrong for
+                                 this part and has been fixed in spi.c/.ioc).
+    SPI2  PB13/14/15, CS PB2  -> DAC8775 + HV DAC8830 + HV AD7476 x2 (ISOLATED,
+                                 shared bus, per-device CS)
+    SPI3  PB3/4/5, CS PB1     -> Control AD7476 U4 (ADC_IN) = CONTINUITY measure
+    GPIO  OPT0_CNTR = PC12 (mode switch; the Op-Doc's "PA15" was WRONG = buzzer)
+          HV_Card_x.0 / x.1  = the two ADC chip-selects per HV board (see below)
+          HV_Card_EN1..4     = per-slot I2C2 bus-segment gate (PC5/PC6/PA10/
+                                 PA9); EN1 is the Matrix Card's own slot (J1)
+          PA0 = 1_Wire       -> NEW (HW-13, 2026-08-16, Control Card `uC` sheet):
+                                 DS18B20U+T&R temperature sensor (U2), R2 4.7k
+                                 pull-up on the 1-Wire bus, R3 47R series on DQ.
+                                 Driven (FW-14): drivers/ds18b20.{h,c}, bound
+                                 in board.c as g_ds18b20 (open-drain, no CubeMX
+                                 .ioc entry yet - configured directly, same as
+                                 Log_HwInit_LPUART1()/ADS1232_HwInit_Nucleo()).
+                                 Read via `>TEMP READ` -> `!TEMP <deci_C>`.
+                                 Unverified on real hardware.
 
-SPI ALLOCATION (verified from .ioc pins + Control_Card isolator wiring)
---------------------------------------------------------------------------------
-    SPI2  PB13/14/15        -> DAC8775 (Kelvin Idac), via isolators ("SPI1_ISO")
-    SPI3  PB3/4/5 +CS        -> HV cards: DAC8830 + AD7476, via isol ("SPI2_ISO")
-    SPI1  PA5/6/7            -> AD7476 on Control Card (the free SPI)  [ASSIGNED]
-    Note: the SPI1_ISO/SPI2_ISO net names are crossed vs the MCU instance; by
-    PINS, SPI2->DAC8775, SPI3->HV, SPI1 free. Per-device SPI settings below.
+    - DAC8830 (HV V_PGM) is on SPI, NOT I2C (Op-Doc said I2C - wrong).
+    - There is NO HV-enable and NO discharge GPIO: CA05P-5 VIN is tied to
+      +5V_ISO, HV output follows the DAC only. HV OFF = program DAC to 0.
+      Discharge is passive through the ~10.05 Mohm sense divider.
+    - Each HV board has TWO AD7476: RAIL (U301 = HV_Sense) and LEAK (U302 =
+      HV_RET, across R3004 1k = insulation). HV-card ADCs run off +5V_ISO ->
+      vref 5.0 V. Control/Matrix ADCs = 3.3 V.
+    - HV_Sense = HV * R3003/(R3001+R3003) = HV * 0.00049 ~= 0.245 V @500 V, a
+      1:2000 divider (R3001 10M : R3003 5k). CONFIRMED (HW-08, 2026-08-12):
+      HV_Card-3.pdf now shows R3003 = 5k, matching this scaling - the earlier
+      50k (1:200 -> 2.49 V, x10) drawing error is resolved. Firmware's 0.245 V
+      / 0.00049 scaling was already correct against the intended value.
 
 PER-BUS SPI SETTINGS NEEDED (change in CubeMX - generated default is 4-bit!)
 --------------------------------------------------------------------------------
-    SPI1 (AD7476)        : 16-bit, RX-only, SCLK <= 20 MHz (drop one prescaler
-                           notch from 32 MHz), soft-NSS CS GPIO (TBD pin).
-    SPI2 (DAC8775)       : 8-bit (24-bit frame sent as 3 bytes), <= ~50 MHz ok.
-    SPI3 (DAC8830+AD7476): 16-bit, <= 20 MHz (AD7476 limits the bus).
+    SPI1 (Matrix AD7476)         : 16-bit, RX, SCLK <= 20 MHz, soft-CS PB0.
+    SPI2 (DAC8775/DAC8830/AD7476): MIXED - DAC8775 = 8-bit (3-byte frame),
+                                   DAC8830/AD7476 = 16-bit. Set data size per
+                                   transaction, or run 8-bit and byte-frame.
+                                   <= 20 MHz (AD7476 limits the bus).
+    SPI3 (Control AD7476)        : 16-bit, RX, SCLK <= 20 MHz, soft-CS PB1.
 
 
 ================================================================================
@@ -52,195 +158,324 @@ PER-BUS SPI SETTINGS NEEDED (change in CubeMX - generated default is 4-bit!)
 
 1) MCP23017 driver  -  Core/{Inc,Src}/drivers/mcp23017.{h,c}
 --------------------------------------------------------------------------------
-   WHAT : Bus-agnostic driver for the 16-bit I2C GPIO expander used everywhere
-          (2x on Matrix Card, 8x per HV Card).
-   HOW  : - Instance binds an I2C handle + 7-bit address (0x20 | A2:A0 strap).
-          - Assumes power-on default IOCON.BANK=0 with sequential addressing, so
-            a 16-bit access auto-increments port A -> port B.
-          - HAL_I2C_Mem_Write/Read, blocking, 100 ms timeout.
-          - API: Init (sets HAEN, drives latch low, all pins -> outputs),
-            IsReady, WriteReg/ReadReg (8-bit), WriteReg16/ReadReg16,
-            SetDirection, SetPullups, WritePins, ReadPins,
-            WritePin (single bit via shadow latch = one bus write).
-   STATE: Complete. Compiles (HAL-only deps).
+   Bus-agnostic 16-bit I2C GPIO expander driver (2x Matrix, 8x per HV Card).
+   Init (HAEN, latch low, all outputs), WriteReg/ReadReg(16), WritePins/ReadPins,
+   WritePin via shadow latch. Blocking HAL, 100 ms timeout. Complete.
 
 2) Matrix Card layer  -  Core/{Inc,Src}/cards/matrix_card.{h,c}
 --------------------------------------------------------------------------------
-   WHAT : Routes any of 256 harness pins onto the HI or LO analogue bus.
-   HOW  : - Addressing confirmed from updated Matrix_Card.pdf:
-            * Channel select = SHARED 4-bit bus per bank (HI_S0..3 / LO_S0..3),
-              driven by MCU GPIO over the J101 ribbon.
-            * Mux select = ONE-HOT enable (HI_EN1..16 from MCP23017 U101=0x20,
-              LO_EN1..16 from MCP23017 U102=0x21).
-            * Route pin p(1..256): mux=(p-1)>>4, channel=(p-1)&0x0F.
-          - MatrixCard_Init (inits both expanders, forces all-open),
-            SelectPin(bank,pin) [break-before-make], ConnectPair(hi,lo),
-            BankOff, AllOff.
-          - Enable polarity #define MATRIX_EN_ACTIVE_LOW (=1). CONFIRMED from
-            updated schematic: HI_EN/LO_EN run direct from MCP23017 to CD4067 E
-            pin (pin 15, active-low), no buffer/inverter. Init forces all-open
-            because generic MCP Init leaves outputs low (= active-low muxes ON).
-          - Pin->(mux,channel) is a single linear function matrix_map_pin();
-            swap for a LUT if PCB routes I0..I15 differently. NOT yet verifiable
-            from the PDF (muxer sheet too dense) - confirm from netlist.
-          - Select GPIOs tolerate NULL ports (usable before the Control-Card
-            connector is wired).
-   STATE: Code complete. Verified against updated Matrix_Card.pdf. One assumption
-          left (pin->mux/channel mapping); see OPEN ITEMS.
-   NOTE : Updated schematic removed pull resistors on the EN lines (only S0..3 +
-          LO_COM are pulled down now) -> mux enables FLOAT at power-up until the
-          MCP23017s are initialised. Minor power-up safety note (HW).
+   SUPERSEDED by the geometry described under "MATRIX CARD REV 2" and the
+   4-wire Kelvin rework below (32 muxes/bank, 8:1 CD74HC4051, sense array,
+   ADS124S08) - kept here only as the original 2026-07-14 baseline text.
+   Routes any of 256 pins onto HI/LO bus: shared 4-bit select per bank
+   (HI_S0..3 / LO_S0..3), one-hot enables (HI_EN1..16 U101=0x20, LO_EN1..16
+   U102=0x21), break-before-make. MATRIX_EN_ACTIVE_LOW=1 (CD4067 E active-low).
+   NEW 2026-07-14: on-card AD7476 (U33 on SPI1, reads HI_COM) added -
+   MatrixCard_InitAdc / ReadRaw / ReadVolts. This is the RESISTANCE sense point.
+   NOTE: S0..3 pulled down + LO_COM pull-down = 100R (page 3) - the 100R also acts
+   as the current-source return and the continuity low leg. Channel address is
+   defined at power-up; the mux ENABLE lines are not pulled and float until the
+   MCP23017s init (low risk; EN pull-ups to be added next schematic rev).
 
 3) AD7476 driver  -  Core/{Inc,Src}/drivers/ad7476.{h,c}
 --------------------------------------------------------------------------------
-   WHAT : SPI read-only driver for the 12-bit SAR ADC. Reusable: Control-Card
-          front-end ADC (now on SPI1) AND each HV-Card leakage/Vmon ADC (SPI3).
-   HOW  : - Instance binds SPI handle + soft-NSS CS GPIO (port/pin).
-          - CS low starts conversion; reads one 16-bit frame, masks low 12 bits.
-          - API: Init (parks CS high), ReadRaw, CodeToVolts(vref), ReadVolts.
-   STATE: Code complete. Requires SPI1 set to 16-bit / <=20 MHz / soft CS in
-          CubeMX (see PER-BUS SPI SETTINGS). CS pin TBD (reuse PC2 or dedicate).
+   SPI read-only 12-bit SAR driver, reused three places today: Control U4
+   (SPI3, continuity), HV U301/U302 (SPI2-iso, rail/leak). Matrix U33 (SPI1)
+   was the fourth use as of 2026-07-14; U33 was removed from the schematic
+   in the Matrix Kelvin rework and SPI1 now carries the ADS124S08 instead
+   (see the BUS/PERIPHERAL MAP above). Init/ReadRaw/CodeToVolts/ReadVolts.
 
-4) Schematic review / cross-check
+4) Schematic reconciliation (Doc/ folder)  -  2026-07-14
 --------------------------------------------------------------------------------
-   - Full read of all three schematics; mismatches vs the SAD documented (2-wire
-     HI/LO matrix not 4-wire Kelvin; single MHV05 reed relay per position;
-     isolation centralised on Control Card; all ribbons 50-pin; AD7476 12-bit
-     SAR not 24-bit; MOSFET not BJT relay drivers).
-   - Updated Matrix_Card.pdf adds the connector sheet (J101 ribbon + harness
-     fixture connectors DE9/DA15/DB25/DC37/headers) and resolves mux topology.
+   Full read of all three Doc/ schematics + Operation Document. Corrected the
+   firmware bus/ADC map and produced Doc/..._v1.2_corrected.docx (change list
+   at bottom). Confirmed: DAC8830=SPI; OPTO_CNTR=PC12; HV_Card_x.0/x.1 = the two
+   ADC chip-selects (not HV enable/discharge); matrix I2C isolator ADUM1205ARZ
+   is BIDIRECTIONAL (earlier "write-only" worry RESOLVED).
 
-5) Full driver/card/test stack (this session)
+5) Driver/card/test stack  (all compile clean, arm-none-eabi-gcc, real HAL)
 --------------------------------------------------------------------------------
-   All of the below compile clean (arm-none-eabi-gcc, -Wall -Wextra, real HAL):
-   Drivers  Core/{Inc,Src}/drivers/
-     dac8830.{h,c}  - 16-bit voltage DAC (HV V_PGM). WriteCode/Fraction. Solid.
-     dac8775.{h,c}  - quad IDAC (Kelvin). 24-bit transport solid; REGISTER MAP
-                      constants are placeholders to VERIFY vs datasheet.
-   Cards    Core/{Inc,Src}/cards/
-     control_frontend.{h,c} - DAC8775 + AD7476 + OPT0_CNTR mode switch behind
-                      SetMode/SetCurrent/Read.
-     hv_card.{h,c}  - per board: 8x MCP23017 (4 inject + 4 return, break-before-
-                      make), DAC8830 set, AD7476 sense, HV enable/discharge,
-                      OpenAll. Relay drivers active-high (MCP all-low = safe).
-   BSP      Core/{Inc,Src}/bsp/board.{h,c}
-     Board_Init() instantiates g_matrix, g_frontend, g_hv[] and brings all to a
-     safe idle state. All open-point bindings (buses/CS/select GPIOs) live here
-     as clearly-marked TODO #defines.
-   Tests    Core/{Inc,Src}/test/
-     continuity.{h,c} - TestPair: route HI/LO, continuity mode, classify. Done.
-     kelvin.{h,c}     - MeasurePair: force I, R=(V/gain)/I. Done (2-wire as HW).
-     insulation.{h,c} - TestPair: full safe HV sequence (set V -> connect cold
-                      -> enable -> settle -> measure -> discharge -> open).
-                      Sequencing/safety complete; leakage->ohms STUBBED (OPEN #4,
-                      verdict TEST_ERROR until measurement chain confirmed).
-   Integration: main.c calls Board_Init() in USER CODE 2. Tests are NOT auto-run
-   (HV safety); they are an API for the future host-command layer to call.
+   Drivers:  dac8830.{h,c} (16-bit V-DAC), dac8775.{h,c} (quad IDAC; REGISTER
+             MAP constants still to VERIFY vs datasheet).
+   Cards:    control_frontend.{h,c} - DAC8775 + Control AD7476 (SPI3) + OPT0_CNTR.
+             hv_card.{h,c} - REWORKED 2026-07-14: 8x MCP23017 (break-before-make),
+             DAC8830, TWO AD7476 (adc_rail=HV_Sense, adc_leak=HV_RET), HvCard_HvOff
+             / HvEnable(0)=DAC0 / Discharge=passive no-op, the two per-card GPIO
+             are the ADC chip-selects. Relay drivers active-high (MCP all-low=safe).
+   Tests:    continuity.{h,c} - reads Control U4 (SPI3); connected band 1.3-1.7 V.
+             kelvin.{h,c}     - SUPERSEDED 2026-08-11 (FW-02, CL-23): no longer
+                                 reads Matrix U33 (removed from the schematic);
+                                 reads the ADS124S08 (HI_SENSE/LO_SENSE, 4-wire)
+                                 instead - see the PENDING-FIRMWARE entry above.
+             insulation.{h,c} - full safe HV sequence; reads HV_RET leakage node;
+             GO/NO-GO verdict (PASS < 0.045 V, FAIL >= 0.045 V = 10 Mohm limit).
+   BSP:      board.c - Board_Init instantiates g_matrix (+ADC), g_frontend, g_hv[]
+             to a safe idle state. SPI map corrected; open bindings marked VERIFY.
 
-6) Logging + RTOS task architecture (this session)
+6) Logging + RTOS tasks  -  Core/{Inc,Src}/app/{log,tasks}.{h,c}
 --------------------------------------------------------------------------------
-   Logging  Core/{Inc,Src}/app/log.{h,c}
-     - Levels ERROR/WARN/INFO/DEBUG, compile-time gated by LOG_LEVEL.
-     - Non-blocking: LOG_x() formats a short "<L>[tick] tag: msg" line and drops
-       it in a queue (drop-if-full, ISR-safe) -> never stalls a task. A low-prio
-       logger task drains the queue to the UART.
-     - UART-agnostic; Log_HwInit_LPUART1() brings up LPUART1 on PA2/PA3 (AF12,
-       115200) = the Nucleo ST-LINK VCP, so logs stream over the USB cable.
-   Tasks    Core/{Inc,Src}/app/tasks.{h,c}  (cmsis_os2)
-     tSafety(High)  - forces safe-all on fault; backstops HV-disable when idle;
-                      IWDG-refresh hook (TODO when watchdog enabled).
-     tSequencer(Nrm)- runs one test command at a time under the HW mutex.
-     tComms(BelowN) - VCP console: c/k/i = continuity/kelvin/insulation,
-                      s = force-safe, f = fault, r = clear fault.
-     tLogger(Low)   - drains the log queue.
-     - Single HW mutex serialises all shared I2C/SPI access (sequencer+safety).
-     - Wired via Tasks_Init() in app_freertos.c (USER CODE RTOS_THREADS).
-   Free UART decision: USART2/3 + UART4 are in the schematic; free peripherals
-   are USART1 / UART5 / LPUART1. LPUART1 chosen (free AND reaches the Nucleo VCP
-   on PA2/PA3). In the PRODUCT those pins are USART2 -> production logging UART
-   is an open pin-budget item.
+   Leveled non-blocking logger (drop-if-full queue -> LPUART1 PA2/PA3 = Nucleo
+   VCP). Tasks: tSafety(High, forces safe-all on fault), tSequencer(Nrm, one cmd
+   under HW mutex), tComms(BelowN, c/k/i/s/f/r VCP console), tLogger(Low).
+   Board_Init in main.c USER CODE 2; Tasks_Init in app_freertos RTOS_THREADS.
 
-NUCLEO-G474RE TEST PATH
---------------------------------------------------------------------------------
-   - Same MCU; firmware runs as-is. Bare board has no Matrix/HV peripherals, so
-     I2C/SPI transactions NAK - Board_Init logs errors but the unit still boots.
-   - Open the ST-LINK VCP at 115200: you get the event log (Board_Init status,
-     task heartbeats) and the c/k/i/s/f/r console to trigger sequences.
-   - Pin conflicts on Nucleo: LD2=PA5 (=SPI1_SCK, no status LED), B1=PC13
-     (=HV_CARD_DT_1_0). Do CONFIG TODO (SPI sizes etc.) before bus waveforms
-     are meaningful. Add an MCP23017 breakout to exercise matrix/relay logic.
+
+================================================================================
+ FIRMWARE FIXES APPLIED  (2026-07-14, all build clean)
+================================================================================
+   [x] ADC vref 3.0 -> 3.3 V; added BOARD_VREF_HV = 5.0 V (HV ADCs off +5V_ISO)
+   [x] Continuity: connected band 1.3-1.7 V, open >= 3.0 V (was <= 0.5 V bug)
+   [x] Kelvin InAmp gain 10 -> 1 (no InAmp in the path)
+   [x] board.c SPI map: control ADC -> SPI3, HV bus -> SPI2, matrix ADC -> SPI1
+   [x] HvCard reworked: two ADCs, DAC-based HV on/off, GPIO = ADC chip-selects
+   [x] SUPERSEDED (FW-02, CL-23, 2026-08-11): resistance now reads the
+       ADS124S08 (HI_SENSE/LO_SENSE, 4-wire Kelvin) instead of Matrix U33 -
+       see the PENDING-FIRMWARE resistance-test entry below. Continuity still
+       reads Control U4, unchanged.
+   [x] Insulation OPEN #4 RESOLVED: go/no-go by HV_RET voltage (0.045 V = 10 Mohm)
 
 
 ================================================================================
  PENDING  -  FIRMWARE
 ================================================================================
-
-   [x] ad7476.{h,c}            - DONE
-   [x] dac8775.{h,c}           - DONE (register-map constants to VERIFY)
-   [x] dac8830.{h,c}           - DONE
-   [x] control_frontend layer  - DONE
-   [x] hv_card layer           - DONE
-   [x] test/continuity.c       - DONE
-   [x] test/kelvin.c           - DONE (2-wire as HW is drawn)
-   [x] test/insulation.c       - DONE except leakage->ohms (OPEN #4 stub)
-   [x] board config / BSP      - DONE (open-point bindings are TODO #defines)
-   [x] integrate Board_Init into main.c                       (USER CODE 2)
-   [x] logging module (app/log) - leveled, non-blocking, VCP-capable
-   [x] RTOS task architecture (app/tasks) - safety/sequencer/comms/logger
-   [~] host command layer - basic single-char VCP console done; full host
-       protocol + structured result reporting still TODO
+   [!] insulation return scheme (v1.3, per HW owner): the leakage loop is
+       +500V -> R3002 1M -> HS relay[n] -> HS wire -> [insul] -> adjacent conductor
+       -> its LS relay -> HV_RET -> R3004 1k -> GND. Per line: energise HS[n] and
+       close ALL Low-Side relays EXCEPT net n's own return (from the connection
+       map); the net is measured against every other conductor. insulation.c MUST
+       drive this LS pattern - with no LS relay closed the ADC reads ~0 = false PASS.
+   [x] SUPERSEDED - the 2-wire resistance test described here (U33 vs GND,
+       100R LO_COM return, 10 mA target, mux-Ron self-cal) no longer applies.
+       The Matrix Card is 4-wire Kelvin now: a second "sense" mux array taps
+       HI_SENSE/LO_SENSE directly at the harness pins (no mux Ron in the
+       reading), read by an ADS124S08 (24-bit delta-sigma, PGA auto-ranged
+       1-128) instead of U33. `test/kelvin.c` (FW-02, CL-23, 2026-08-11):
+       forces excitation, auto-ranges the PGA (highest gain first, stepping
+       down on saturation), takes a second same-gain reading with excitation
+       off as a per-point zero-current baseline, subtracts it, then converts
+       with ADS124S08_OhmsFromCurrent as a fallback only.
+   [x] FURTHER SUPERSEDED 2026-08-21 (HW-04/FW-15): the ratiometric form is
+       done. R131 (100 R, 0.01%, Matrix sheet) is tapped on the ADS124S08's
+       AIN8, carrying the same excitation current as the DUT in series
+       (IDAC -> HI_COM -> DUT -> LO_COM -> R131 -> GND). Kelvin_MeasurePair
+       now reads AIN8 (PGA bypassed - 2 mA x 100 R = 200 mV, no auto-range
+       needed) as well as the DUT pair, and computes resistance as a ratio
+       (ADS124S08_OhmsRatiometric) - this cancels the IDAC's own tolerance
+       (typ +/-0.5%, worst-case +/-3%) entirely, leaving R131's 0.01% as the
+       accuracy floor. Falls back to ADS124S08_OhmsFromCurrent (the IDAC's
+       programmed 2 mA) only if the AIN8 read fails for that one point -
+       KelvinResult_t.ratiometric reports which one was actually used, and
+       CAL RUN (GUI-06) surfaces it per point on demand. CAL GET's reply
+       reads current_ua/rref_mohm/rref_tol_mohm/gain_max from kelvin.h's
+       real constants now too, not a hardcoded string (proto.c). Excitation
+       current is KELVIN_FORCE_CURRENT_A in kelvin.h = 0.002f (2 mA) - the
+       IDAC's hard ceiling, not a tunable target (see FW-12 above); the
+       0.010f/10 mA/"TUNE placeholder" language this paragraph used to carry
+       was already stale before HW-04 and is corrected here, not just
+       superseded. **None of this is built or run on real hardware yet** -
+       see PROJECT_LOG.md FW-15/FW-16. Current reversal for thermal EMF
+       (BU-10) is deliberately NOT implemented yet - it needs the DAC8775
+       bipolar range, whose register map is still VERIFY (dac8775.h) - and
+       dac8775.h itself is dead code now the chip is gone from the board.
+   [x] continuity level (v1.3): LO_COM pull-down = 100R. Connected node = divider of
+       ~10k pull-up (3.3 V) vs (2*mux_Ron + 100R) -> WELL below the old 1.5 V (a few
+       hundred mV, or tens of mV with low-Ron mux); open ~3.3 V. Large margin - set
+       thresholds from a bring-up loopback, not a fixed 1.5 V.
+   [x] SUPERSEDED - host command layer: `app/proto.c` (FW-05, CL-11,
+       2026-08-01) replaced the single-char VCP console with the full line-
+       based GUI protocol (Doc/GUI_development_brief.md), including
+       structured `!` event streaming during a run.
    [ ] full-scan orchestration (walk all pin pairs vs a wiring schedule) +
-       board-to-pin map for multi-HV-board insulation coverage
-   [ ] finish insulation leakage->resistance maths once OPEN #4 resolved
+       board-to-pin map for multi-HV-board coverage (needs 4 HV cards for 256)
+   [x] SUPERSEDED - per-card I2C bus-select: implemented as HV_Card_EN1..4
+       (FW/CL-24, CL-25, 2026-08-11), gating one card's segment of the shared
+       I2C2 bus at a time - EN1 also covers the Matrix Card's own expanders,
+       confirmed on the same shared bus. See Doc/i2c_bus_sharing.md.
+   [ ] stepped HV ramp verification (10%/step, per-step HV_Sense check @0.00049
+       => ~0.245 V @500 V; confirm the divider is 1:2000 - see HV_Sense note above)
    [ ] enable IWDG in CubeMX + refresh from tSafety (hook already in place)
+   [ ] dac8775 register-map constants: VERIFY vs datasheet (current-source mode)
 
 CONFIG TODO (CubeMX / .ioc - REQUIRED before the code runs on hardware)
 --------------------------------------------------------------------------------
-   [ ] SPI1 -> 16-bit, RX-only, SCLK <= 20 MHz  (AD7476)
-   [ ] SPI2 -> 8-bit                            (DAC8775 24-bit frame = 3 bytes)
-   [ ] SPI3 -> 16-bit, SCLK <= 20 MHz           (DAC8830 + AD7476)
-   [ ] OPT0_CNTR (PC12)        : INPUT -> OUTPUT (mode switch control)
-   [ ] HV_CARD_DT_x_0 / _1     : INPUT -> OUTPUT (HV enable / discharge per board)
-   [ ] Assign dedicated CS GPIOs for SPI1 (ADC) and SPI2 (IDAC); board.c uses
-       PC2 / PC3 as placeholders today.
-   [ ] Confirm matrix vs HV I2C bus assignment (board.c uses hi2c3 / hi2c2).
+   [ ] SPI1 -> 16-bit RX, <= 20 MHz, soft-CS PB0 (assign PB0 as GPIO output)
+   [ ] SPI2 -> mixed 8/16-bit handling (DAC8775 8-bit, DAC8830/AD7476 16-bit)
+   [ ] SPI3 -> 16-bit RX, <= 20 MHz, soft-CS PB1
+   [ ] OPT0_CNTR (PC12), HV ADC-CS lines (HV_Card_x.0/x.1) : INPUT -> OUTPUT
+   [ ] HV DAC8830 CS (CS_ISO) pin: confirm from connector netlist (placeholder PC2)
+
 
 ================================================================================
- PENDING  -  HARDWARE / CONFIG (affects firmware, to resolve with design)
+ PENDING  -  HARDWARE / CONFIG  (owner decisions, 2026-07-14)
 ================================================================================
+   [x] HV inhibit NOT required - DAC->opamp drives CA05P VPGM; HV off = DAC 0,
+       passive bleed via 10.05 Mohm. (FW must size the discharge wait to the
+       harness+output capacitance; INSULATION_DISCHARGE_MS = 200 ms today -
+       confirm CA05P output capacitance.)
+   [x] Reed relays are COLD-switched (discharge before switching) to protect the
+       MHV05 contacts from arc erosion. FW sequence already does this.
+   [x] Insulation = go/no-go only, 10 Mohm <-> 0.045 V (no leakage grading).
+   [x] AD7476 bus - RESOLVED (SPI1 Matrix / SPI2 HV / SPI3 Control).
+   [x] Matrix/HV I2C isolators bidirectional (ADUM1205 / ADUM1250) - reads OK.
+   [ ] Control-Card <-> Matrix connector: HI_COM/LO_COM + HI_S0..3/LO_S0..3 (8
+       MCU GPIO) + isolated I2C + power. Until drawn, matrix select GPIOs are NULL.
+   [x] SUPERSEDED - per-card differentiation: solved in firmware via
+       HV_Card_EN1..4 bus-segment gating (CL-24/CL-25) rather than a
+       per-card ISO1251 + chip-select scheme; see the BUS/PERIPHERAL MAP.
+   [ ] EN-line pull-ups on the matrix CD4067 (next schematic rev).
+   [ ] DAC8830 net naming: rename I2C-style nets to SPI in next schematic rev.
 
-   [ ] Control-Card <-> Matrix connector NOT yet drawn (user doing later).
-       Needs: HI_COM/LO_COM analogue buses, HI_S0..3 / LO_S0..3 (8 MCU GPIO),
-       isolated I2C, power. Until then matrix select-line GPIOs are placeholders.
-   [ ] Control-Card "IN" net is a stub on the HV connectors (not received on HV
-       side) - unfinished LV analogue path.
-   [ ] SPI DataSize is SPI_DATASIZE_4BIT for SPI1/2/3 in generated code. Must be
-       per-bus (SPI1=16, SPI2=8, SPI3=16) + SPI1/SPI3 baud <=20 MHz for AD7476.
-       RESOLVE: set in CubeMX and regenerate (see PER-BUS SPI SETTINGS).
-   [x] AD7476 bus  - RESOLVED: moved off I2C2 to the free SPI1. Driver written.
-       TODO in CubeMX: SPI1 16-bit/RX-only/<=20MHz + a CS GPIO (suggest reuse
-       PC2 ex-I2C2_CS, or dedicate a free pin); update schematic pins to match.
-   [x] DAC8775 SPI_ISO naming  - RESOLVED (intended): DAC8775 is on MCU SPI2 via
-       the Control-Card isolators; "SPI1_ISO" is just the post-isolator net name.
-   [ ] Matrix I2C isolator U103 (ADuM3201) appears WRITE-ONLY (5V->3V3 both
-       channels): MCU cannot receive slave ACK / read expanders. HAL I2C master
-       writes may NAK/timeout even when bits land.
-       RESOLVE: (a) confirm the part/direction; if truly unidirectional either
-       swap to a bidirectional I2C isolator (e.g. ADuM1250 / ISO1540), or (b)
-       add a "blind write" path in mcp23017 that ignores the NAK return.
-   [ ] HV leakage-current sense path unclear: one AD7476 reads HV_Sense (the
-       10M/50K divider off +500V); no dedicated leakage InAmp+shunt to ADC seen.
-       RESOLVE: confirm how leakage CURRENT (not just HV rail V) is digitised.
+
+================================================================================
+ OPERATION DOCUMENT v1.2 - CORRECTIONS APPLIED
+================================================================================
+   File: Doc/Harness_Tester_Operation_Document_v1.2_corrected.docx (40 edits)
+   - OPTO_CNTR pin PA15 -> PC12 (PA15 is the buzzer).
+   - DAC8830 bus I2C -> SPI everywhere (write-only; no register readback).
+   - HV_Sense = rail monitor: 500 V -> ~0.245 V (ratio 0.00049); ramp table and
+     all "~0.045 V" rail confirmations rescaled; HV ADC vref 3.3 -> 5.0 V.
+   - HV_RET = leakage go/no-go: 0.045 V = 10 Mohm boundary (PASS below / FAIL at).
+   - ADC/bus map: SPI1 Matrix (HI_COM, resistance), SPI2 HV x2 (isolated),
+     SPI3 Control (ADC_IN, continuity). Resistance measured at HI_COM, not ADC_IN.
+   NOTE: the graded insulation-band tables (S1.3, S4.2.3) were left in place with
+   an added go/no-go note; delete the graded rows manually if a pure PASS/FAIL
+   table is preferred.
+
+
+================================================================================
+ OPERATION DOCUMENT v1.3 - FIRMWARE REVIEW (2026-07-17)
+================================================================================
+   File: Doc/Harness_Tester_Operation_Document_v1.3.docx (renamed from
+   _v1.2_corrected). Full review of the v1.3 doc against the re-issued
+   Control_Card-1 / Matrix_Card-3 / HV_Card-1 schematics. Doc now carries inline
+   "FIRMWARE REVIEW NOTE (v1.3)" call-outs + an "Open Hardware Decisions" block.
+   Findings + HW-owner resolutions (2026-07-17):
+   - HV_Sense: 0.245 V @500 V (ratio 0.00049, 1:2000). R3003 being changed
+     50k -> 5k in the next schematic rev (drawn 50k = 2.49 V, x10). FW keeps
+     the 0.245 V scaling.
+   - Insulation dead-short reads ~0.50 V (not 0.049 V); 0.045 V = 10 Mohm go/no-go
+     unchanged/correct. Interpretation tables re-derived over 0..0.50 V.
+   - Insulation return RESOLVED: energise HS[n], close all LS relays EXCEPT net n's
+     own return -> net measured vs all other conductors on HV_RET (Sec 4.0/4.1/4.2).
+   - HV card = 64 HS + 64 LS PER card; 256 lines needs 4 HV cards on shared I2C
+     addr 0x20-0x27, bank-selected by ISO_HV_CARD_EN1..4 (confirmed by HW owner).
+   - LO_COM pull-down = 100R (HW decision): sets the current-source return AND the
+     continuity low leg. Resistance still needs low mux Ron / low current for
+     COMPLIANCE (100R alone doesn't fix the 3.3 V clamp); planned reference self-cal
+     removes the fixed offset. Continuity connected level is well below 1.5 V.
+
+
+================================================================================
+ MATRIX CARD REV "2" (2026-07-30) - WHAT CHANGED
+================================================================================
+Supersedes Matrix_Card-6. Task tracking lives in PROJECT_LOG.md; this section is
+the firmware-facing summary.
+
+   MUX SWAP: CD4067B (16:1) -> CD74HC4051 (8:1), 128 parts. HC family is
+   characterised at 3.3 V, so the force loop drops from ~2 kohm to a few hundred
+   ohm and the excitation ceiling rises from ~0.8 mA to several mA.
+   Consequences for firmware:
+     - 32 muxes per bank (was 16); enables HI_EN1..32 / LO_EN1..32
+     - 3 channel-select bits S0..S2 (was 4); mux=(p-1)>>3, channel=(p-1)&0x07
+     - enable bit map is BYTE-SWAPPED: GPB0..7 = EN1..8, GPA0..7 = EN9..16,
+       so in the mcp23017 driver's packing: word = (val>>8)|(val<<8)
+
+   TWO BUFFERED I2C SEGMENTS: 9 expanders will not fit in the MCP23017's 8
+   addresses, so the bus is split by NTS0102DP level shifters:
+     U141 OE = HI_S3 -> BUFF1 : U101 0x20 HI_EN1-16,  U102 0x21 LO_EN1-16,
+                                U105 0x22 HI_EN17-32, U106 0x23 LO_EN17-32
+     U142 OE = LO_S3 -> BUFF2 : U66  0x20 HI_SENSE_EN1-16,  U69 0x21 ADC ctl,
+                                U67  0x22 HI_SENSE_EN17-32, U107 0x24
+                                LO_SENSE_EN1-16, U108 0x26 LO_SENSE_EN17-32
+   CORRECTED (HW-12, CL-22, 2026-08-11): the addresses above are read directly
+   off Matrix_Card-7.pdf sheet 9, not the originally-assumed sequential
+   0x24-0x27 block for the sense expanders - see the (now-resolved) BLOCKING
+   item below for why U69 sits where it does.
+   The select bit freed by 16:1 -> 8:1 became the segment select. Firmware must
+   enable exactly one segment before any expander access.
+
+   RESOLVED IN THIS REV: sense-enable net names (HI_SENSE_EN/LO_SENSE_EN now
+   driven); one clock net (SPI1_SCLK everywhere incl. J101); ADC anti-alias front
+   end fitted (R234/R235 4.99k 0.1% matched, C33 47nF differential, C142/C143
+   4.7nF common-mode, ~320 Hz differential corner); 100k pull-up per mux retained
+   on all 128; R131 still 100R 0.01%.
 
 ================================================================================
  OPEN ITEMS / ASSUMPTIONS TO CONFIRM
 ================================================================================
+ BLOCKING
+   - RESOLVED (HW-12, CL-22, 2026-08-11): the I2C-address-collision concern
+     that used to be here (U101 vs U69 both assumed at 0x20) was based on an
+     incorrect sequential-block assumption for the sense-side straps, not on
+     what the schematic actually shows. Reading the real labels off
+     Matrix_Card-7.pdf sheet 9 found U69 already sits on BUFF2 @ 0x21, between
+     U66 (0x20) and U67 (0x22) - nowhere near U101 (0x20 on BUFF1, a different
+     segment). No collision exists; no schematic change was needed.
+     matrix_card.h's strap constants were wrong to match the old assumption
+     and have been corrected to match the real addresses.
 
-   - MCP23017 addresses: U101(HI)=0x20, U102(LO)=0x21  [CONFIRMED by user]
-   - Matrix enable polarity active-low (CD4067 E)       [CONFIRMED from schematic]
-   - Matrix EN lines float at power-up (no pull res)    [HW note; verify on board]
-   - Pin->(mux,channel) linear mapping                  [assumed; need netlist]
-   - HV-card MCP23017 addresses (8 per board) + bus     [TBD]
-   - Which I2C bus serves Matrix vs HV expanders        [TBD]
-   - Number of HV boards in initial build (1..4)        [TBD]
+ MATRIX REV 2 FOLLOW-UPS
+   - AD7476 (U33) removed from the Matrix card. Continuity still works via
+     HI_COM -> J101 -> IN -> Control SPDT -> ADC_IN. BUT in resistance mode the
+     SPDT selects I_OUT and disconnects ADC_IN, so NOTHING can observe HI_COM
+     during current injection: the loopback compliance sweep cannot be done
+     directly. Workaround in FW: sweep current on a 0R loopback and watch for
+     R = V/I departing from linear. Proper fix: route HI_COM -> AIN2 and
+     LO_COM -> AIN3 (both free) - also closes the current-reference item below.
+   - HW-04 still NOT implemented: LO_COM is not routed to a spare ADC input, so
+     the 0.01% R131 cannot serve as a current reference and resistance accuracy
+     rides on the DAC8775 alone.                        [HW - awaiting decision]
+   - SPI1_CS is still on J101 but has no consumer now that the AD7476 is gone.
+   - HI_S3 / LO_S3 no longer reach any mux - they are the BUFF1/BUFF2 OE lines.
+     Confirm NTS0102DP OE polarity before writing them.
+
+ FIRMWARE REWORK - DONE (was "queued" against the rev-6 geometry; all landed)
+   - matrix_card: DONE (FW-03, 2026-08-01) - 32 muxes/bank, 3 select bits, 4
+     force + 4 sense expanders, segment switching via HI_S3/LO_S3 in the U21
+     word, byte-swapped enable map, AD7476 binding removed.
+   - continuity: measurement is on the Control front-end ADC (unchanged from
+     the original design, never needed to move); thresholds still carry the
+     1.3-1.7 V band from the 100k-return era and want a bring-up recheck.
+   - kelvin: DONE (FW-02, CL-23, 2026-08-11) - rewritten for 4-wire, PGA
+     auto-range, zero-current baseline subtraction. See the PENDING-FIRMWARE
+     resistance-test entry above for detail.
+   - drivers/ads124s08: DONE (FW-01, CL-10, 2026-08-01). CS/RESET/START/DRDY
+     are on an I2C expander (U69), not GPIO, so the driver takes an io vtable
+     rather than port/pin - and board.c now actually instantiates it (that
+     wiring was still missing as of FW-01 and was added alongside FW-02).
+   - dac8775 current-source register map      [still VERIFY vs datasheet]
+
+ CARRIED OVER
+   - Pin->(mux,channel) linear mapping (matrix + HV)      [assumed; need netlist]
+   - HV DAC8830 CS pin (CS_ISO) + SPI2 mixed data-size    [VERIFY from netlist]
+   - CA05P-5 output capacitance (sets discharge wait)     [TBD]
+   - Number of HV boards in initial build (1..4)          [TBD]
+   - 4 card slots on the Control card vs 4 HV cards + 1 Matrix card = 5 [TBD]
+   - HV_Sense divider: R3003 50k -> 5k [DONE, HW-08, confirmed on HV_Card-3.pdf]
+
+================================================================================
+ BENCH SETUP - ADS1232 4-WIRE RIG (2026-07-30)
+================================================================================
+Was a stand-in for the ADS124S08 while the Matrix Card's Kelvin hardware did
+not exist yet; that hardware is now real and the product build reads the
+ADS124S08 directly (FW-02). This bench rig proved the 4-wire method (0.033R
+resistor to 0.4%, no current calibration - Doc/4wire_resistance_validation.md)
+and is now kept only for bench-side sanity checks, not as the primary path.
+Built as a separate, macro-gated driver so it never ships in the product build.
+
+   Enable with:  -DHT_ENABLE_ADS1232=1     (default 0 = not compiled)
+   Files:        Core/Inc/drivers/ads1232.h, Core/Src/drivers/ads1232.c
+   Docs:         Doc/ADS1232_bench_wiring.md
+
+   KEY POINT: the ADS1232 is NOT an SPI device. There is no chip select and no
+   MOSI. It has one clock in (SCLK) and one data line out (DOUT/DRDY) that
+   doubles as the data-ready flag. It is driven bit-banged on two GPIOs; no SPI
+   peripheral is used. Gain, data rate and channel are set by STATIC PINS, not
+   registers - either strap them with jumpers or drive them from GPIO.
+
+   TODO before this rig is trusted:
+   - Add Datasheet/ads1232.pdf. Pin NUMBERS and the offset-calibration extra-
+     SCLK-pulse sequence are marked VERIFY in the driver until then.
+   - ADS1232 has NO internal reference: REFP/REFN must be supplied externally.
+   - Confirm measured excitation current with a DMM before trusting any ohms.
 ================================================================================

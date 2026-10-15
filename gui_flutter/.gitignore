@@ -1,0 +1,20 @@
+# Flutter / Dart
+.dart_tool/
+.packages
+.flutter-plugins
+.flutter-plugins-dependencies
+build/
+pubspec.lock
+
+# Generated platform scaffolding. `setup.cmd` regenerates it against whichever
+# Flutter SDK the build machine has, which is safer than pinning someone
+# else's runner boilerplate into the repo.
+windows/
+.metadata
+
+# Packaged output from build_exe.cmd — 7.8 MB per exe, rebuildable.
+dist/
+
+# Session logs never live here (they go to %LOCALAPPDATA%\HT_MK1\sessions),
+# but catch them if --log-dir is pointed at the checkout.
+sessions/

@@ -36,11 +36,31 @@ extern "C" {
 #define INSULATION_R_MIN_MOHM    100.0f
 #endif
 
+/* Leakage-node (HV_RET, across R3004 = 1 kohm) GO/NO-GO threshold. Higher V =
+ * worse insulation. Board decision: 10 Mohm insulation -> 0.045 V leakage is
+ * the pass/fail boundary (below 0.045 V => PASS >10 Mohm, at/above => FAIL).
+ * Absolute volts, independent of the ADC vref. */
+#ifndef INSULATION_V_PASS_MAX
+#define INSULATION_V_PASS_MAX    0.045f
+#endif
+
+/* Sense-divider constants for the (informational) leakage -> ohms estimate.
+ * R_series ~= 1 Mohm makes 10 Mohm insulation land at 0.045 V across R3004. */
+#ifndef INSULATION_R_BOTTOM_OHM
+#define INSULATION_R_BOTTOM_OHM  1000.0f     /* R3004                          */
+#endif
+#ifndef INSULATION_R_SERIES_OHM
+#define INSULATION_R_SERIES_OHM  1000000.0f  /* effective leakage-path series  */
+#endif
+#ifndef INSULATION_V_FULL
+#define INSULATION_V_FULL        500.0f      /* HV at full-scale DAC           */
+#endif
+
 typedef struct
 {
-  uint16_t      sense_code;
-  float         sense_volts;
-  float         insulation_mohm;   /* STUB until measurement chain confirmed */
+  uint16_t      sense_code;        /* leakage-node (HV_RET) raw code         */
+  float         sense_volts;       /* leakage-node volts                     */
+  float         insulation_mohm;   /* approximate estimate (see .c)          */
   TestVerdict_t verdict;
 } InsulationResult_t;
 

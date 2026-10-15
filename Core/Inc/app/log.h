@@ -65,6 +65,24 @@ void Log_Write(LogLevel_t lvl, const char *tag, const char *fmt, ...);
 void Log_Task(void *argument);
 
 /**
+  * @brief  Transmit a block on the console UART, serialised against every other
+  *         writer.
+  * @note   Three threads write this UART: the logger, the sequencer (result
+  *         events) and comms (command replies). HAL_UART_Transmit is not
+  *         reentrant - a second caller gets HAL_BUSY and its line is silently
+  *         lost, which for a protocol reply means the GUI times out and declares
+  *         the link dead. Everything that writes the console must go through
+  *         here. Falls back to a direct transmit before the scheduler is
+  *         running, when there is nothing to race with.
+  * @param  data    : [in] bytes to send.
+  * @param  len     : [in] byte count.
+  * @param  timeout : [in] per-transmit HAL timeout, milliseconds.
+  * @retval HAL_OK on success, HAL_ERROR if the UART is unbound or the mutex
+  *         could not be taken in time.
+  */
+HAL_StatusTypeDef Log_ConsoleWrite(const uint8_t *data, uint16_t len, uint32_t timeout);
+
+/**
   * @brief  Nucleo helper: bring up LPUART1 on PA2/PA3 (AF12) at 115200 8N1,
   *         which reaches the ST-LINK virtual COM port. Returns the handle, or
   *         NULL on failure. (In the product these pins are USART2; swap there.)

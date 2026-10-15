@@ -69,8 +69,8 @@ all: main-build
 main-build: HT_MK1.elf secondary-outputs
 
 # Tool invocations
-HT_MK1.elf HT_MK1.map: $(OBJS) $(USER_OBJS) C:\Users\psoni\STM32CubeIDE\workspace_1.19.0\HT_MK1\STM32G474RETX_FLASH.ld makefile objects.list $(OPTIONAL_TOOL_DEPS)
-	arm-none-eabi-gcc -o "HT_MK1.elf" @"objects.list" $(USER_OBJS) $(LIBS) -mcpu=cortex-m4 -T"C:\Users\psoni\STM32CubeIDE\workspace_1.19.0\HT_MK1\STM32G474RETX_FLASH.ld" --specs=nosys.specs -Wl,-Map="HT_MK1.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv4-sp-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
+HT_MK1.elf HT_MK1.map: $(OBJS) $(USER_OBJS) C:\Users\priya\OneDrive\Documents\Gitlab\Software_Team\ht_mk1\github_repo\HT_MK1\STM32G474RETX_FLASH.ld makefile objects.list $(OPTIONAL_TOOL_DEPS)
+	arm-none-eabi-gcc -o "HT_MK1.elf" @"objects.list" $(USER_OBJS) $(LIBS) -mcpu=cortex-m4 -T"C:\Users\priya\OneDrive\Documents\Gitlab\Software_Team\ht_mk1\github_repo\HT_MK1\STM32G474RETX_FLASH.ld" --specs=nosys.specs -Wl,-Map="HT_MK1.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv4-sp-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
 	@echo 'Finished building target: $@'
 	@echo ' '
 

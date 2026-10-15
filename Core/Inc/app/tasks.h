@@ -34,8 +34,42 @@ typedef enum
   CMD_CONTINUITY  = 1,   /* a=hi pin, b=lo pin                       */
   CMD_KELVIN      = 2,   /* a=hi pin, b=lo pin                       */
   CMD_INSULATION  = 3,   /* board, a=inject, b=return, vfrac         */
-  CMD_FORCE_SAFE  = 4    /* drop everything to safe                  */
+  CMD_FORCE_SAFE  = 4,   /* drop everything to safe; b=1 also announces
+                          * the new fixture carried in a (see below)  */
+  /* Whole-run commands driven by the GUI protocol. These iterate the netlist
+   * (or the full 256x256 grid for discovery) and stream '!' events as they go,
+   * rather than returning a single result. */
+  CMD_CONT_RUN    = 5,   /* a=0 verify against netlist, a=1 discover  */
+  CMD_RES_RUN     = 6,
+  CMD_INSUL_RUN   = 7,
+  /* Forces safe, then clears the fault latch. Handled BEFORE the sequencer's
+   * fault gate - it is the only recovery from a latched fault short of a power
+   * cycle, so it has to run while faulted. */
+  CMD_CLEAR_FAULT = 8,
+  /* Reads the Control Card's DS18B20 (U2, PA0 - see HW-13/FW-14). Diagnostic
+   * only, no netlist/fixture involved. Routed through the sequencer rather
+   * than answered inline in proto.c because a real conversion blocks for a
+   * little over 750 ms - doing that in tComms would stall the protocol
+   * parser (and every other command's reply) for most of a second. */
+  CMD_TEMP_READ   = 9,
+  /* One HS pin against all 256 LS - a bounded CMD_CONT_RUN discover=1, for
+   * probing a single suspect line without a full 65,536-point scan
+   * (GUI-06, 2026-08-21). a=hi pin. Whole-run gating (s_busy/EBUSY) applies,
+   * same as the CMD_*_RUN family above. */
+  CMD_MANUAL_SWEEP = 10,
+  /* Probes every I2C device this project has a confirmed address for
+   * (Board_ScanBus, board.c) plus the ADS124S08. Routed through the
+   * sequencer, not answered inline in proto.c, for the same reason
+   * CMD_TEMP_READ is: it touches the shared hardware mutex/bus state the
+   * sequencer already serialises everything else through (GUI-06,
+   * 2026-08-21). */
+  CMD_BUS_SCAN     = 11
 } TestCmdType_t;
+
+/* CMD_FORCE_SAFE.b: ask the sequencer to emit !FIXTURE (value in .a) after the
+ * hardware is safe. A fixture change that invalidates arming must not announce
+ * itself before the rail is actually down - see Proto_SetFixture(). */
+#define CMD_SAFE_ANNOUNCE_FIXTURE  1U
 
 typedef struct
 {

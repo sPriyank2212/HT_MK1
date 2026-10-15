@@ -1,4 +1,13 @@
-../Core/Src/bsp/board.c:47:26:board_init_matrix	1
-../Core/Src/bsp/board.c:55:26:board_init_frontend	1
-../Core/Src/bsp/board.c:70:26:board_init_hv	2
-../Core/Src/bsp/board.c:94:19:Board_Init	5
+../Core/Src/bsp/board.c:23:6:Board_SettleMs	2
+../Core/Src/bsp/board.c:122:26:board_init_matrix	2
+../Core/Src/bsp/board.c:166:26:board_ads_line	2
+../Core/Src/bsp/board.c:183:26:board_ads_cs	1
+../Core/Src/bsp/board.c:192:26:board_ads_reset	1
+../Core/Src/bsp/board.c:201:26:board_ads_start	1
+../Core/Src/bsp/board.c:211:26:board_ads_drdy	3
+../Core/Src/bsp/board.c:241:26:board_init_ads124s08	5
+../Core/Src/bsp/board.c:286:26:board_init_frontend	1
+../Core/Src/bsp/board.c:330:26:board_init_hv	2
+../Core/Src/bsp/board.c:361:26:board_init_temp	1
+../Core/Src/bsp/board.c:385:19:Board_Init	6
+../Core/Src/bsp/board.c:424:9:Board_IsReady	1

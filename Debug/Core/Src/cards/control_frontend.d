@@ -1,5 +1,5 @@
 Core/Src/cards/control_frontend.o: ../Core/Src/cards/control_frontend.c \
- ../Core/Inc/cards/control_frontend.h ../Core/Inc/drivers/dac8775.h \
+ ../Core/Inc/cards/control_frontend.h ../Core/Inc/drivers/ad7476.h \
  ../Core/Inc/main.h ../Drivers/STM32G4xx_HAL_Driver/Inc/stm32g4xx_hal.h \
  ../Core/Inc/stm32g4xx_hal_conf.h \
  ../Drivers/STM32G4xx_HAL_Driver/Inc/stm32g4xx_hal_rcc.h \
@@ -32,10 +32,9 @@ Core/Src/cards/control_frontend.o: ../Core/Src/cards/control_frontend.c \
  ../Drivers/STM32G4xx_HAL_Driver/Inc/stm32g4xx_hal_tim.h \
  ../Drivers/STM32G4xx_HAL_Driver/Inc/stm32g4xx_hal_tim_ex.h \
  ../Drivers/STM32G4xx_HAL_Driver/Inc/stm32g4xx_hal_uart.h \
- ../Drivers/STM32G4xx_HAL_Driver/Inc/stm32g4xx_hal_uart_ex.h \
- ../Core/Inc/drivers/ad7476.h
+ ../Drivers/STM32G4xx_HAL_Driver/Inc/stm32g4xx_hal_uart_ex.h
 ../Core/Inc/cards/control_frontend.h:
-../Core/Inc/drivers/dac8775.h:
+../Core/Inc/drivers/ad7476.h:
 ../Core/Inc/main.h:
 ../Drivers/STM32G4xx_HAL_Driver/Inc/stm32g4xx_hal.h:
 ../Core/Inc/stm32g4xx_hal_conf.h:
@@ -70,4 +69,3 @@ Core/Src/cards/control_frontend.o: ../Core/Src/cards/control_frontend.c \
 ../Drivers/STM32G4xx_HAL_Driver/Inc/stm32g4xx_hal_tim_ex.h:
 ../Drivers/STM32G4xx_HAL_Driver/Inc/stm32g4xx_hal_uart.h:
 ../Drivers/STM32G4xx_HAL_Driver/Inc/stm32g4xx_hal_uart_ex.h:
-../Core/Inc/drivers/ad7476.h:
