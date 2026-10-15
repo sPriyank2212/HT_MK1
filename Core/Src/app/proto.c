@@ -37,7 +37,13 @@ static ProtoFixture_t s_fixture = PROTO_FIXTURE_NONE;
 static uint8_t  s_armed;
 static int32_t  s_hv_mv;
 static int32_t  s_lim_r_mohm   = 5000;    /* 5 ohm  */
-static int32_t  s_lim_ins_mohm = 10000000;/* 10 Mohm */
+/* Insulation pass/fail is NOT configurable: the board decision is a fixed
+ * go/no-go at 10 MOhm <-> 0.045 V on the HV_RET node (INSULATION_V_PASS_MAX in
+ * test/insulation.h), nothing reads a user-set limit (FW-11). 10 MOhm is 1e10
+ * mOhm, which does not fit this int32 mOhm field (max 2.147 MOhm), so the field
+ * reports INT32_MAX = "fixed, at/above range". The old default 10000000 was
+ * commented "10 Mohm" but is really 10 kOhm. */
+static const int32_t s_lim_ins_mohm = INT32_MAX;
 static volatile uint8_t s_busy;    /* a whole-run command is executing */
 static volatile uint8_t s_abort;   /* operator asked the run to stop    */
 
@@ -698,8 +704,12 @@ static void proto_exec(char *line)
       {
         if (strncmp(t[i], "r_max_mohm=", 11U) == 0 &&
             proto_int(&t[i][11], &a) == 0) { s_lim_r_mohm = (int32_t)a; }
-        else if (strncmp(t[i], "ins_min_mohm=", 13U) == 0 &&
-                 proto_int(&t[i][13], &a) == 0) { s_lim_ins_mohm = (int32_t)a; }
+        else if (strncmp(t[i], "ins_min_mohm=", 13U) == 0)
+        {
+          /* Accepted for GUI compatibility but deliberately ignored: the
+           * insulation limit is fixed (see s_lim_ins_mohm). A LIMITS GET
+           * read-back shows the fixed value, not what was sent. */
+        }
       }
       proto_emit('<', "OK");
     }
