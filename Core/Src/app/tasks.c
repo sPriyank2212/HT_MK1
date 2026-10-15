@@ -140,12 +140,37 @@ static void force_safe_all(void)
   (void)MatrixCard_AllOff(&g_matrix);
 }
 
+/* ---- independent watchdog ------------------------------------------------ */
+
+/* IWDG on the LSI (~32 kHz): /32 prescaler -> ~1 kHz tick, reload 499 -> ~500 ms
+ * timeout. Driven through the CMSIS registers directly: the HAL IWDG driver is
+ * not part of this project's build. A reset re-runs Board_Init(), which leaves
+ * the HV DAC at 0 V and every relay open, so a hung MCU can no longer hold the
+ * last programmed HV level. */
+#define WDG_PRESCALER_DIV32   3U
+#define WDG_RELOAD_TICKS      499U
+
+static void watchdog_start(void)
+{
+#ifdef DEBUG
+  DBGMCU->APB1FZR1 |= DBGMCU_APB1FZR1_DBG_IWDG_STOP;   /* freeze while halted */
+#endif
+  IWDG->KR  = 0x5555U;                       /* unlock PR/RLR */
+  IWDG->PR  = WDG_PRESCALER_DIV32;
+  IWDG->RLR = WDG_RELOAD_TICKS;
+  while (IWDG->SR != 0U) { }                 /* wait for PVU/RVU/WVU to clear */
+  IWDG->KR  = 0xAAAAU;                       /* load the counter */
+  IWDG->KR  = 0xCCCCU;                       /* start - cannot be stopped */
+}
+
+static inline void watchdog_refresh(void) { IWDG->KR = 0xAAAAU; }
+
 /**
   * @brief  High-priority safety thread: enforce the safe state.
   * @note   Runs forever on a 10 ms tick. While a fault is latched it forces the
   *         instrument safe (under the bus mutex) and keeps it latched. When idle
   *         and no HV is active it re-asserts HV-disabled as a backstop. The IWDG
-  *         refresh is a TODO pending the watchdog being enabled in CubeMX.
+  *         is started here and refreshed every tick, so a hung MCU resets.
   * @param  arg : [in] unused FreeRTOS thread argument.
   * @retval None (does not return).
   */
@@ -153,6 +178,12 @@ static void SafetyTask(void *arg)
 {
   (void)arg;
   LOG_I("SAFE", "task up");
+  if ((RCC->CSR & RCC_CSR_IWDGRSTF) != 0U)
+  {
+    LOG_W("SAFE", "previous reset was the watchdog");
+    RCC->CSR |= RCC_CSR_RMVF;
+  }
+  watchdog_start();
   for (;;)
   {
     if (s_fault)
@@ -173,7 +204,7 @@ static void SafetyTask(void *arg)
         (void)HvCard_HvEnable(&g_hv[i], 0U);
       }
     }
-    /* TODO: refresh IWDG here once the watchdog is enabled in CubeMX. */
+    watchdog_refresh();
     osDelay(10U);
   }
 }
