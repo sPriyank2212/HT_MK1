@@ -1,4 +1,0 @@
-../Core/Src/cards/control_frontend.c:26:19:Frontend_Init	4
-../Core/Src/cards/control_frontend.c:64:19:Frontend_SetMode	3
-../Core/Src/cards/control_frontend.c:88:19:Frontend_ReadRaw	2
-../Core/Src/cards/control_frontend.c:106:19:Frontend_ReadVolts	2
