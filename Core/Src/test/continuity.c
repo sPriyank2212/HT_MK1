@@ -15,7 +15,7 @@
   *         pair through the matrix, settle, then read the node through the
   *         control ADC. Verdict bands:
   *           - >= CONTINUITY_OPEN_V_MIN                       -> TEST_OPEN (no wire)
-  *           - CONNECTED_V_MIN..CONNECTED_V_MAX (~1.5 V)      -> TEST_PASS (wire present)
+  *           - CONNECTED_V_MIN..CONNECTED_V_MAX (~0.1 V)      -> TEST_PASS (wire present)
   *           - anything else                                  -> TEST_ERROR (anomaly)
   *         The matrix is always released before returning.
   * @param  hi_pin : [in]  1-based HI-side harness pin.
@@ -56,19 +56,7 @@ HAL_StatusTypeDef Continuity_TestPair(uint16_t hi_pin, uint16_t lo_pin,
   if (st == HAL_OK)
   {
     res->volts = AD7476_CodeToVolts(res->code, g_frontend.vref);
-    if (res->volts >= CONTINUITY_OPEN_V_MIN)
-    {
-      res->verdict = TEST_OPEN;      /* sits at the unloaded 3V3 reference */
-    }
-    else if (res->volts >= CONTINUITY_CONNECTED_V_MIN &&
-             res->volts <= CONTINUITY_CONNECTED_V_MAX)
-    {
-      res->verdict = TEST_PASS;      /* ~1.5 V divider point -> wire present */
-    }
-    else
-    {
-      res->verdict = TEST_ERROR;     /* out of both bands -> anomaly */
-    }
+    res->verdict = Continuity_Classify(res->volts);
   }
 
   /* Always release the matrix, but report the measurement error if any. */

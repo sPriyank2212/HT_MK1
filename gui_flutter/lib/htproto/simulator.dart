@@ -301,13 +301,13 @@ class InstrumentSim {
         // Real firmware queues MANUAL PATH (CMD_CONTINUITY) - <OK started,
         // then a !MANUAL event once the one-shot connect/read/release
         // finishes (GUI-06, 2026-08-21). A connected pair reads a plausible
-        // "wire present" voltage (~1.5 V of the CONTINUITY_CONNECTED_V_MIN..
+        // "wire present" voltage (~0.11 V of the CONTINUITY_CONNECTED_V_MIN..
         // _MAX band in continuity.h); this fake harness has no real
         // pass/fail model per pin outside a run, so it always reports as
         // connected - honest within what a --sim connection can simulate.
         _deferred = () async {
           await Future.delayed(const Duration(milliseconds: 20));
-          const mv = 1500;
+          const mv = 110;
           const code = (mv * 4096) ~/ 3300; // AD7476 12-bit, VREF 3.3 V
           _emitEvent('MANUAL adc_mv=$mv adc_code=$code');
         };
