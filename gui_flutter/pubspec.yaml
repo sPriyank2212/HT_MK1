@@ -51,3 +51,4 @@ flutter:
   uses-material-design: false
   assets:
     - assets/company_logo.jpeg
+    - assets/company_logo_symbol.png

@@ -299,7 +299,7 @@ class VerifyModal extends StatelessWidget {
         icon: HtIcons.warning,
         title: 'Confirm before energizing to 500 V',
         subtitle: Text(
-          'The HV test drives 500 V through the harness on J-HV. Check that '
+          'The insulation test drives 500 V through the harness on J-HV. Check that '
           'this is the same harness that passed on J-MTX before continuing.',
           style: t.modalP,
         ),
@@ -479,8 +479,14 @@ class _FixtureGuessModalState extends State<FixtureGuessModal> {
     for (final c in kFix.connectors) c.label,
   ];
 
-  static const _shapeOptions = ['D-sub', 'Circular', 'Rect'];
-  static const _shapeValues = [ConnType.dsub, ConnType.circ, ConnType.rect];
+  static const _shapeOptions = ['D-sub', 'Circular', 'Rect', 'Terminal', 'Modular'];
+  static const _shapeValues = [
+    ConnType.dsub,
+    ConnType.circ,
+    ConnType.rect,
+    ConnType.term,
+    ConnType.mod,
+  ];
 
   void _confirm() {
     final edited = <ConnectorDef>[];
@@ -489,13 +495,14 @@ class _FixtureGuessModalState extends State<FixtureGuessModal> {
       final label = _labels[i].trim();
       edited.add(ConnectorDef(
         id: c.id,
-        label: label.isEmpty ? c.id : label,
+        name: c.name,
+        label: label.isEmpty ? c.name : label,
         partNumber: c.partNumber,
         type: _types[i],
         pins: c.pins,
         side: c.side,
         base: c.base,
-      ));
+      )..pinLabels.addAll(c.pinLabels));
     }
     widget.s.confirmFixtureGuess(edited);
   }
@@ -513,9 +520,11 @@ class _FixtureGuessModalState extends State<FixtureGuessModal> {
         hot: false,
         title: 'Confirm the connector layout',
         subtitle: Text(
-          'Guessed from the netlist file\'s Conn ID / Part Number columns. '
-          'Pin counts come from the file itself — fix the shape or name '
-          'before relying on it in the wiring diagram and result tables.',
+          'Guessed from the netlist file\'s Conn ID / Part Number columns — '
+          'Side A connectors (Conn ID) and Side B connectors (Conn ID B) '
+          'separately. Pin counts come from the file itself — fix the shape '
+          'or name before relying on it in the wiring diagram and result '
+          'tables.',
           style: t.modalP,
         ),
         body: [
@@ -526,22 +535,43 @@ class _FixtureGuessModalState extends State<FixtureGuessModal> {
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
                   SizedBox(
-                    width: 62,
-                    child: Text('${connectors[i].id} · ${connectors[i].pins}p',
-                        style: t.mono(size: 12, color: c.ink)),
+                    width: 92,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(connectors[i].name,
+                            style: t.mono(size: 12, color: c.ink)),
+                        Text(
+                          '${connectors[i].side == "L" ? "Side A" : "Side B"}'
+                          ' · ${connectors[i].pins}p',
+                          style: t.mono(size: 10.5, color: c.ink3),
+                        ),
+                      ],
+                    ),
                   ),
                   const SizedBox(width: 8),
-                  Seg(
-                    options: _shapeOptions,
-                    selected: _shapeValues.indexOf(_types[i]),
-                    onSelect: (v) =>
-                        setState(() => _types[i] = _shapeValues[v]),
-                  ),
-                  const SizedBox(width: 8),
+                  // The shape selector, and under it the part number / label
+                  // on a line of its own - five shapes leave no room for it
+                  // beside them, and a clipped part number is unreadable.
                   Expanded(
-                    child: TextInput(
-                      value: _labels[i],
-                      onChanged: (v) => _labels[i] = v,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Seg(
+                          options: _shapeOptions,
+                          selected: _shapeValues.indexOf(_types[i]),
+                          fill: true,
+                          onSelect: (v) =>
+                              setState(() => _types[i] = _shapeValues[v]),
+                        ),
+                        const SizedBox(height: 6),
+                        TextInput(
+                          width: double.infinity,
+                          value: _labels[i],
+                          onChanged: (v) => _labels[i] = v,
+                        ),
+                      ],
                     ),
                   ),
                 ],
@@ -557,6 +587,96 @@ class _FixtureGuessModalState extends State<FixtureGuessModal> {
         footer: [
           Btn('Cancel', onTap: widget.s.cancelFixtureGuess),
           Btn('Apply', variant: BtnVariant.primary, onTap: _confirm),
+        ],
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// MODAL 0 · before the insulation test
+// ---------------------------------------------------------------------------
+
+/// Shown when insulation is requested without a completed Mode 1 (continuity
+/// + resistance on J-MTX). With both passed it is just the "harness is on
+/// J-HV" confirmation; without them the operator can go back and run Mode 1,
+/// or deliberately "Continue anyway" and run insulation with no pre-test.
+class PreTestModal extends StatelessWidget {
+  final AppState s;
+  const PreTestModal({super.key, required this.s});
+
+  ({String state, String title, String detail, String value}) _row(
+      String key, String title) {
+    final r = s.R[key];
+    return (
+      state: r == 'pass' ? 'ok' : 'warn',
+      title: title,
+      detail: switch (r) {
+        'pass' => 'Mode 1 · completed on J-MTX',
+        'fail' => 'Mode 1 · failed on J-MTX',
+        _ => 'Mode 1 · not run yet',
+      },
+      value: switch (r) {
+        'pass' => 'passed',
+        'fail' => 'failed',
+        _ => 'not run',
+      },
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.type;
+    final done = s.preTestsDone;
+
+    return ModalScrim(
+      onDismiss: s.cancelModals,
+      child: MBox(
+        icon: HtIcons.warning,
+        title: done
+            ? 'Move the harness to ${s.hvConnName()}'
+            : 'Run continuity and resistance first?',
+        subtitle: Text(
+          done
+              ? 'Continuity and resistance passed on J-MTX. Plug the harness '
+                  'into ${s.hvConnName()}, then continue to the insulation test.'
+              : 'The insulation test normally follows a passed continuity and '
+                  'resistance check on J-MTX. Run those first, or continue '
+                  'anyway to run insulation without any pre-test.',
+          style: t.modalP,
+        ),
+        body: [
+          Cols.gapped(8, [
+            _Check(row: _row('cont', 'Continuity passed on J-MTX')),
+            _Check(row: _row('res', 'Resistance passed on J-MTX')),
+          ]),
+          if (!done)
+            Text(
+              'Continue anyway tells the instrument the harness is on '
+              '${s.hvConnName()} — make sure it is plugged in there. The '
+              'skipped pre-tests are recorded in the log.',
+              style: t.modalP,
+            ),
+        ],
+        footer: [
+          Btn('Cancel', onTap: s.cancelModals),
+          if (done)
+            Btn(
+              'Harness moved — continue',
+              variant: BtnVariant.hv,
+              big: true,
+              onTap: () => unawaited(s.continueToInsulation(skipped: false)),
+            )
+          else ...[
+            Btn('Go to Mode 1',
+                variant: BtnVariant.primary, big: true, onTap: s.goToMode1),
+            Btn(
+              'Continue anyway',
+              variant: BtnVariant.ghostHv,
+              big: true,
+              onTap: () => unawaited(s.continueToInsulation(skipped: true)),
+            ),
+          ],
         ],
       ),
     );

@@ -1,6 +1,8 @@
 /// `<section id="v-run">` — the operator's home screen.
 library;
 
+import 'dart:async';
+
 import 'package:flutter/widgets.dart';
 
 import '../app/app_state.dart';
@@ -25,11 +27,14 @@ class RunView extends StatelessWidget {
       if (s.phase == 'hold') Handover(s: s),
       FixtureFlow(s: s),
       _Domains(s: s),
+      _AutoScanStrip(s: s),
     ]);
 
     final right = Cols([
       _FaultsPanel(s: s),
-      _DemoPanel(s: s),
+      // Only in a demo (--sim) build; with real hardware there is no
+      // simulated harness to pick.
+      if (s.demoScenario != null) _DemoPanel(s: s),
       _StackPanel(s: s),
     ]);
 
@@ -61,7 +66,7 @@ class _Domains extends StatelessWidget {
         s: s,
         icon: HtIcons.cont,
         title: 'Continuity',
-        stage: 'S1 · MTX',
+        stage: 'M1 · MTX',
         state: s.dContS,
         cond: s.dcCond,
         stat: s.dcN,
@@ -76,7 +81,7 @@ class _Domains extends StatelessWidget {
         s: s,
         icon: HtIcons.res,
         title: 'Resistance',
-        stage: 'S1 · MTX',
+        stage: 'M1 · MTX',
         state: s.dResS,
         // Fixed hardware facts, not a live reading (see the matching Band
         // in res_hv_views.dart's ResView for the same numbers/reasoning):
@@ -100,15 +105,15 @@ class _Domains extends StatelessWidget {
       DomainCard(
         s: s,
         icon: HtIcons.hv,
-        title: 'HV insulation',
-        stage: 'S2 · HV',
+        title: 'Insulation test',
+        stage: 'M2 · HV',
         state: s.dHvS,
         cond: s.dhCond,
         stat: s.dhN,
         unit: 'below 10 MΩ',
         bar: s.dhBar,
         runKey: 'hv',
-        runLabel: 'Run HV · 500 V',
+        runLabel: 'Run insulation · 500 V',
         runVariant: BtnVariant.hv,
         goView: 'hv',
       ),
@@ -145,6 +150,77 @@ class _Domains extends StatelessWidget {
       );
     });
   }
+}
+
+/// The Auto scan entry on the run screen: a full-width strip under the three
+/// Mode 1 / Mode 2 cards - it is a separate survey, not a stage of the
+/// sequence above it.
+class _AutoScanStrip extends StatelessWidget {
+  final AppState s;
+  const _AutoScanStrip({required this.s});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    final t = context.type;
+    final (canRun, why) = s.canAutoScan;
+    return HtPanel(
+      child: PanelPad(
+        RowWrap.gapped(
+          14,
+          [
+            HtIcon(HtIcons.scan, size: 20, color: c.ink3, strokeWidth: 1.6),
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 560),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Auto scan', style: t.domainH4),
+                  const SizedBox(height: 3),
+                  Text(
+                    why.isNotEmpty
+                        ? why
+                        : 'No harness plan needed — finds out which pins on '
+                            'J-MTX are connected.',
+                    style: t.ui(size: 12, color: c.ink3, height: 1.5),
+                  ),
+                ],
+              ),
+            ),
+            const FlexSpacer(),
+            Btn('Run auto scan',
+                variant: BtnVariant.primary,
+                disabled: !canRun,
+                onTap: canRun
+                    ? () {
+                        s.go('auto');
+                        unawaited(s.runAutoScan());
+                      }
+                    : null),
+            _OpenAuto(onTap: () => s.go('auto')),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _OpenAuto extends StatelessWidget {
+  final VoidCallback onTap;
+  const _OpenAuto({required this.onTap});
+  @override
+  Widget build(BuildContext context) => GestureDetector(
+        onTap: onTap,
+        child: MouseRegion(
+          cursor: SystemMouseCursors.click,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 7),
+            child: Text('OPEN',
+                style: context.type.domainOpen(context.colors.ink3)),
+          ),
+        ),
+      );
 }
 
 /// `<div class="panel">` with `#faultList`
@@ -244,28 +320,25 @@ class _DemoPanel extends StatelessWidget {
       header: [
         const PanelTitle('Demo harness'),
         const FlexSpacer(),
-        const Tag(TagVariant.mut, 'mockup only'),
+        const Tag(TagVariant.mut, 'simulator'),
       ],
       child: PanelPad(
         Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Seg(
-              options: const ['Good stage 1', 'Faulty stage 1'],
+              options: const ['Good mode 1', 'Faulty mode 1'],
               selected: s.scenario == 'good' ? 0 : 1,
               fill: true,
-              onSelect: (i) {
-                s.scenario = i == 0 ? 'good' : 'bad';
-                s.resetAll();
-              },
+              onSelect: (i) => s.pickDemoScenario(i == 1),
             ),
             const SizedBox(height: 10),
             Text(
               s.scenario == 'good'
-                  ? 'Stage 1 passes, the handover appears, then the two HV '
-                      'prompts gate the 500 V pass.'
-                  : 'Continuity finds an open on ARINC_A_HI. The gate holds — '
-                      'the harness is never moved and HV never runs.',
+                  ? 'Mode 1 passes, the handover appears, then the two HV '
+                      'prompts gate the 500 V insulation pass.'
+                  : 'Continuity finds two opens and a short. The gate holds — '
+                      'the harness is never moved and insulation never runs.',
               style: t.ui(size: 12, color: c.ink3, height: 1.5),
             ),
           ],

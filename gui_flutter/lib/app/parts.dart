@@ -61,7 +61,7 @@ class Netbar extends StatelessWidget {
       kind = 'MTX netlist · J-MTX';
       fname = loaded ? f.name! : 'No MTX netlist loaded';
       meta = loaded
-          ? '${f.nets} nets · ${f.pins} pins · loaded ${f.time}'
+          ? '${f.nets} connections · ${f.pins} pins · loaded ${f.time}'
               '${f.origin == "cross" ? " · built by cross scan" : ""}'
           : 'required for ${kUses[useKey]}';
       uses = loaded
@@ -77,7 +77,7 @@ class Netbar extends StatelessWidget {
           : 'required for ${kUses[useKey]}';
       uses = loaded
           ? kUses[useKey]!
-          : 'asked for automatically when you start the HV test';
+          : 'asked for automatically when you start the insulation test';
     }
 
     final isHv = dom == 'hv';
@@ -290,7 +290,10 @@ class _Meta extends StatelessWidget {
       );
 }
 
-/// `.act{width:122px;height:122px;border-radius:50%;border:2px solid}`
+/// `.act{border-radius:50%}` — 122px in the original design, enlarged: it is the
+/// primary control of the console.
+const double kActSize = 172;
+
 class _ActButton extends StatefulWidget {
   final AppState s;
   const _ActButton({required this.s});
@@ -308,7 +311,11 @@ class _ActButtonState extends State<_ActButton> {
     final t = context.type;
     final spec = widget.s.actButton;
 
+    // The run button is the one control an operator reaches for every time,
+    // so when it is live it is a solid, glowing disc rather than the outlined
+    // ghost the other buttons use.
     Color border, fg, bg;
+    Color? glow;
     if (spec.disabled) {
       border = c.line;
       fg = c.ink3;
@@ -317,18 +324,21 @@ class _ActButtonState extends State<_ActButton> {
       switch (spec.style) {
         case 'stop':
           border = c.fail;
-          fg = _hover ? c.panel : c.fail;
-          bg = _hover ? c.fail : c.failSoft;
+          fg = c.panel;
+          bg = c.fail;
+          glow = c.fail;
           break;
         case 'hv':
           border = c.hv;
-          fg = _hover ? c.panel : c.hv;
-          bg = _hover ? c.hv : c.hvSoft;
+          fg = c.panel;
+          bg = c.hv;
+          glow = c.hv;
           break;
         default:
           border = c.accent;
-          fg = _hover ? c.accentInk : c.accent;
-          bg = _hover ? c.accent : c.accentSoft;
+          fg = c.accentInk;
+          bg = c.accent;
+          glow = c.accent;
       }
     }
 
@@ -351,19 +361,33 @@ class _ActButtonState extends State<_ActButton> {
             // .act:active{transform:scale(.97)}
             scale: _down ? .97 : 1,
             child: Container(
-              width: 122,
-              height: 122,
+              width: kActSize,
+              height: kActSize,
               alignment: Alignment.center,
+              padding: const EdgeInsets.all(18),
               decoration: BoxDecoration(
                 color: bg,
                 shape: BoxShape.circle,
-                border: Border.all(color: border, width: 2),
+                border: Border.all(color: border, width: 3),
+                boxShadow: glow == null
+                    ? null
+                    : [
+                        BoxShadow(
+                          color: glow.withValues(alpha: _hover ? .55 : .35),
+                          blurRadius: _hover ? 34 : 24,
+                          spreadRadius: _hover ? 5 : 2,
+                        ),
+                      ],
               ),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(spec.label.toUpperCase(), style: t.act(fg)),
-                  const SizedBox(height: 5),
+                  FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text(spec.label.toUpperCase(),
+                        style: t.act(fg), textAlign: TextAlign.center),
+                  ),
+                  const SizedBox(height: 6),
                   Text(spec.hint.toUpperCase(), style: t.actSmall(fg)),
                 ],
               ),
@@ -422,7 +446,7 @@ class FixtureFlow extends StatelessWidget {
       header: [
         const PanelTitle('Fixture sequence'),
         const FlexSpacer(),
-        const Lbl('one connector at a time · DUT is moved between stages'),
+        const Lbl('one connector at a time'),
       ],
       child: Padding(
         padding: const EdgeInsets.all(14),
@@ -433,7 +457,7 @@ class FixtureFlow extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     Expanded(child: box1),
-                    SizedBox(width: 46, child: gate),
+                    SizedBox(width: 74, child: gate),
                     Expanded(child: box2),
                   ],
                 ),
@@ -482,7 +506,8 @@ class _StageBox extends StatelessWidget {
       // .stagebox[data-s="lock"]{opacity:.5;border-style:dashed}
       opacity: state == 'lock' ? .5 : 1,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         decoration: BoxDecoration(
           color: c.panel,
           border: Border.all(color: borderColor),
@@ -537,7 +562,7 @@ class _Gate extends StatelessWidget {
     final children = <Widget>[
       HtIcon(HtIcons.transfer, size: 20, color: colour, strokeWidth: 1.6),
       const SizedBox(width: 5, height: 5),
-      Text('OPERATOR\nMOVES DUT',
+      Text('MOVE\nDUT',
           style: context.type.gate(colour), textAlign: TextAlign.center),
     ];
     return Padding(
@@ -702,7 +727,10 @@ class DomainCard extends StatelessWidget {
       _ => c.accent,
     };
 
-    final (canRun, why) = s.can(runKey);
+    // Insulation is always startable from here: when Mode 1 has not passed,
+    // pressing it opens the prerequisites prompt (with Continue anyway)
+    // rather than leaving a dead button.
+    final canRun = runKey == 'hv' ? s.running == null : s.can(runKey).$1;
 
     return Opacity(
       // .domain[data-s="lock"]{opacity:.6}

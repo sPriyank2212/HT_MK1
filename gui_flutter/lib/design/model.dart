@@ -51,16 +51,27 @@ class Mulberry32 {
 /// harness or the HV stack.
 const double kPitch = 13;
 
-enum ConnType { dsub, circ, rect }
+/// The kinds of connector a harness end can land on. [term] is a screw /
+/// spring terminal block, [mod] a modular or network jack (RJ45, USB...).
+enum ConnType { dsub, circ, rect, term, mod }
 
 const Map<ConnType, String> kTypeName = {
   ConnType.dsub: 'D-sub',
-  ConnType.circ: 'Circular 38999',
-  ConnType.rect: 'Amphenol rect',
+  ConnType.circ: 'Circular',
+  ConnType.rect: 'Rectangular',
+  ConnType.term: 'Terminal block',
+  ConnType.mod: 'Modular jack',
 };
 
 class ConnectorDef {
+  /// Unique key inside the fixture (what `PinRef.c` and `kConn` use). Usually
+  /// the same as [name]; differs only when the same designator sits on BOTH
+  /// harness ends (a mated pair's `DB15-1` at each end), where the second
+  /// gets a suffix so the two stay distinct.
   final String id;
+
+  /// What the operator reads on the diagram and in tables.
+  final String name;
   final String label;
   final ConnType type;
   final int pins;
@@ -74,9 +85,14 @@ class ConnectorDef {
   /// made-up name as though it were a catalog number.
   final String partNumber;
 
-  /// "L" or "R"
+  /// "L" (harness end A / Side-A, the HI pins) or "R" (end B / Side-B, the LO
+  /// pins).
   final String side;
   final int base;
+
+  /// Signal name printed against a pin (the netlist's `Src Pin Label` /
+  /// `Dst Pin Label` column), by pin number within this connector.
+  final Map<int, String> pinLabels = <int, String>{};
 
   // Filled in by layoutFixture().
   double x = 0, y = 0, w = 0, h = 0;
@@ -84,13 +100,14 @@ class ConnectorDef {
 
   ConnectorDef({
     required this.id,
+    String? name,
     required this.label,
     required this.type,
     required this.pins,
     required this.side,
     required this.base,
     this.partNumber = '',
-  });
+  }) : name = name ?? id;
 }
 
 /// A plain point, so the model stays independent of dart:ui.
@@ -234,12 +251,58 @@ class PinRef {
   int get hashCode => Object.hash(c, p);
 }
 
+/// One (hi, lo) pair of a net, resolved onto the fixture's connectors.
+class NetPair {
+  final int hi;
+  final int lo;
+  final PinRef src;
+  final PinRef dst;
+  final String? srcLabel;
+  final String? dstLabel;
+  const NetPair({
+    required this.hi,
+    required this.lo,
+    required this.src,
+    required this.dst,
+    this.srcLabel,
+    this.dstLabel,
+  });
+
+  String get key => '$hi:$lo';
+}
+
 class Net {
   String name;
   PinRef src;
   List<PinRef> dsts;
 
-  /// "Y" branch splice, "I" inline splice, or null for point to point.
+  /// Further source pins when several wires converge on one destination (the
+  /// mirror image of a Y branch), or several on each end (a multi-drop bus).
+  /// Empty for the common one-source net.
+  List<PinRef> srcExtra;
+
+  /// The netlist rows this net is made of, one per (hi, lo) pair, so a result
+  /// for a single pair can be attributed to the right branch. Empty for the
+  /// built-in demo harness.
+  List<NetPair> pairs;
+
+  /// `hi:lo` keys of pairs that came back open on the last run.
+  final Set<String> openPairs = <String>{};
+
+  /// `hi:lo` keys of pairs the last run has reported on at all (pass or
+  /// open) — what turns a wire from "not tested" grey to pass/fail colour.
+  final Set<String> reportedPairs = <String>{};
+
+  /// The netlist's free-text detail for this net (`crossed pin 5 -> 8`,
+  /// `twisted pair`, ...), display only.
+  String? detail;
+
+  /// The x of this net's vertical run (or spine), set by [routeNets]. Null for
+  /// a wire that needs none because both pins are on the same row.
+  double? laneX;
+
+  /// "Y" branch splice (one-to-many or many-to-one), "M" multi-drop node,
+  /// "I" inline splice, or null for point to point.
   String? joint;
 
   int hs;
@@ -267,6 +330,9 @@ class Net {
     required this.name,
     required this.src,
     required this.dsts,
+    this.srcExtra = const <PinRef>[],
+    this.pairs = const <NetPair>[],
+    this.detail,
     this.joint,
     required this.hs,
     required this.ls,
@@ -285,8 +351,49 @@ class Net {
   });
 }
 
+extension NetEnds on Net {
+  /// Every source pin of this net (HI side).
+  List<PinRef> get srcs => <PinRef>[src, ...srcExtra];
+
+  /// Whether the wire to/from [leaf] failed on the last run. A net built from
+  /// netlist rows answers per branch; the demo harness has only the net-level
+  /// [open] flag.
+  bool pinOpen(PinRef leaf) {
+    if (pairs.isEmpty) return open;
+    for (final p in pairs) {
+      if ((p.src == leaf || p.dst == leaf) && openPairs.contains(p.key)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /// Whether the last run has reported on the wire to/from [leaf] yet.
+  bool pinReported(PinRef leaf) {
+    for (final p in pairs) {
+      if ((p.src == leaf || p.dst == leaf) && reportedPairs.contains(p.key)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /// Forget the last run's results (a new run starts, or the screen resets).
+  void clearResults() {
+    openPairs.clear();
+    reportedPairs.clear();
+    if (pairs.isNotEmpty) open = false;
+  }
+}
+
+/// The name shown for a connector key (`PinRef.c`) — the designator the
+/// operator knows, without the disambiguating suffix a second-end connector
+/// of the same name carries internally.
+String connName(String key) => kConn[key]?.name ?? key;
+
 /// `refOf` — `J1-14`
-String refOf(PinRef nd) => '${nd.c}-${nd.p.toString().padLeft(2, '0')}';
+String refOf(PinRef nd) =>
+    '${connName(nd.c)}-${nd.p.toString().padLeft(2, '0')}';
 
 String pad(int v, int width) => v.toString().padLeft(width, '0');
 
@@ -388,7 +495,9 @@ List<Net> buildNets() {
 Map<String, Net> buildNetAt(List<Net> nets) {
   final map = <String, Net>{};
   for (final n in nets) {
-    map['${n.src.c}:${n.src.p}'] = n;
+    for (final s in n.srcs) {
+      map['${s.c}:${s.p}'] = n;
+    }
     for (final d in n.dsts) {
       map['${d.c}:${d.p}'] = n;
     }
@@ -481,31 +590,32 @@ String clock() {
 // CONNECTOR GEOMETRY
 // ---------------------------------------------------------------------------
 
-/// Every connector is one vertical column of pins — pin 1 at the top, last
-/// pin at the bottom, one row per pin at [kPitch] spacing — not laid out to
-/// its real physical footprint (a staggered D-shell, concentric rings, a
-/// grid). A real fixture can put well over a hundred pins on a single
-/// connector (`required_format/netlist_full_256x256.xlsx`'s 128-pin
-/// blocks), and a physically-accurate footprint at that pin count is wide
-/// enough to overlap its neighbours on screen — a two-row D-sub shell alone
-/// comes out ~860px wide at 128 pins, most of the whole canvas. A single
-/// column scales to any pin count by getting taller, never wider, and it
-/// reads as a straight ladder: Side-A's pin N sits at the same kind of
-/// position Side-B's pin N would, so tracing a net across the canvas is
-/// "find the wire," not "find the pin inside a D-shell or a ring." Dots sit
-/// on each connector's canvas-facing edge (right edge for a left-column
-/// connector, left edge for a right-column one) so wires start/end right at
-/// the shell and the outward edge is free for painters.dart's pin-number
-/// labels. `kTypeName`/`ConnType` still say what the connector actually is
-/// in the meta text — this only changed how pins are drawn, not what a
-/// connector is.
-const double kConnW = 92;
+/// Every connector is one vertical column of pins — pin 1 at the top, one row
+/// per pin at [kPitch] spacing — whatever its real shape. A real fixture can
+/// put well over a hundred pins on a single connector, and a
+/// physically-accurate footprint at that count would be wide enough to
+/// overlap its neighbours; a single column scales to any pin count by getting
+/// taller, never wider, and reads as a straight ladder: tracing a net across
+/// the canvas is "find the wire", not "find the pin inside a D-shell".
+///
+/// What says what the connector IS — D-sub, circular, rectangular, terminal
+/// block, modular jack — is its outline and the pictogram in its header
+/// (painters.dart), and its type/pin-count line, not the pin arrangement.
+///
+/// The harness always has TWO ends: Side-A connectors in the left column (the
+/// HI pins) and Side-B connectors in the right (the LO pins). A designator
+/// used at both ends is drawn once in each column.
+///
+/// Dots sit on each connector's wire-facing edge; the pin number sits beside
+/// the dot and the signal label (from the netlist) outboard of it.
+const double kConnW = 176;
 
-/// Header zone above each connector's pin column — the id/label line plus
-/// the type/pin-count meta line below it (painters.dart's
-/// `_paintConnectors`, which reads this same constant for the shell's
-/// top edge).
-const double kConnHeaderH = 32;
+/// Header zone above each connector's pin column: pictogram on the left,
+/// designator / part number / type-and-pin-count lines beside it.
+const double kConnHeaderH = 46;
+
+/// Space at the top of the canvas for the "SIDE A" / "SIDE B" column titles.
+const double kColTitleH = 22;
 
 ({double w, double h}) connSize(ConnectorDef c) => (
       w: kConnW,
@@ -541,18 +651,22 @@ void layoutFixture() {
   final lh = kConnsL.fold<double>(-18, (a, c) => a + connSize(c).h + 18);
   final rh = kConnsR.fold<double>(-18, (a, c) => a + connSize(c).h + 18);
 
-  kCanvasH = math.max(440.0, math.max(lh, rh) + 28);
+  kCanvasH = math.max(440.0, math.max(lh, rh) + 28 + kColTitleH);
 
-  var y = math.max(14.0, (kCanvasH - lh) / 2);
+  // Both columns start at the top (under the titles), not centred: with
+  // columns of different heights, centring floated the shorter one down the
+  // middle of nowhere.
+  var y = kColTitleH + 14.0;
   for (final c in kConnsL) {
     y = layoutConn(c, 16, y);
   }
-  y = math.max(14.0, (kCanvasH - rh) / 2);
+  y = kColTitleH + 14.0;
   for (final c in kConnsR) {
     y = layoutConn(c, kCanvasW - 16 - kConnW, y);
   }
   kFix.midL = 16 + kConnW;
   kFix.midR = kCanvasW - 16 - kConnW;
+  _reroute();
 }
 
 Offset2 pinXY(PinRef nd) {
@@ -577,33 +691,203 @@ Offset2 bez(Offset2 p0, Offset2 p1, double t) {
   );
 }
 
+/// Wires are routed like a schematic, not drawn as curves: a wire leaves its
+/// pin horizontally, runs vertically down its own lane in the channel between
+/// the two connector columns, and enters the other pin horizontally. Wires
+/// that overlap in height therefore read as clean parallel lines, each in its
+/// own lane, instead of curves sagging across one another.
 class NetSegments {
+  /// Each wire as a polyline of two or more points.
   final List<List<Offset2>> segs;
+
+  /// The pin each polyline ends on, or null for a shared trunk or spine —
+  /// lets a Y branch be painted pass/fail on its own.
+  final List<PinRef?> leaves;
+
+  /// Where the joint marker sits (the spine tap, a multi-drop node, an inline
+  /// splice), or null for a plain wire.
   final Offset2? joint;
+
+  /// Where a branch leaves the spine part-way along it: small T-junction dots.
+  final List<Offset2> junctions;
+
+  /// 'Y' (one-to-many or many-to-one), 'M' (multi-drop), 'I' (inline splice)
+  /// or null for a plain point-to-point wire.
   final String? kind;
-  const NetSegments(this.segs, this.joint, this.kind);
+  const NetSegments(this.segs, this.joint, this.kind,
+      [this.leaves = const <PinRef?>[],
+      this.junctions = const <Offset2>[]]);
 }
 
-NetSegments netSegments(Net n) {
-  final s = pinXY(n.src);
-  final ds = n.dsts.map(pinXY).toList();
-  if (n.joint == 'Y' && ds.length > 1) {
-    final j = Offset2(
-      (s.x + ds.fold<double>(0, (a, d) => a + d.x) / ds.length) / 2,
-      (s.y + ds.fold<double>(0, (a, d) => a + d.y) / ds.length) / 2,
-    );
-    return NetSegments(
-      [
-        [s, j],
-        ...ds.map((d) => [j, d]),
-      ],
-      j,
-      'Y',
-    );
+/// The wire channel runs between the two columns of pin dots.
+const double _kChannelPad = 24;
+
+Offset2? _pinOrNull(PinRef p) {
+  final c = kConn[p.c];
+  if (c == null || p.p - 1 < 0 || p.p - 1 >= c.pts.length) return null;
+  return c.pts[p.p - 1];
+}
+
+List<Net> _routed = <Net>[];
+
+/// Assigns every net a vertical lane in the channel between the connector
+/// columns. Call after a netlist is loaded; [layoutFixture] re-runs it
+/// whenever the geometry changes.
+///
+/// Lane order is what keeps the picture tidy: wires that run down the page are
+/// stacked so the topmost one takes the outermost lane (so its horizontal legs
+/// never cut across a lower wire's vertical run), and likewise upward wires
+/// with the lowest outermost. Wires that join several pins (Y, merge,
+/// multi-drop) share one vertical spine and sit between the two groups.
+void routeNets(List<Net> nets) {
+  _routed = nets;
+  _reroute();
+}
+
+void _reroute() {
+  const xa = 16 + kConnW - 14; // Side A pin dots
+  const xb = kCanvasW - 16 - kConnW + 14; // Side B pin dots
+
+  final down = <({Net n, double key})>[];
+  final up = <({Net n, double key})>[];
+  final spine = <({Net n, double key})>[];
+
+  for (final n in _routed) {
+    n.laneX = null;
+    final s = [for (final p in n.srcs) _pinOrNull(p)];
+    final d = [for (final p in n.dsts) _pinOrNull(p)];
+    if (s.contains(null) || d.contains(null)) continue;
+    final sy = s.map((p) => p!.y).toList();
+    final dy = d.map((p) => p!.y).toList();
+    if (sy.length == 1 && dy.length == 1) {
+      if ((sy[0] - dy[0]).abs() < 0.5) continue; // straight across
+      (dy[0] > sy[0] ? down : up).add((n: n, key: sy[0]));
+    } else {
+      final all = [...sy, ...dy];
+      spine.add((n: n, key: all.reduce((a, b) => a + b) / all.length));
+    }
   }
-  return NetSegments(
-    ds.map((d) => [s, d]).toList(),
-    n.joint == 'I' ? bez(s, ds[0], 0.5) : null,
-    n.joint,
-  );
+  down.sort((a, b) => a.key.compareTo(b.key));
+  up.sort((a, b) => b.key.compareTo(a.key));
+  spine.sort((a, b) => a.key.compareTo(b.key));
+
+  final groups = [down, spine, up].where((g) => g.isNotEmpty).length;
+  final lanes = down.length + spine.length + up.length;
+  if (lanes == 0) return;
+  final gapSlots = (groups - 1) * 2;
+  const c0 = xa + _kChannelPad;
+  const c1 = xb - _kChannelPad;
+  final pitch = ((c1 - c0) / (lanes + gapSlots + 1)).clamp(2.6, 7.0);
+  final block = (lanes - 1 + gapSlots) * pitch;
+  final start = (c0 + c1) / 2 - block / 2;
+
+  var slot = 0;
+  void place(List<({Net n, double key})> group, {required bool reversed}) {
+    for (var i = 0; i < group.length; i++) {
+      final at = reversed ? group.length - 1 - i : i;
+      group[i].n.laneX = start + (slot + at) * pitch;
+    }
+    slot += group.length + 2;
+  }
+
+  if (down.isNotEmpty) place(down, reversed: true);
+  if (spine.isNotEmpty) place(spine, reversed: false);
+  if (up.isNotEmpty) place(up, reversed: true);
+}
+
+/// The middle of a polyline, by length — where a net-name plate sits.
+Offset2 polyMid(List<Offset2> pts) {
+  var total = 0.0;
+  for (var i = 1; i < pts.length; i++) {
+    total += (pts[i].x - pts[i - 1].x).abs() + (pts[i].y - pts[i - 1].y).abs();
+  }
+  var left = total / 2;
+  for (var i = 1; i < pts.length; i++) {
+    final seg = (pts[i].x - pts[i - 1].x).abs() + (pts[i].y - pts[i - 1].y).abs();
+    if (seg >= left && seg > 0) {
+      final t = left / seg;
+      return Offset2(pts[i - 1].x + (pts[i].x - pts[i - 1].x) * t,
+          pts[i - 1].y + (pts[i].y - pts[i - 1].y) * t);
+    }
+    left -= seg;
+  }
+  return pts.first;
+}
+
+/// The wires of one net.
+///
+///  * 1 source, 1 destination — one wire, straight across when both pins are
+///    on the same row, otherwise out / down its lane / in. An inline splice
+///    marks the first horizontal leg;
+///  * 1 source, N destinations — a Y: the source runs to a vertical spine and
+///    each destination branches off it;
+///  * N sources, 1 destination — the same Y mirrored;
+///  * N sources, M destinations — a multi-drop node: every pin branches off
+///    one spine.
+NetSegments netSegments(Net n) {
+  final srcPins = n.srcs;
+  final dstPins = n.dsts;
+  final s = srcPins.map(pinXY).toList();
+  final d = dstPins.map(pinXY).toList();
+  final xa = s.first.x;
+  final xb = d.first.x;
+  final lane = n.laneX ?? (xa + xb) / 2;
+
+  if (s.length == 1 && d.length == 1) {
+    final straight = (s[0].y - d[0].y).abs() < 0.5;
+    final List<Offset2> line = straight
+        ? [s[0], d[0]]
+        : [s[0], Offset2(lane, s[0].y), Offset2(lane, d[0].y), d[0]];
+    final Offset2? mark = n.joint == 'I'
+        ? (straight
+            ? Offset2((xa + xb) / 2, s[0].y)
+            : Offset2((xa + lane) / 2, s[0].y))
+        : null;
+    return NetSegments([line], mark, mark == null ? null : 'I', [dstPins[0]]);
+  }
+
+  final all = [...s, ...d];
+  final ymin = all.map((p) => p.y).reduce(math.min);
+  final ymax = all.map((p) => p.y).reduce(math.max);
+  final segs = <List<Offset2>>[];
+  final leaves = <PinRef?>[];
+  final junctions = <Offset2>[];
+
+  Offset2 tap(Offset2 p) => Offset2(lane, p.y);
+  void branch(Offset2 pin, PinRef? leaf, {required bool fromSide}) {
+    segs.add(fromSide ? [pin, tap(pin)] : [tap(pin), pin]);
+    leaves.add(leaf);
+    if (pin.y > ymin + 0.5 && pin.y < ymax - 0.5) junctions.add(tap(pin));
+  }
+
+  final String kind;
+  final Offset2 joint;
+  if (s.length == 1) {
+    kind = 'Y';
+    branch(s[0], null, fromSide: true);
+    for (var i = 0; i < d.length; i++) {
+      branch(d[i], dstPins[i], fromSide: false);
+    }
+    joint = tap(s[0]);
+  } else if (d.length == 1) {
+    kind = 'Y';
+    for (var i = 0; i < s.length; i++) {
+      branch(s[i], srcPins[i], fromSide: true);
+    }
+    branch(d[0], null, fromSide: false);
+    joint = tap(d[0]);
+  } else {
+    kind = 'M';
+    for (var i = 0; i < s.length; i++) {
+      branch(s[i], srcPins[i], fromSide: true);
+    }
+    for (var i = 0; i < d.length; i++) {
+      branch(d[i], dstPins[i], fromSide: false);
+    }
+    joint = Offset2(lane, (ymin + ymax) / 2);
+  }
+  // the spine itself, shared by every branch
+  segs.add([Offset2(lane, ymin), Offset2(lane, ymax)]);
+  leaves.add(null);
+  return NetSegments(segs, joint, kind, leaves, junctions);
 }

@@ -132,3 +132,65 @@ logic can't silently drift without a test noticing.
 containing `"AMPHENOL"` as **circular**, not rectangular — real Amphenol connectors
 come in both. TN-02/TN-04's rectangular case deliberately uses a TE Connectivity CPC
 part number instead, so it doesn't trip that keyword.
+
+## Harness-scenario files (`HW-*.xlsx`)
+
+The `TN-*` files above pin the connector-layout *guess*. These nine drive the whole
+wiring-diagram pipeline end to end — every connector type and every way wires can meet.
+They use the full `required_format` columns (`Net`, `Source`, `Conn ID`, `Part Number`,
+`Src Pin Label`, `Src Pin #`, `Dst Pin #`, `Dst Pin Label`, `Conn ID B`, `Part Number B`,
+`Destination`, `Connector Detail`, `Harness ID`).
+
+**How a netlist describes a joint.** Rows that share a `Net` name are ONE net:
+
+| Scenario | In the file | Drawn as |
+|---|---|---|
+| plain wire | one row | a single wire |
+| crossed pins | `Connector Detail` = `crossed pin 5 -> 8` | a wire that crosses its neighbour |
+| **Y branch** (1 → N) | N rows, same `Net`, same `Src Pin #` | a trunk to a joint dot, one branch per destination (`1:3`) |
+| **merge** (N → 1) | N rows, same `Net`, same `Dst Pin #` | the Y mirrored (`3:1`) |
+| **multi-drop bus** (N → M) | rows sharing a `Net` on both ends | a diamond node every wire meets at (`2×3`) |
+| **inline splice** | `Connector Detail` = `inline butt splice` | a splice bar on the wire |
+| twisted pair / shield | labels + `Connector Detail` | plain wires (detail shown in the net inspector) |
+| spare pins | connector pins nothing is wired to | hollow dots |
+
+`Src Pin Label` / `Dst Pin Label` are printed beside the pins. A net with a Y or bus joint
+fails if ANY of its pairs fails, and each branch is coloured pass/fail on its own.
+
+**The two harness ends.** Side A is the `Conn ID` column (the HI pins), Side B the
+`Conn ID B` column (the LO pins), numbered independently. A designator used at both ends
+(a mated pair's `DB9-1`) is drawn once in each column, so a mated pair is a harness running
+across the diagram rather than a connector wired to itself.
+
+| File | Pairs | What it covers |
+|---|---|---|
+| `HW-01_dsub_family_mated_pairs.xlsx` | 136 | DB9 / 15 / 25 / 37 / 50, the same designators at both ends (male plug ↔ female socket), null-modem crossed pins |
+| `HW-02_circular_connectors.xlsx` | 51 | MS3116, MIL-DTL-38999, M12 and M8 circulars; Y power/ground, twisted pairs, shield drain, crossed M8 |
+| `HW-03_rectangular_connectors.xlsx` | 72 | TE CPC, Molex Mini-Fit, Deutsch DT, JST XH, Amphenol rectangular — five connectors gathering into three |
+| `HW-04_terminal_blocks_and_modular_jacks.xlsx` | 46 | Phoenix / WAGO terminal blocks, RJ45 (straight and crossover, T568B pairs), RJ11, USB |
+| `HW-05_y_joints_branch_and_merge.xlsx` | 52 | Y joints at 1:2, 1:3, 1:4 and 1:6, and N:1 merges of 3 and 5, among plain signals |
+| `HW-06_inline_splices_crossed_and_spares.xlsx` | 16 | Nine inline splices, four crossed wires, unwired spare pins |
+| `HW-07_multidrop_buses.xlsx` | 28 | CAN H/L, ground and 24 V as 2×3 / 2×2 multi-drop nodes; RS-485 as a 1×3 Y |
+| `HW-08_mixed_avionics_harness.xlsx` | 74 | Every connector family and every joint in one harness |
+| `HW-09_density_stress_5_types.xlsx` | 256 | Seven connectors of five families on Side B, with Y joints throughout — the full-density rendering case |
+
+Connector families are guessed from the part number (`netlist_file.dart`'s `_guessShape`):
+**D-sub** (`DB9`, `DE-9`, `HD-44`), **circular** (`MS3116`, `38999`, `M12`, `M8`),
+**rectangular** (`CPC`, `MOLEX`, `DEUTSCH`, `JST`, `RECT`), **terminal block** (`TERMINAL`,
+`PHOENIX`, `WAGO`, `MSTB`) and **modular jack** (`RJ45`, `RJ11`, `USB`). The operator confirms
+or changes each one in "Confirm the connector layout" before it is applied.
+
+Every file wires the first pin of every connector. The layout is inferred from the pins a file
+wires, so a connector whose *first* pins are unwired is indistinguishable from one whose block
+starts later; the guess then warns when more pins are wired than the part number has
+(`GuessedConnector.exceedsPart`).
+
+Regenerate with:
+
+```bash
+python test_netlists/generate_harness_scenarios.py
+```
+
+`gui_flutter/test/harness_scenarios_test.dart` loads every file through the real parser and
+`AppState` — connector families and ends, pin resolution, joint kinds, per-branch results, and
+the diagram painted at several window sizes in both themes.

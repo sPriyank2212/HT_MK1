@@ -104,6 +104,10 @@ class AppState extends ChangeNotifier {
   late Map<String, Net> netAt = buildNetAt(nets);
   late int netc = nets.length;
 
+  /// Wires-as-drawn: one per net, where [netc] counts the (hi, lo) pairs the
+  /// instrument verifies. They differ whenever a net has Y branches.
+  int get netCount => nets.length;
+
   late MtxNetlist nlMtx;
   late HvNetlist nlHv;
   late FixNetlist nlFix; // kFix (design/model.dart) is always some fixture -
@@ -124,6 +128,20 @@ class AppState extends ChangeNotifier {
 
   /// "good" | "bad" — presentational only, per the README
   String scenario = 'good';
+
+  /// Set only under `--sim`: switches the built-in simulator between a good
+  /// harness (`false`) and a faulty one (`true`). Null with real hardware,
+  /// where there is nothing to switch and the demo selector is hidden.
+  final void Function(bool faulty)? demoScenario;
+
+  /// `Demo harness` selector: change the simulated harness and start over.
+  void pickDemoScenario(bool faulty) {
+    scenario = faulty ? 'bad' : 'good';
+    demoScenario?.call(faulty);
+    resetAll();
+    log('info', 'demo',
+        'simulated harness set to ${faulty ? "faulty" : "good"}');
+  }
 
   /// null | "cont" | "res" | "insul" | "hv"
   String? running;
@@ -195,11 +213,11 @@ class AppState extends ChangeNotifier {
   String sb1S = 'active';
   PillState sb1Pill = const PillState(PillVariant.idle, 'Ready');
   String sb2S = 'lock';
-  PillState sb2Pill = const PillState(PillVariant.idle, 'Locked');
+  PillState sb2Pill = const PillState(PillVariant.idle, 'Waiting');
   bool gateArmed = false;
 
   // -- header --
-  String stFix = 'J-MTX · stage 1';
+  String stFix = 'J-MTX · mode 1';
   PillState statePill = const PillState(PillVariant.idle, 'Ready');
   PillState hvPill = const PillState(PillVariant.idle, 'HV Safe');
   PillState hvStatePill = const PillState(PillVariant.idle, 'Safe');
@@ -249,6 +267,20 @@ class AppState extends ChangeNotifier {
   bool mdNlOpen = false;
   bool mdVerifyOpen = false;
   bool mdMtxOpen = false;
+
+  /// The "before the insulation test" prerequisites prompt - see
+  /// [runInsulation]. Shown whenever insulation is requested while the
+  /// harness has not been through (and passed) Mode 1.
+  bool mdPreOpen = false;
+
+  /// The operator chose "Continue anyway" and is running insulation without a
+  /// completed continuity + resistance pass. Carried into the pre-HV
+  /// verification list (shown as skipped, not failed) and cleared by
+  /// [resetAll].
+  bool preTestsSkipped = false;
+
+  /// Continuity *and* resistance both passed on J-MTX this session.
+  bool get preTestsDone => R['cont'] == 'pass' && R['res'] == 'pass';
   bool ackChecked = false;
 
   // -------------------------------------------------------------------------
@@ -314,6 +346,11 @@ class AppState extends ChangeNotifier {
   /// From `>ID`, fetched once on connect. Null until then - the status bar
   /// falls back to a "not yet known" label rather than a guessed version.
   String? fwVersion;
+
+  /// When the connected firmware was built (the `build=` field of `>ID`), as
+  /// `YYYY-MM-DDTHH:MM:SS`. Null until connected, or for firmware that
+  /// predates the field.
+  String? fwBuild;
 
   /// Operator-entered, session-scoped (not persisted) — set once on the
   /// status bar, carried into every `required_format` test report generated
@@ -415,6 +452,7 @@ class AppState extends ChangeNotifier {
       required String fileName,
       required List<String> allowedExtensions,
     })? pickSavePath,
+    this.demoScenario,
   })  : listPorts = listPorts ?? _noPorts,
         pickNetlistFile = pickNetlistFile ?? _noPick,
         history = history ?? RunHistoryStore(),
@@ -537,7 +575,7 @@ class AppState extends ChangeNotifier {
           'MTX netlist unloaded — netlist continuity and resistance blocked');
     } else {
       nlHv.loaded = false;
-      log('warn', 'prog', 'HV netlist unloaded — HV test blocked');
+      log('warn', 'prog', 'HV netlist unloaded — insulation test blocked');
     }
     updateControls();
   }
@@ -575,7 +613,7 @@ class AppState extends ChangeNotifier {
       cmode == 'net' ? '624 reads · est 3 s' : '65,536 reads · est 18 s @ 400 kHz';
 
   String get mxHint => cmode == 'net'
-      ? 'click a cell to inspect the pair'
+      ? 'click a wire or a pin to inspect the net'
       : 'one HS energised at a time, all 256 LS read';
 
   /// `$("#dcCond")` — chip/bus detail (AD7476, SPI3, OPTO_CNTR) is
@@ -689,6 +727,98 @@ class AppState extends ChangeNotifier {
     return (false, '');
   }
 
+  // -------------------------------------------------------------------------
+  // insulation entry point - the two Mode 1 tests are normally required
+  // first, but the operator may deliberately run without them
+  // -------------------------------------------------------------------------
+
+  /// Every "Run insulation" control goes through here, not [requestHv]
+  /// directly. On the HV fixture it carries straight on to the usual
+  /// netlist + 500 V confirmation prompts. Anywhere else it first asks about
+  /// the prerequisites: the harness must have passed continuity and
+  /// resistance on J-MTX and been moved - or the operator says "continue
+  /// anyway" and the pre-tests are skipped.
+  void runInsulation() {
+    if (running != null) return;
+    if (onHv) {
+      if (can('hv').$1) requestHv();
+      return;
+    }
+    mdPreOpen = true;
+    log('info', 'seq',
+        'insulation requested — asking the operator about the Mode 1 pre-tests');
+    notifyListeners();
+  }
+
+  /// The prerequisites prompt's go-ahead. [skipped] is true for "Continue
+  /// anyway". Declares the harness on J-HV to the instrument (`FIXTURE hv` -
+  /// the only thing the firmware itself requires before arming) and carries
+  /// on into the normal HV prompts.
+  Future<void> continueToInsulation({required bool skipped}) async {
+    mdPreOpen = false;
+    preTestsSkipped = skipped;
+    if (skipped) {
+      log(
+          'warn',
+          'seq',
+          'insulation started WITHOUT a completed continuity + resistance '
+              'pass — operator chose Continue anyway');
+    }
+    await confirmHandover();
+    requestHv();
+  }
+
+  /// The prerequisites prompt's "Go to Mode 1".
+  void goToMode1() {
+    mdPreOpen = false;
+    go('cont');
+  }
+
+  // -------------------------------------------------------------------------
+  // auto scan - cross continuity with no netlist, to learn what is connected
+  // -------------------------------------------------------------------------
+
+  /// An auto scan is in flight and its completion must not count as Mode 1.
+  bool _autoScanRun = false;
+
+  /// [cmode] was switched to 'cross' by an auto scan and is handed back to
+  /// 'net' once the operator leaves the Auto Scan view.
+  bool _autoModeRestore = false;
+
+  /// What the last scan found: one `(hi, lo)` pin pair per connection.
+  List<(int, int)> get discoveredPairs => List.unmodifiable(_discovered);
+
+  (bool, String) get canAutoScan {
+    if (running != null) return (false, 'A test is already running');
+    if (onHv) {
+      return (false, 'Harness is on J-HV — reset to return it to J-MTX');
+    }
+    return (true, '');
+  }
+
+  /// Runs cross continuity (the firmware's `CONT RUN discover`) on whatever
+  /// is plugged into J-MTX, with no netlist loaded or needed. It is a survey,
+  /// not a verdict: it never counts towards the Mode 1 pass that unlocks
+  /// insulation (see the end of [_onDone]).
+  Future<void> runAutoScan() async {
+    if (!canAutoScan.$1) return;
+    _autoScanRun = true;
+    _autoModeRestore = true;
+    setMode('cross', quiet: true);
+    await runCont();
+    if (running == null) {
+      // refused by the instrument - nothing is in flight to own the mode
+      _autoScanRun = false;
+      if (view != 'auto') _restoreNetMode();
+    }
+  }
+
+  void _restoreNetMode() {
+    if (!_autoModeRestore || running != null) return;
+    _autoModeRestore = false;
+    cmode = 'net';
+  }
+
   // -- derived control state, from `updateControls()` --
 
   PillState pillFor(String t) {
@@ -740,10 +870,15 @@ class AppState extends ChangeNotifier {
       );
     }
     if (onHv && R['hv'] == null) {
-      return (label: 'Run HV', hint: '500 V', disabled: false, style: 'hv');
+      return (label: 'Run Insul', hint: '500 V', disabled: false, style: 'hv');
     }
     if (R['cont'] == null && R['res'] == null) {
-      return (label: 'Run S1', hint: 'F5', disabled: false, style: 'normal');
+      return (
+        label: 'Run Mode 1',
+        hint: 'F5',
+        disabled: false,
+        style: 'normal'
+      );
     }
     return (label: 'Reset', hint: 'Esc', disabled: false, style: 'normal');
   }
@@ -770,7 +905,9 @@ class AppState extends ChangeNotifier {
 
   /// `function go(v)`
   void go(String v) {
+    final leavingAuto = view == 'auto' && v != 'auto';
     view = v;
+    if (leavingAuto) _restoreNetMode();
     notifyListeners();
   }
 
@@ -829,126 +966,88 @@ class AppState extends ChangeNotifier {
       mdFixtureOpen = true;
       log('info', 'nl',
           'connector layout guessed from $name — ${guess.length} connectors, review before running');
-      // A conflicting id names two different physical roles in this file —
-      // its own mated pair AND the far end of a different connector's
-      // wires (GuessedConnector.conflicting, netlist_file.dart). That id's
-      // own block is still guessed correctly, but the wires on its
-      // "foreign" rows have nowhere real to land in the diagram and may
-      // draw wrong there — warn rather than let that look like a genuine
-      // open/not-connected wire with no explanation.
-      for (final c in guess.where((g) => g.conflicting)) {
+      for (final g in guess.where((g) => g.exceedsPart)) {
         log('warn', 'nl',
-            'Conn ID "${c.id}" is used two different ways in $name — as its '
-            'own connector AND as the far end of a different connector\'s '
-            'wires. Those cross-connector wires may not draw correctly; '
-            'give that far end its own Conn ID to fix it.');
+            '${g.side == "src" ? "Side A" : "Side B"} connector "${g.id}" has '
+            '${g.pins} pins wired but its part number (${g.partNumber}) has '
+            '${g.partPins}. A Conn ID may be reused for two different '
+            'connectors, or its first pins are unwired and the '
+            'pin blocks are shifted — check the wiring diagram.');
       }
     }
     await _uploadNetlistPairs(
       [for (final p in parsed.pairs) (p.hi, p.lo)],
       name: name,
       origin: 'file',
+      rows: parsed.pairs,
     );
   }
 
   /// Builds a real [FixtureDef] from a netlist file's guessed connector
   /// layout ([GuessedConnector], `netlist_file.dart`) — translates the
   /// file-parsing layer's plain-string shape guess into a real [ConnType]
-  /// (that layer stays independent of `design/model.dart`, same as the
-  /// rest of `htproto/`), and extends the last connector to cover every
-  /// pin the netlist itself references even if `Conn ID` was blank on some
-  /// rows or a connector's trailing pins were never wired (e.g.
-  /// `required_format`'s own sample only wires 6 of DB9's real 9 pins) —
-  /// every pin the uploaded netlist can reference must resolve to some
-  /// connector, not just the ones a guess happened to observe.
+  /// (that layer stays independent of `design/model.dart`, same as the rest
+  /// of `htproto/`), and extends the last connector on each end to cover
+  /// every pin the netlist itself references even if a connector's trailing
+  /// pins were never wired (`required_format`'s own sample only wires 6 of
+  /// DB9's real 9 pins) — every pin the uploaded netlist can reference must
+  /// resolve to some connector, not just the ones a guess happened to
+  /// observe.
+  ///
+  /// The harness has two ends. Side-A connectors (`Conn ID`, the HI pins)
+  /// become the left column, Side-B connectors (`Conn ID B`, the LO pins)
+  /// the right, and each end numbers its pins from 0 on its own — HI and LO
+  /// are the instrument's two independent 1..256 address spaces
+  /// (matrix_card.h). A designator used at both ends (a mated pair's
+  /// `DB15-1`) is TWO connectors; the second one's internal key gets a `#B`
+  /// suffix so `PinRef.c` stays unique while both still read `DB15-1`.
   FixtureDef _fixtureFromGuess(
       List<GuessedConnector> guess, List<ParsedNetPair> pairs) {
     final maxHi = pairs.fold<int>(0, (m, p) => math.max(m, p.hi));
     final maxLo = pairs.fold<int>(0, (m, p) => math.max(m, p.lo));
     final connectors = <ConnectorDef>[];
-    // Prefer the netlist's own Conn ID (source) / Conn ID B (destination)
-    // distinction when every connector has one — puts every Source
-    // connector on the wiring diagram's left column and every Destination
-    // connector on the right (`GuessedConnector.side`, netlist_file.dart),
-    // so a straight-through net's wire is a short, roughly horizontal line
-    // between matching rows instead of crossing wherever a plain minPin
-    // sort happened to place things. Falls back to the old list-half split
-    // — not alternating, see buildFixture()'s note in design/model.dart on
-    // why alternating can badly unbalance the two sides' pin totals — when
-    // any connector's side is ambiguous: e.g.
-    // example_netlist27072026.xlsx reuses one id for both mating halves of
-    // a symmetric connector pair, so there is no real src/dst distinction
-    // to key off for that file.
-    final allSided = guess.every((g) => g.side != null);
-    final leftCount = (guess.length / 2).ceil();
+    final usedKeys = <String>{};
+    final srcIdx = [
+      for (var i = 0; i < guess.length; i++)
+        if (guess[i].side == 'src') i
+    ];
+    final dstIdx = [
+      for (var i = 0; i < guess.length; i++)
+        if (guess[i].side != 'src') i
+    ];
 
-    // GUI-23: when allSided, `base` must be two SEPARATE running offsets —
-    // one for Source/'L' connectors, one for Destination/'R' — not one
-    // shared sequence. HI and LO are the real instrument's two
-    // independently-addressed 1..256 spaces (matrix_card.h), so a
-    // straight-through net's `hi`/`lo` (equal pin numbers, the ordinary
-    // case — see GUI-08) must resolve against each side's *own* pin-count
-    // sequence, or the same numeric pin always lands on whichever
-    // connector happens to own that sub-range in a single combined 0..512
-    // list — which for `netlist_full_256x256.xlsx`'s MTX-A1/A2 (Source,
-    // 128 pins each) and MTX-B1/B2 (Destination, 128 pins each) meant every
-    // net's *source and destination pin both resolved to the same
-    // Source-side connector* (`AppState.rebuildNets`'s `pinNode` searches
-    // the same list for both), not Source on one connector and Destination
-    // on the other. `base` restarts at 0 for the Destination side too when
-    // ambiguous is false; stays one shared sequence (unchanged behaviour)
-    // when it's true, matching the single real address space a symmetric
-    // connector pair actually has.
-    int lastLIndex = -1, lastRIndex = -1;
-    if (allSided) {
-      for (var i = 0; i < guess.length; i++) {
-        if (guess[i].side == 'src') {
-          lastLIndex = i;
-        } else {
-          lastRIndex = i;
+    void addEnd(List<int> idx, String side, int sideMax) {
+      var base = 0;
+      for (var k = 0; k < idx.length; k++) {
+        final g = guess[idx[k]];
+        final isLast = k == idx.length - 1;
+        final pins = isLast ? math.max(g.pins, sideMax - base) : g.pins;
+        var key = g.id;
+        while (!usedKeys.add(key)) {
+          key = '$key#B';
         }
-      }
-    }
-    var baseL = 0, baseR = 0, base = 0;
-    for (var i = 0; i < guess.length; i++) {
-      final g = guess[i];
-      final side = allSided
-          ? (g.side == 'src' ? 'L' : 'R')
-          : (i < leftCount ? 'L' : 'R');
-      final connBase = allSided ? (side == 'L' ? baseL : baseR) : base;
-      final int pins;
-      if (allSided) {
-        final isLastOnSide = side == 'L' ? i == lastLIndex : i == lastRIndex;
-        final sideMax = side == 'L' ? maxHi : maxLo;
-        pins = isLastOnSide ? math.max(g.pins, sideMax - connBase) : g.pins;
-      } else {
-        final isLast = i == guess.length - 1;
-        final maxPin = math.max(maxHi, maxLo);
-        pins = isLast ? math.max(g.pins, maxPin - connBase) : g.pins;
-      }
-      connectors.add(ConnectorDef(
-        id: g.id,
-        label: g.partNumber.isEmpty ? g.id : g.partNumber,
-        partNumber: g.partNumber,
-        type: switch (g.shapeGuess) {
-          'dsub' => ConnType.dsub,
-          'circ' => ConnType.circ,
-          _ => ConnType.rect,
-        },
-        pins: pins,
-        side: side,
-        base: connBase,
-      ));
-      if (allSided) {
-        if (side == 'L') {
-          baseL += pins;
-        } else {
-          baseR += pins;
-        }
-      } else {
+        connectors.add(ConnectorDef(
+          id: key,
+          name: g.id,
+          label: g.partNumber.isEmpty ? g.id : g.partNumber,
+          partNumber: g.partNumber,
+          type: switch (g.shapeGuess) {
+            'dsub' => ConnType.dsub,
+            'circ' => ConnType.circ,
+            'term' => ConnType.term,
+            'mod' => ConnType.mod,
+            _ => ConnType.rect,
+          },
+          pins: pins,
+          side: side,
+          base: base,
+        ));
         base += pins;
       }
     }
+
+    addEnd(srcIdx, 'L', maxHi);
+    addEnd(dstIdx, 'R', maxLo);
     return FixtureDef(
         name: 'guessed from netlist', rev: '—', connectors: connectors);
   }
@@ -1116,18 +1215,24 @@ class AppState extends ChangeNotifier {
     hoverNet = null;
     R['cont'] = R['res'] = R['hv'] = null;
     faultsOn['f06'] = faultsOn['f08'] = faultsOn['f04'] = false;
+    for (final net in nets) {
+      net.clearResults();
+    }
     hvLive = false;
     mdNlOpen = false;
     mdVerifyOpen = false;
     mdMtxOpen = false;
+    mdPreOpen = false;
+    preTestsSkipped = false;
+    _autoScanRun = false;
     ackChecked = false;
 
     sb1S = 'active';
     sb1Pill = const PillState(PillVariant.idle, 'Ready');
     sb2S = 'lock';
-    sb2Pill = const PillState(PillVariant.idle, 'Locked');
+    sb2Pill = const PillState(PillVariant.idle, 'Waiting');
     gateArmed = false;
-    stFix = 'J-MTX · stage 1';
+    stFix = 'J-MTX · mode 1';
 
     dContS = 'idle';
     dResS = 'idle';
@@ -1179,7 +1284,7 @@ class AppState extends ChangeNotifier {
       sb1Pill = const PillState(PillVariant.bad, 'Fail');
       vTitle = 'FAIL';
       vSub =
-          'Stage 1 failed on J-MTX. The harness stays where it is — HV is not attempted.';
+          'Mode 1 failed on J-MTX. The harness stays where it is — HV is not attempted.';
       statePill = const PillState(PillVariant.bad, 'Fail');
     } else if (pass) {
       sb1S = 'pass';
@@ -1195,7 +1300,8 @@ class AppState extends ChangeNotifier {
       stFix = 'none · moving';
       hoText =
           'Continuity and resistance passed on J-MTX. Unplug from J-MTX, then plug into ${hvConnName()}.';
-      log('ok', 'seq', 'stage 1 PASS — awaiting DUT transfer to ${hvConnName()}');
+      log('ok', 'seq',
+          'mode 1 PASS — awaiting DUT transfer to ${hvConnName()}');
     } else {
       sb1Pill = const PillState(PillVariant.acc, 'Partial');
       vTitle = 'PARTIAL';
@@ -1218,12 +1324,12 @@ class AppState extends ChangeNotifier {
     onHv = true;
     sb2Pill = const PillState(PillVariant.warn, 'Armed');
     sb1Pill = const PillState(PillVariant.idle, 'Released');
-    stFix = '${hvConnName()} · stage 2';
+    stFix = '${hvConnName()} · mode 2';
     dHvS = 'idle';
     vTitle = 'ARMED';
     vStage = 'HV ready';
     vSub =
-        'Harness on ${hvConnName()}. Press Run HV — you will be asked to confirm before 500 V is applied.';
+        'Harness on ${hvConnName()}. Press Run Insulation — you will be asked to confirm before 500 V is applied.';
     statePill = const PillState(PillVariant.warn, 'Armed');
     log('info', 'fix',
         'DUT transferred to ${hvConnName()} — HV armed, interlock closed');
@@ -1306,17 +1412,33 @@ class AppState extends ChangeNotifier {
   List<({String state, String title, String detail, String value})>
       get verifyChecks => [
             (
-              state: R['cont'] == 'pass' ? 'ok' : 'bad',
+              state: R['cont'] == 'pass'
+                  ? 'ok'
+                  : preTestsSkipped
+                      ? 'warn'
+                      : 'bad',
               title: 'Continuity passed on J-MTX',
               detail:
                   '${nlMtx.name} · ${cmode == "net" ? "netlist mode" : "cross mode"}',
-              value: R['cont'] == 'pass' ? '$netc / $netc' : 'not passed',
+              value: R['cont'] == 'pass'
+                  ? '$netc / $netc'
+                  : preTestsSkipped
+                      ? 'skipped'
+                      : 'not passed',
             ),
             (
-              state: R['res'] == 'pass' ? 'ok' : 'bad',
+              state: R['res'] == 'pass'
+                  ? 'ok'
+                  : preTestsSkipped
+                      ? 'warn'
+                      : 'bad',
               title: 'Resistance passed on J-MTX',
               detail: _worstResMarginDetail,
-              value: R['res'] == 'pass' ? '0 out of limit' : 'not passed',
+              value: R['res'] == 'pass'
+                  ? '0 out of limit'
+                  : preTestsSkipped
+                      ? 'skipped'
+                      : 'not passed',
             ),
             (
               // Real: onHv reflects the instrument's own !FIXTURE report
@@ -1362,6 +1484,7 @@ class AppState extends ChangeNotifier {
   }
 
   void cancelModals() {
+    mdPreOpen = false;
     mdNlOpen = false;
     mdVerifyOpen = false;
     log('info', 'seq', 'HV start cancelled by operator');
@@ -1442,9 +1565,9 @@ class AppState extends ChangeNotifier {
       lbl[0].toUpperCase() + lbl.substring(1),
     );
     stFix = instFixture == proto.Fixture.hv
-        ? 'J-HV · stage 2'
+        ? 'J-HV · mode 2'
         : instFixture == proto.Fixture.mtx
-            ? 'J-MTX · stage 1'
+            ? 'J-MTX · mode 1'
             : 'no fixture declared';
     hzRail = '${(hvMv / 1000).toStringAsFixed(0)} V';
     final railVolts = hvMv / 1000.0;
@@ -1496,6 +1619,9 @@ class AppState extends ChangeNotifier {
     switch (kind) {
       case 'cont':
         _contRows.clear();
+        for (final net in nets) {
+          net.clearResults();
+        }
       case 'res':
         _resRows.clear();
       case 'insul':
@@ -1636,10 +1762,16 @@ class AppState extends ChangeNotifier {
     auMulti = '${byHi.values.where((c) => c > 1).length}';
   }
 
-  /// `function netByPins(hi, lo)`
+  /// `function netByPins(hi, lo)` — the net a (hi, lo) pair belongs to. A net
+  /// built from netlist rows owns every one of its pairs; the demo harness
+  /// has a single pair per net (`pinHi`/`pinLo`).
   Net? _netByPins(int hi, int lo) {
     for (final n in nets) {
-      if (n.pinHi == hi && n.pinLo == lo) return n;
+      if (n.pairs.isEmpty) {
+        if (n.pinHi == hi && n.pinLo == lo) return n;
+      } else if (n.pairs.any((p) => p.hi == hi && p.lo == lo)) {
+        return n;
+      }
     }
     return null;
   }
@@ -1648,9 +1780,50 @@ class AppState extends ChangeNotifier {
   /// tasks.c) - no return pin, unlike `!CONT`/`!RES`.
   Net? _netByHiPin(int hi) {
     for (final n in nets) {
-      if (n.pinHi == hi) return n;
+      if (n.pairs.isEmpty) {
+        if (n.pinHi == hi) return n;
+      } else if (n.pairs.any((p) => p.hi == hi)) {
+        return n;
+      }
     }
     return null;
+  }
+
+  /// Connector ids, pin labels and part numbers for the ends of one (hi, lo)
+  /// pair, for the report rows — from the pair itself when the net is made
+  /// of netlist rows, else from the net's first source/destination.
+  ({
+    String srcId,
+    String? srcLabel,
+    String srcPart,
+    String dstId,
+    String? dstLabel,
+    String dstPart,
+  }) _ends(Net? n, int hi, int lo) {
+    if (n == null) {
+      return (
+        srcId: '—',
+        srcLabel: null,
+        srcPart: '',
+        dstId: '—',
+        dstLabel: null,
+        dstPart: '',
+      );
+    }
+    NetPair? pr;
+    for (final p in n.pairs) {
+      if (p.hi == hi && p.lo == lo) pr = p;
+    }
+    final src = pr?.src ?? n.src;
+    final dst = pr?.dst ?? n.dsts[0];
+    return (
+      srcId: connName(src.c),
+      srcLabel: pr?.srcLabel ?? 'Pin ${src.p}',
+      srcPart: kConn[src.c]?.partNumber ?? '',
+      dstId: connName(dst.c),
+      dstLabel: pr?.dstLabel ?? 'Pin ${dst.p}',
+      dstPart: kConn[dst.c]?.partNumber ?? '',
+    );
   }
 
   void _onSweepCont(msg.ContResult m) {
@@ -1684,8 +1857,19 @@ class AppState extends ChangeNotifier {
       return;
     }
     final n = _netByPins(m.hi, m.lo);
-    if (n != null) n.open = m.status != proto.ContStatus.pass;
     final pass = m.status == proto.ContStatus.pass;
+    if (n != null) {
+      if (n.pairs.isEmpty) {
+        n.open = !pass;
+      } else {
+        // One net, several pairs (a Y branch...): the net is open if ANY of
+        // its pairs is, and each branch keeps its own state.
+        final key = '${m.hi}:${m.lo}';
+        n.reportedPairs.add(key);
+        pass ? n.openPairs.remove(key) : n.openPairs.add(key);
+        n.open = n.openPairs.isNotEmpty;
+      }
+    }
     if (pass) {
       _countPass++;
     } else {
@@ -1700,18 +1884,18 @@ class AppState extends ChangeNotifier {
       _updateDiscoveryTallies();
     }
     if (runKind == 'cont' && cmode == 'net') {
+      final e = _ends(n, m.hi, m.lo);
       _contRows.add(ContReportRow(
         testNum: _contRows.length + 1,
         srcPin: m.hi,
         dstPin: m.lo,
         status: pass ? 'CONNECTED' : 'NOT CONNECTED',
-        srcConnId: n?.src.c ?? '—',
-        srcPinLabel: n == null ? null : 'Pin ${n.src.p}',
-        srcPartNumber: n == null ? '' : (kConn[n.src.c]?.partNumber ?? ''),
-        dstConnId: n?.dsts[0].c ?? '—',
-        dstPinLabel: n == null ? null : 'Pin ${n.dsts[0].p}',
-        dstPartNumber:
-            n == null ? '' : (kConn[n.dsts[0].c]?.partNumber ?? ''),
+        srcConnId: e.srcId,
+        srcPinLabel: n == null ? null : e.srcLabel,
+        srcPartNumber: e.srcPart,
+        dstConnId: e.dstId,
+        dstPinLabel: n == null ? null : e.dstLabel,
+        dstPartNumber: e.dstPart,
       ));
     }
     notifyListeners();
@@ -1727,18 +1911,19 @@ class AppState extends ChangeNotifier {
     }
     drN = '$_countFail';
     if (_countFail > 0) faultsOn['f08'] = true;
+    final e = _ends(n, m.hi, m.lo);
     _resRows.add(ResReportRow(
       testNum: _resRows.length + 1,
       srcPin: m.hi,
       dstPin: m.lo,
       resistanceMohm: m.milliohms.toDouble(),
       status: m.status.wire.toUpperCase(),
-      srcConnId: n?.src.c ?? '—',
-      srcPinLabel: n == null ? null : 'Pin ${n.src.p}',
-      srcPartNumber: n == null ? '' : (kConn[n.src.c]?.partNumber ?? ''),
-      dstConnId: n?.dsts[0].c ?? '—',
-      dstPinLabel: n == null ? null : 'Pin ${n.dsts[0].p}',
-      dstPartNumber: n == null ? '' : (kConn[n.dsts[0].c]?.partNumber ?? ''),
+      srcConnId: e.srcId,
+      srcPinLabel: n == null ? null : e.srcLabel,
+      srcPartNumber: e.srcPart,
+      dstConnId: e.dstId,
+      dstPinLabel: n == null ? null : e.dstLabel,
+      dstPartNumber: e.dstPart,
     ));
     notifyListeners();
   }
@@ -1894,7 +2079,24 @@ class AppState extends ChangeNotifier {
     }
     updateControls();
     paintLink();
-    if (key == 'cont' || key == 'res') finishStage1();
+    if (key == 'cont' && _autoScanRun) {
+      // An auto scan is a survey, not Mode 1: undo the pass/fail that the
+      // shared completion path just recorded so it cannot unlock insulation
+      // or raise the handover prompt.
+      _autoScanRun = false;
+      R['cont'] = null;
+      dContS = 'idle';
+      dcN = '—';
+      dcBar = 0;
+      ctFound = ctMiss = ctExtra = '—';
+      faultsOn['f06'] = false;
+      statePill = const PillState(PillVariant.idle, 'Ready');
+      verdictIdle();
+      if (view != 'auto') _restoreNetMode();
+      updateControls();
+    } else if (key == 'cont' || key == 'res') {
+      finishStage1();
+    }
   }
 
   // -------------------------------------------------------------------------
@@ -2097,7 +2299,12 @@ class AppState extends ChangeNotifier {
 
     final idRes = await _cmd(proto.commands.identify());
     if (idRes.ok && idRes.reply is msg.IdReply) {
-      fwVersion = (idRes.reply as msg.IdReply).fw;
+      final id = idRes.reply as msg.IdReply;
+      fwVersion = id.fw;
+      fwBuild = id.build;
+      log('info', 'link',
+          'firmware ${id.fw}${id.build == null ? "" : " built ${prettyStamp(id.build!)}"}'
+          ' · GUI built ${prettyStamp(kBuildStamp)}');
     }
     final calRes = await _cmd(proto.commands.calGet());
     if (calRes.ok && calRes.reply is msg.CalReply) {
@@ -2139,6 +2346,11 @@ class AppState extends ChangeNotifier {
     updateControls();
     paintLink();
   }
+
+  /// Netlist rows by `hi:lo`, as last loaded from a file — the descriptive
+  /// half ([ParsedNetPair.name], pin labels, joint detail) that the
+  /// instrument itself never stores.
+  Map<String, ParsedNetPair> _rowMeta = <String, ParsedNetPair>{};
 
   /// `S.rebuildNets(pairs)` — rebuild the harness model from real (hi,lo) pin
   /// pairs. The fixture map — which connector each board pin lands on — is a
@@ -2244,18 +2456,85 @@ class AppState extends ChangeNotifier {
       return PinRef('?', pin); // unreachable after the extension above
     }
 
-    nets = <Net>[];
+    // Pin labels are re-derived on every rebuild.
+    for (final c in kFix.connectors) {
+      c.pinLabels.clear();
+    }
+    void label(PinRef r, String? text) {
+      if (text == null || text.isEmpty || r.c == '?') return;
+      final c = kConn[r.c];
+      if (c != null) c.pinLabels[r.p] = text;
+    }
+
+    // Rows that share a net name are ONE net. A source with several rows is a
+    // Y branch, several sources into one destination its mirror image, several
+    // on both ends a multi-drop node; one row each stays a plain wire. Rows
+    // with no net name stand alone.
+    final order = <String>[];
+    final groups = <String, List<int>>{};
     for (var i = 0; i < pairs.length; i++) {
-      final pr = pairs[i];
+      final meta = _rowMeta['${pairs[i].hi}:${pairs[i].lo}'];
+      final nm = meta?.name?.trim() ?? '';
+      final key = nm.isEmpty ? 'row:$i' : 'net:$nm';
+      (groups[key] ??= <int>[]).add(i);
+      if (groups[key]!.length == 1) order.add(key);
+    }
+
+    nets = <Net>[];
+    for (final key in order) {
+      final idx = groups[key]!;
+      final srcRefs = <PinRef>[];
+      final dstRefs = <PinRef>[];
+      final netPairs = <NetPair>[];
+      String? detail;
+      String? netName;
+      for (final i in idx) {
+        final pr = pairs[i];
+        final meta = _rowMeta['${pr.hi}:${pr.lo}'];
+        final srcRef = pinNode(pr.hi, isSrc: true);
+        final dstRef = pinNode(pr.lo, isSrc: false);
+        if (!srcRefs.contains(srcRef)) srcRefs.add(srcRef);
+        if (!dstRefs.contains(dstRef)) dstRefs.add(dstRef);
+        netPairs.add(NetPair(
+          hi: pr.hi,
+          lo: pr.lo,
+          src: srcRef,
+          dst: dstRef,
+          srcLabel: meta?.srcLabel,
+          dstLabel: meta?.dstLabel,
+        ));
+        label(srcRef, meta?.srcLabel);
+        label(dstRef, meta?.dstLabel);
+        netName ??= (meta?.name?.trim().isNotEmpty ?? false) ? meta!.name : null;
+        final d = meta?.detail;
+        if (d != null && d.isNotEmpty) {
+          // A joint-bearing detail ("inline splice") outranks a plain one
+          // ("straight") when rows disagree.
+          if (detail == null || kindFromDetail(d) != null) detail = d;
+        }
+      }
+      final first = pairs[idx.first];
+      final String? joint;
+      if (srcRefs.length == 1 && dstRefs.length == 1) {
+        joint = kindFromDetail(detail) == 'I' ? 'I' : null;
+      } else if (srcRefs.length > 1 && dstRefs.length > 1) {
+        joint = 'M';
+      } else {
+        joint = 'Y';
+      }
+      final serial = nets.length + 1;
       nets.add(Net(
-        name: 'NET_${pad(i + 1, 3)}',
-        src: pinNode(pr.hi, isSrc: true),
-        dsts: [pinNode(pr.lo, isSrc: false)],
-        joint: null,
-        hs: pr.hi - 1,
-        ls: pr.lo - 1,
-        pinHi: pr.hi,
-        pinLo: pr.lo,
+        name: netName ?? 'NET_${pad(serial, 3)}',
+        src: srcRefs.first,
+        srcExtra: srcRefs.sublist(1),
+        dsts: dstRefs,
+        pairs: netPairs,
+        detail: detail,
+        joint: joint,
+        hs: first.hi - 1,
+        ls: first.lo - 1,
+        pinHi: first.hi,
+        pinLo: first.lo,
         r: 0,
         v: 0,
         ins: 0,
@@ -2267,16 +2546,20 @@ class AppState extends ChangeNotifier {
         // flat position, not this loop's index - see the matching note in
         // design/model.dart's buildNets(). VERIFY against real HV harness
         // wiring at bring-up (PROJECT_LOG.md BU- items).
-        card: (pr.hi - 1) ~/ 64,
-        relay: (pr.hi - 1) % 64,
+        card: (first.hi - 1) ~/ 64,
+        relay: (first.hi - 1) % 64,
       ));
     }
-    netc = nets.length;
+    // What the instrument verifies is pairs, not grouped nets.
+    netc = pairs.length;
     netAt = buildNetAt(nets);
     nlMtx.loaded = nets.isNotEmpty;
-    nlMtx.nets = nets.length;
-    nlMtx.pins = nets.length * 2;
+    nlMtx.nets = pairs.length;
+    nlMtx.pins = {
+      for (final p in pairs) ...['s${p.hi}', 'd${p.lo}']
+    }.length;
     layoutFixture();
+    routeNets(nets);
     updateControls();
   }
 
@@ -2576,6 +2859,13 @@ class AppState extends ChangeNotifier {
       runCont();
       return;
     }
+    if (!onHv && R['cont'] == null && cmode == 'net' && !nlMtx.loaded) {
+      // Netlist-mode continuity cannot start without an MTX netlist. Falling
+      // through to resetAll() made the big button look dead; offer the ways
+      // to get a netlist instead.
+      openMtxNlExplainer();
+      return;
+    }
     if (!onHv && R['cont'] == 'pass' && R['res'] == null && can('res').$1) {
       runRes();
       return;
@@ -2585,10 +2875,13 @@ class AppState extends ChangeNotifier {
 
   /// The `[data-run]` handlers.
   void runTest(String t) {
+    if (t == 'hv') {
+      runInsulation();
+      return;
+    }
     if (!can(t).$1) return;
     if (t == 'cont') runCont();
     if (t == 'res') runRes();
-    if (t == 'hv') requestHv();
   }
 
   /// `$("#saveNl")` — push what cross-continuity found to the instrument as
@@ -2620,6 +2913,7 @@ class AppState extends ChangeNotifier {
     List<(int, int)> pairs, {
     required String name,
     required String origin,
+    List<ParsedNetPair>? rows,
   }) async {
     final begin = await _cmd(proto.commands.netlistBegin(pairs.length));
     if (_reportRefusal('netlist upload', begin)) return false;
@@ -2630,6 +2924,12 @@ class AppState extends ChangeNotifier {
     final end = await _cmd(proto.commands.netlistEnd());
     if (_reportRefusal('netlist upload', end)) return false;
 
+    // The instrument only stores (hi, lo); the net names, pin labels and
+    // joint details come from the file, so keep them for the rebuild (and for
+    // a later reconnect's NETLIST GET, which can only return the pairs).
+    _rowMeta = {
+      for (final r in rows ?? const <ParsedNetPair>[]) '${r.hi}:${r.lo}': r,
+    };
     rebuildNets([for (final p in pairs) msg.NetEntry(hi: p.$1, lo: p.$2)]);
     loadMtx(name, origin);
     log(
@@ -2648,7 +2948,8 @@ class AppState extends ChangeNotifier {
       cancelFixtureGuess(); // same as Cancel - reverts the applied guess
       return;
     }
-    if (mdNlOpen || mdVerifyOpen || mdMtxOpen) {
+    if (mdNlOpen || mdVerifyOpen || mdMtxOpen || mdPreOpen) {
+      mdPreOpen = false;
       mdNlOpen = false;
       mdVerifyOpen = false;
       mdMtxOpen = false;

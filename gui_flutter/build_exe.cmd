@@ -43,6 +43,13 @@ shift
 goto parse
 :parsed
 
+rem The build date/time comes from THIS PC's clock, read once so the developer
+rem and customer builds carry the identical stamp. It is baked into the exe
+rem (lib\app\build_tag.dart, kBuildStamp) and shown in the window footer.
+for /f "usebackq delims=" %%t in (`powershell -NoProfile -Command "Get-Date -Format yyyy-MM-ddTHH:mm:ss"`) do set "BUILD_STAMP=%%t"
+if not defined BUILD_STAMP set "BUILD_STAMP=unstamped"
+echo   build stamp           %BUILD_STAMP%
+
 set "REL=build\windows\x64\runner\Release"
 set "SFX=tools\7zsd_LZMA2_x64.sfx"
 set "VSWHERE=%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe"
@@ -150,6 +157,13 @@ powershell -NoProfile -Command ^
   "$t=$t -replace '\"OriginalFilename\", \"ht_mk1_gui.exe\"','\"OriginalFilename\", \"HT_MK1_GUI.exe\"';" ^
   "$t=$t -replace '\"ProductName\", \"ht_mk1_gui\"','\"ProductName\", \"HT_MK1 Console\"';" ^
   "Set-Content $p -Value $t -Encoding utf8"
+rem Open maximized (the console is a full-screen operator station), and use the
+rem company logo as the window/taskbar/exe icon instead of the Flutter default.
+powershell -NoProfile -Command ^
+  "$p='windows/runner/win32_window.cpp'; $t=Get-Content $p -Raw;" ^
+  "$t=$t -replace 'SW_SHOWNORMAL','SW_SHOWMAXIMIZED';" ^
+  "Set-Content $p -Value $t -Encoding utf8"
+copy /y "toolspp_icon.ico" "windowsunneresourcespp_icon.ico" >nul
 goto scaffold_done
 
 :have_windows
@@ -225,7 +239,7 @@ echo.
 echo ============================================================
 echo  [5/6] release build - %TAG%
 echo ============================================================
-call flutter build windows --release %DARTDEFINE%
+call flutter build windows --release "--dart-define=BUILD_STAMP=%BUILD_STAMP%" %DARTDEFINE%
 if errorlevel 1 goto fail
 if not exist "%REL%\HT_MK1_GUI.exe" goto no_binary
 

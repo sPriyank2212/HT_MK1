@@ -121,8 +121,9 @@ class ProgramView extends StatelessWidget {
       // `nlHv.loaded`. The HV netlist file's actual remaining job is just
       // declaring a card count to cross-check against the fitted stack
       // before a run (`stackMatch()`) - that stays a separate concept from
-      // this per-net listing. "Insul min" stays fixed text for the same
-      // FW-11 reason as the HV view's "Limit" band item (res_hv_views.dart).
+      // this per-net listing. "Insul min" reads live from
+      // `s.limits.insMinMohm` (GUI-34, FW-11) - same value and conversion
+      // as the HV view's "Limit" band item.
       HtPanel(
         header: [
           const PanelTitle('HV nets'),
@@ -152,12 +153,15 @@ class ProgramView extends StatelessWidget {
                   for (final n in s.nets)
                     () {
                       final reach = n.card < s.stack;
+                      final insMin = s.limits != null
+                          ? '${(s.limits!.insMinMohm / 1.0e9).toStringAsFixed(1)} MΩ'
+                          : '—';
                       return <Widget>[
                         Td(n.name),
                         Td('H${n.card + 1}', numeric: true),
                         Td('HS-${pad(n.relay, 2)}', numeric: true),
                         Td('all except LS-${pad(n.relay, 2)}', numeric: true),
-                        const Td('10 MΩ', numeric: true),
+                        Td(insMin, numeric: true),
                         Tag(reach ? TagVariant.ok : TagVariant.bad,
                             reach ? 'yes' : 'card not fitted'),
                       ];
@@ -183,7 +187,9 @@ class ProgramView extends StatelessWidget {
   /// `Topology` column for the real "MTX nets" table above — same
   /// classification `_Inspector` (cont_view.dart) uses for the net inspector.
   Widget _topologyTag(Net n) => switch (n.joint) {
-        'Y' => Tag(TagVariant.acc, '1:${n.dsts.length} splice'),
+        'Y' => Tag(TagVariant.acc,
+            n.srcs.length > 1 ? '${n.srcs.length}:1 merge' : '1:${n.dsts.length} splice'),
+        'M' => const Tag(TagVariant.acc, 'multi-drop'),
         'I' => const Tag(TagVariant.acc, 'inline splice'),
         _ => const Tag(TagVariant.mut, '1:1'),
       };

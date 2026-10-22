@@ -22,10 +22,23 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import '../app/build_tag.dart';
 import 'codec.dart';
 
 const String fwVersion = '1.0.0';
 const int protoVersion = 1;
+
+/// The simulator stands in for firmware, so it reports a build stamp too: the
+/// GUI's own build time (`kBuildStamp`), or - for an unstamped dev run - the
+/// moment the simulator started, in the same `YYYY-MM-DDTHH:MM:SS` form the
+/// real firmware sends.
+String simBuildStamp() {
+  if (kBuildStamp != kUnstamped) return kBuildStamp;
+  final n = DateTime.now();
+  String two(int v) => v.toString().padLeft(2, '0');
+  return '${n.year}-${two(n.month)}-${two(n.day)}T'
+      '${two(n.hour)}:${two(n.minute)}:${two(n.second)}';
+}
 
 /// Simulator defaults, standing in for instrument configuration.
 const int defaultLimitRMaxMohm = 1000;
@@ -143,7 +156,9 @@ class _InstrumentState {
 
 /// Protocol state machine. Transport feeds it lines and it sends lines back.
 class InstrumentSim {
-  final Scenario scenario;
+  /// Mutable so the demo can switch the simulated harness between runs
+  /// ([SimulatorServer.setScenario]); every run reads it afresh.
+  Scenario scenario;
   final Duration interval;
   final void Function(String line) _send;
   final void Function()? _onDrop;
@@ -247,7 +262,8 @@ class InstrumentSim {
     try {
       if (head == 'PING' && t.length == 1) return 'PONG';
       if (head == 'ID' && t.length == 1) {
-        return 'ID HT_MK1 fw=$fwVersion proto=$protoVersion';
+        return 'ID HT_MK1 fw=$fwVersion proto=$protoVersion '
+            'build=${simBuildStamp()}';
       }
       if (head == 'STATUS' && t.length == 1) {
         return 'STATUS state=${_st.state.wire} fixture=${_st.fixture.wire} '
@@ -759,7 +775,7 @@ class InstrumentSim {
 
 /// TCP front-end: one client at a time, one [InstrumentSim] per scenario.
 class SimulatorServer {
-  final Scenario scenario;
+  Scenario scenario;
   final Duration interval;
   ServerSocket? _server;
   Socket? _client;
@@ -784,6 +800,13 @@ class SimulatorServer {
     s._server = await ServerSocket.bind(host, port, shared: false);
     s._server!.listen(s._handleClient);
     return s;
+  }
+
+  /// Swap the simulated harness for the next run - what the demo screen's
+  /// Good / Faulty selector does. Takes effect on the live connection too.
+  void setScenario(Scenario s) {
+    scenario = s;
+    _sim?.scenario = s;
   }
 
   Future<void> stop() async {

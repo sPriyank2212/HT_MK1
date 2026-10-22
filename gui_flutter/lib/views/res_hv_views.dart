@@ -52,7 +52,7 @@ class ResView extends StatelessWidget {
 
     return Cols([
       ViewBar([
-        const StageBadge('Stage 1'),
+        const StageBadge('Mode 1'),
         Text('Resistance', style: t.viewbarH2),
         const Conn('J-MTX'),
         Pill(pill.variant, pill.text),
@@ -418,12 +418,12 @@ class HvView extends StatelessWidget {
     final c = context.colors;
     final t = context.type;
     final pill = s.pillFor('hv');
-    final canRun = s.can('hv').$1;
+    final canRun = s.running == null;
 
     final body = Cols([
       ViewBar([
-        const StageBadge('Stage 2', hv: true),
-        Text('HV insulation', style: t.viewbarH2),
+        const StageBadge('Mode 2', hv: true),
+        Text('Insulation test', style: t.viewbarH2),
         Conn(s.hvConnName(), hv: true),
         Pill(pill.variant, pill.text),
         const FlexSpacer(),
@@ -432,7 +432,7 @@ class HvView extends StatelessWidget {
           child: Text('energizes the fixture to 500 V — keep clear',
               style: t.why),
         ),
-        Btn('Run HV · 500 V',
+        Btn('Run insulation · 500 V',
             variant: BtnVariant.hv,
             big: true,
             disabled: !canRun,
@@ -452,14 +452,10 @@ class HvView extends StatelessWidget {
         // "Stack" is operator-picked, not detected (see s.stack's own note
         // in app_state.dart). Stimulus/Sense/Return are fixed hardware
         // facts, accurate to the current schematic. "trip 0.045 V" is the
-        // real fixed threshold `mLeakBad` uses below. "≥ 10 MΩ" stays fixed
-        // text rather than reading `s.limits.insMinMohm` for real: FW-11
-        // (PROJECT_LOG.md) found the firmware's own `LIMITS SET
-        // ins_min_mohm` value is off by 1000x from what "10 MΩ" actually
-        // means and has no effect on the pass/fail verdict either way — a
-        // live number here would be either wrong or would silently imply
-        // this is what the verdict is gated on, which it isn't. Needs FW-11
-        // resolved first, not a GUI-side unit guess.
+        // real fixed threshold `mLeakBad` uses below - a separate, hardware
+        // -fixed diagnostic figure from the operator-set limit shown next to
+        // it (GUI-34, FW-11): the limit now reads live from
+        // `s.limits.insMinMohm`.
         BandItem(
           'Stimulus',
           Text(
@@ -477,7 +473,12 @@ class HvView extends StatelessWidget {
         BandItem(
           'Limit',
           Text(
-            kCustomerBuild ? '≥ 10 MΩ' : '≥ 10 MΩ · trip 0.045 V',
+            () {
+              final limMohm = s.limits != null
+                  ? '≥ ${(s.limits!.insMinMohm / 1.0e9).toStringAsFixed(1)} MΩ'
+                  : '≥ — MΩ';
+              return kCustomerBuild ? limMohm : '$limMohm · trip 0.045 V';
+            }(),
             style: t.bandV,
           ),
         ),
@@ -555,13 +556,7 @@ class HvView extends StatelessWidget {
       ),
     ]);
 
-    return LockOverlay(
-      locked: s.stage2 == 'lock',
-      text: 'HV runs on J-HV, a different connector with its own netlist. Pass '
-          'continuity and resistance on J-MTX, then move the harness to the HV '
-          'fixture to unlock this test.',
-      child: body,
-    );
+    return body;
   }
 }
 

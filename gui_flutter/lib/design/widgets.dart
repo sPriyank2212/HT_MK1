@@ -417,14 +417,19 @@ class _BtnState extends State<Btn> {
           // overflowing. At the design's intended widths nothing truncates;
           // this only bites in the narrow domain-card footers, where the CSS
           // would overflow too (a flex item's min-width defaults to auto).
+          // FittedBox scales an over-long label down to fit rather than
+          // cutting it off with an ellipsis - a button's words must be
+          // readable in full.
           Flexible(
-            child: Text(
-              widget.label.toUpperCase(),
-              style: widget.big ? t.btnBig(fg) : t.btn(fg),
-              textAlign: TextAlign.center,
-              maxLines: 1,
-              softWrap: false,
-              overflow: TextOverflow.ellipsis,
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(
+                widget.label.toUpperCase(),
+                style: widget.big ? t.btnBig(fg) : t.btn(fg),
+                textAlign: TextAlign.center,
+                maxLines: 1,
+                softWrap: false,
+              ),
             ),
           ),
         ],

@@ -106,7 +106,8 @@ in the protocol does this.
 
 ```
 >PING                          -> <PONG
->ID                            -> <ID HT_MK1 fw=<semver> proto=1
+>ID                            -> <ID HT_MK1 fw=<semver> proto=1 [build=YYYY-MM-DDTHH:MM:SS]
+                                 (build = firmware compile time, the build PC's clock; optional)
 >STATUS                        -> <STATUS state=<idle|hv_armed|running|fault> fixture=<none|mtx|hv> hv_mv=<int>
 >SAFE                          -> <OK started   force everything to the safe state
 >ABORT                         -> <OK           stop the running test now — see 3.2.1
@@ -136,8 +137,11 @@ in the protocol does this.
                                        rref_tol_mohm=<int> gain_max=<int>
 >CAL RUN <hi> <lo>             -> <OK started   Kelvin_MeasurePair on this pair -
                                        !CAL_RESULT r_mohm=<int> ratiometric=<0|1> <pass|fail>
->LIMITS GET                    -> <LIMITS r_max_mohm=<int> ins_min_mohm=<int>
->LIMITS SET r_max_mohm=<int> ins_min_mohm=<int>  -> <OK
+>LIMITS GET                    -> <LIMITS r_max_mohm=<int32> ins_min_mohm=<int64>
+>LIMITS SET r_max_mohm=<int32> ins_min_mohm=<int64>  -> <OK
+                                       ins_min_mohm is int64 (FW-11, 2026-08-24): a real MOhm-
+                                       scale limit in milliohms (10 Mohm = 1e10) overflows
+                                       int32. r_max_mohm stays int32.
 
 >TEMP READ                     -> <OK started   read the Control Card's DS18B20 (U2, PA0)
 >BUS SCAN                      -> <OK started   probes Matrix Card + ADS124S08 (confirmed
@@ -291,8 +295,9 @@ anything. A 256×256 discovery scan takes tens of seconds.
 ```
 !PROGRESS <done> <total>
 !CONT <hi> <lo> <pass|open|short>
-!RES  <hi> <lo> <milliohms> <pass|fail_high|fail_low>
-!INSUL <net> <leak_mohm> <pass|fail>
+!RES  <hi> <lo> <milliohms> <pass|fail_high|fail_low>          milliohms is int32
+!INSUL <net> <leak_mohm> <pass|fail>                           leak_mohm is int64 (FW-11,
+                                        2026-08-24) - a good reading scales past int32 range
 !FAULT <code> <text>                   e.g.  !FAULT F04 insulation low on net 37
 !DONE <cont|res|insul|sweep|bus> <passed> <failed>   sweep/bus added 2026-08-21, GUI-06 -
                                         diagnostic actions, not staged tests; see MANUAL SWEEP

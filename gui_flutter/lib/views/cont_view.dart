@@ -23,7 +23,7 @@ class ContView extends StatelessWidget {
 
     return Cols([
       ViewBar([
-        const StageBadge('Stage 1'),
+        const StageBadge('Mode 1'),
         Text('Continuity', style: context.type.viewbarH2),
         const Conn('J-MTX'),
         Pill(pill.variant, pill.text),
@@ -346,6 +346,28 @@ class _WiringPanelState extends State<_WiringPanel> {
     final st = _state();
     final visible = st.visible().length;
 
+    // Nothing to draw until a netlist is loaded: the built-in demo connectors
+    // with no wires on them looked like a broken harness, not an empty one.
+    if (!s.nlMtx.loaded || s.nets.isEmpty) {
+      return HtPanel(
+        header: const [
+          PanelTitle('Harness wiring'),
+          FlexSpacer(),
+          Lbl('Side A  →  Side B'),
+        ],
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 30),
+          child: Text(
+            'No harness to draw yet. Load an MTX netlist (Select… above) and '
+            'its connectors, pins and wires appear here — Y branches, '
+            'splices and multi-drop nets included.',
+            style: context.type.empty,
+            textAlign: TextAlign.center,
+          ),
+        ),
+      );
+    }
+
     return HtPanel(
       header: [
         const PanelTitle('Harness wiring'),
@@ -376,7 +398,7 @@ class _WiringPanelState extends State<_WiringPanel> {
                       s.setFilter(['all', 'fault', 'conn'][i]),
                 ),
                 const FlexSpacer(),
-                Lbl('$visible of ${s.netc} nets shown'),
+                Lbl('$visible of ${s.netCount} nets shown'),
               ],
             ),
           ),
@@ -451,14 +473,32 @@ class _WiringPanelState extends State<_WiringPanel> {
               LegendItem(c.fail, 'open / fail', line: true),
               LegendItem(c.gridEmpty, 'not tested', line: true),
               LegendItem(c.accent, 'Y joint · branch splice', round: true),
+              LegendItem(c.accent, 'multi-drop node', round: true),
               LegendItem(c.ink2, 'I joint · inline splice', line: true),
             ],
             trailing:
-                'connector faces and pin maps come from the fixture file',
+                'Side A = HI pins · Side B = LO pins · labels come from the netlist',
           ),
         ],
       ),
     );
+  }
+}
+
+/// "Y joint · 1:3 branch splice", "multi-drop · 2 → 3"... for a net with a
+/// joint, "1:1 · point to point" for a plain wire.
+String _topologyText(Net n) {
+  switch (n.joint) {
+    case 'Y':
+      return n.srcs.length > 1
+          ? 'Y joint · ${n.srcs.length}:1 merge'
+          : 'Y joint · 1:${n.dsts.length} branch splice';
+    case 'M':
+      return 'Multi-drop · ${n.srcs.length} → ${n.dsts.length} wires on one node';
+    case 'I':
+      return 'I joint · inline butt splice';
+    default:
+      return '1:1 · point to point';
   }
 }
 
@@ -485,11 +525,11 @@ class _Tip extends StatelessWidget {
     final left = (at.dx + 14).clamp(0.0, (maxLeft - tipW - 8).clamp(0.0, maxLeft));
 
     final detail = StringBuffer()
-      ..write('${refOf(net.src)} → ${net.dsts.map(refOf).join(" · ")}');
-    if (net.joint == 'Y') {
-      detail.write('\nY joint · 1:${net.dsts.length} branch');
-    } else if (net.joint == 'I') {
-      detail.write('\nI joint · inline splice');
+      ..write('${net.srcs.map(refOf).join(" · ")} → ${net.dsts.map(refOf).join(" · ")}');
+    final topo = _topologyText(net);
+    if (net.joint != null) detail.write('\n$topo');
+    if (net.detail != null && net.joint == null && net.detail != 'straight') {
+      detail.write('\n${net.detail}');
     }
     detail.write('\n');
     detail.write(state == 'idle'
@@ -649,12 +689,9 @@ class _Inspector extends StatelessWidget {
       _ => (TagVariant.mut, 'not tested'),
     };
 
-    final topology = n.joint == 'Y'
-        ? Text('Y joint · 1:${n.dsts.length} branch splice',
-            style: t.kvDd.copyWith(color: c.accent))
-        : KvText(n.joint == 'I'
-            ? 'I joint · inline butt splice'
-            : '1:1 · point to point');
+    final topology = (n.joint == 'Y' || n.joint == 'M')
+        ? Text(_topologyText(n), style: t.kvDd.copyWith(color: c.accent))
+        : KvText(_topologyText(n));
 
     final measured = st == 'idle'
         ? '—'
@@ -670,7 +707,12 @@ class _Inspector extends StatelessWidget {
       ],
       child: PanelPad(Kv([
         KvRow('Net', KvText(n.name, big: true)),
-        KvRow('From', KvText('${refOf(n.src)}  ·  ${kConn[n.src.c]!.label}')),
+        KvRow(
+          'From',
+          KvText(n.srcs
+              .map((p) => '${refOf(p)}  ·  ${kConn[p.c]!.label}')
+              .join('\n')),
+        ),
         KvRow(
           'To',
           KvText(n.dsts
@@ -678,6 +720,8 @@ class _Inspector extends StatelessWidget {
               .join('\n')),
         ),
         KvRow('Topology', topology),
+        if (n.detail != null && n.detail!.isNotEmpty)
+          KvRow('Detail', KvText(n.detail!)),
         KvRow('Measured', KvText(measured)),
       ])),
     );
@@ -714,7 +758,8 @@ class _ConnectorList extends StatelessWidget {
     final t = context.type;
     final count = s.nets
         .where((n) =>
-            n.src.c == conn.id || n.dsts.any((d) => d.c == conn.id))
+            n.srcs.any((p) => p.c == conn.id) ||
+            n.dsts.any((d) => d.c == conn.id))
         .length;
 
     return HoverRow(
@@ -727,7 +772,7 @@ class _ConnectorList extends StatelessWidget {
         ),
         child: Row(
           children: [
-            Text(conn.id, style: t.connId(c.accent)),
+            Text(conn.name, style: t.connId(c.accent)),
             const SizedBox(width: 11),
             Expanded(
               child: Column(
@@ -737,6 +782,7 @@ class _ConnectorList extends StatelessWidget {
                   Text(conn.label, style: t.connLabel),
                   const SizedBox(height: 1),
                   Text(
+                    '${conn.side == "L" ? "Side A" : "Side B"} · '
                     '${kTypeName[conn.type]} · ${conn.pins} way · board '
                     '${conn.side == "L" ? "HS" : "LS"} ${pad(conn.base, 3)}–'
                     '${pad(conn.base + conn.pins - 1, 3)}',

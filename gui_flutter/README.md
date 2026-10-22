@@ -351,7 +351,13 @@ through the tree. Run it before believing any layout change.
   not a live spec. `CAL GET`'s reply shape changed that session (HW-04, real
   reference-resistor read); the current format is
   `<CAL current_ua=2000 method=ratiometric rref_mohm=100000 rref_tol_mohm=10
-  gain_max=128` — see `Doc/GUI_development_brief.md` §3.2.
+  gain_max=128` — see `Doc/GUI_development_brief.md` §3.2. `LIMITS GET`'s
+  `ins_min_mohm` also changed since this capture (FW-11, 2026-08-24): the
+  field is int64 now, not int32, and the correct default is `10000000000`
+  (10 MΩ in wire milliohms), not this capture's `10000000` — the old default
+  was 1000× too small and, separately, had no effect on the insulation
+  verdict either way. See `Doc/GUI_development_brief.md` §3.2 and
+  `PROJECT_LOG.md` FW-11/CL-73.
 
   The limits match `s_lim_r_mohm` / `s_lim_ins_mohm` in `Core/Src/app/proto.c`,
   so those values came off the board rather than out of the simulator. With the

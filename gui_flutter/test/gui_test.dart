@@ -141,8 +141,10 @@ void main() {
         for (var i = 1; i < c.pts.length; i++) {
           expect(c.pts[i].y - c.pts[i - 1].y, closeTo(kPitch, 0.01));
         }
-        // Narrow — nowhere near wide enough to reach the opposite column.
-        expect(c.w, lessThan(150));
+        // Narrow — nowhere near wide enough to reach the opposite column
+        // (each column is a fraction of the canvas, with room for wires
+        // between).
+        expect(c.w, lessThan(kCanvasW / 3));
       }
 
       // Two 128-pin connectors stacked in one column don't overlap: the
@@ -574,7 +576,7 @@ void main() {
   group('the action button follows the design', () {
     test('label and style track the phase', () {
       final s = newState();
-      expect(s.actButton.label, 'Run S1');
+      expect(s.actButton.label, 'Run Mode 1');
 
       s.R['cont'] = 'pass';
       expect(s.actButton.label, 'Reset');
@@ -584,7 +586,7 @@ void main() {
       expect(s.actButton.disabled, isTrue);
 
       s.onEvent(const msg.FixtureEvent(fixture: proto.Fixture.hv));
-      expect(s.actButton.label, 'Run HV');
+      expect(s.actButton.label, 'Run Insul');
       expect(s.actButton.style, 'hv');
 
       s.running = 'insul';

@@ -75,19 +75,44 @@ class DiagState {
   });
 
   /// `function netState(n)`
+  ///
+  /// A net made of netlist rows is idle until the run has reported on at
+  /// least one of its pairs, then fails if any of them came back open. (The
+  /// built-in demo harness has no per-pair results and keeps the old
+  /// whole-run `tested` flag.)
   String netState(Net n) {
+    if (n.pairs.isNotEmpty) {
+      if (n.reportedPairs.isEmpty) return 'idle';
+      return n.open ? 'fail' : 'pass';
+    }
     if (!tested) return 'idle';
     return (n.open && faultF06) ? 'fail' : 'pass';
   }
+
+  /// State of one wire of a net: a Y branch answers for itself, a shared trunk
+  /// (leaf null) for the whole net.
+  String branchState(Net n, PinRef? leaf) {
+    if (leaf == null) return netState(n);
+    if (n.pairs.isNotEmpty) {
+      if (!n.pinReported(leaf)) return 'idle';
+      return n.pinOpen(leaf) ? 'fail' : 'pass';
+    }
+    if (!tested) return 'idle';
+    return (n.pinOpen(leaf) && faultF06) ? 'fail' : 'pass';
+  }
+
+  /// State of the wire(s) on one pin.
+  String pinState(Net n, PinRef pin) => branchState(n, pin);
+
+  bool _touches(Net n, String conn) =>
+      n.srcs.any((p) => p.c == conn) || n.dsts.any((d) => d.c == conn);
 
   /// The `vis` filter inside `paintDiag`.
   List<Net> visible() {
     final out = nets.where((n) {
       if (scanX != null && pinXY(n.src).x > scanX!) return false;
       if (filter == 'fault') return netState(n) == 'fail';
-      if (filter == 'conn' && selConn != null) {
-        return n.src.c == selConn || n.dsts.any((d) => d.c == selConn);
-      }
+      if (filter == 'conn' && selConn != null) return _touches(n, selConn!);
       return true;
     }).toList();
     const order = {'idle': 0, 'pass': 1, 'fail': 2};
@@ -102,18 +127,12 @@ Net? hitNet(DiagState s, double mx, double my) {
   var bd = 11.0;
   for (final n in s.nets) {
     if (s.filter == 'fault' && s.netState(n) != 'fail') continue;
-    if (s.filter == 'conn' &&
-        s.selConn != null &&
-        n.src.c != s.selConn &&
-        !n.dsts.any((d) => d.c == s.selConn)) {
+    if (s.filter == 'conn' && s.selConn != null && !s._touches(n, s.selConn!)) {
       continue;
     }
-    final segs = netSegments(n).segs;
-    for (final seg in segs) {
-      for (var t = 0.0; t <= 1.0; t += 1 / 18) {
-        final p = bez(seg[0], seg[1], t);
-        final d = math.sqrt(
-            (p.x - mx) * (p.x - mx) + (p.y - my) * (p.y - my));
+    for (final line in netSegments(n).segs) {
+      for (var i = 1; i < line.length; i++) {
+        final d = _distToSegment(mx, my, line[i - 1], line[i]);
         if (d < bd) {
           bd = d;
           best = n;
@@ -122,6 +141,18 @@ Net? hitNet(DiagState s, double mx, double my) {
     }
   }
   return best;
+}
+
+double _distToSegment(double px, double py, Offset2 a, Offset2 b) {
+  final dx = b.x - a.x;
+  final dy = b.y - a.y;
+  final len2 = dx * dx + dy * dy;
+  final t = len2 == 0
+      ? 0.0
+      : (((px - a.x) * dx + (py - a.y) * dy) / len2).clamp(0.0, 1.0);
+  final cx = a.x + dx * t;
+  final cy = a.y + dy * t;
+  return math.sqrt((px - cx) * (px - cx) + (py - cy) * (py - cy));
 }
 
 class PinHit {
@@ -144,11 +175,26 @@ PinHit? hitPin(DiagState s, double mx, double my) {
   return null;
 }
 
-/// `function strokeBez(ctx,p0,p1)`
-void _strokeBez(Path path, Offset2 p0, Offset2 p1) {
-  final dx = (p1.x - p0.x) * 0.45;
-  path.moveTo(p0.x, p0.y);
-  path.cubicTo(p0.x + dx, p0.y, p1.x - dx, p1.y, p1.x, p1.y);
+/// A wire as a path: straight legs with square corners.
+void _strokeLine(Path path, List<Offset2> pts) {
+  path.moveTo(pts.first.x, pts.first.y);
+  for (var i = 1; i < pts.length; i++) {
+    path.lineTo(pts[i].x, pts[i].y);
+  }
+}
+
+/// Text that is shortened with an ellipsis rather than allowed to run out of
+/// its box.
+_CanvasText _fitText(String text, TextStyle style, double maxWidth) {
+  var t = _CanvasText(text, style);
+  if (t.width <= maxWidth || text.length < 2) return t;
+  var n = text.length;
+  while (n > 1) {
+    n--;
+    t = _CanvasText('${text.substring(0, n)}…', style);
+    if (t.width <= maxWidth) break;
+  }
+  return t;
 }
 
 class DiagramPainter extends CustomPainter {
@@ -159,7 +205,7 @@ class DiagramPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    // The page draws into a fixed 1060×440 buffer that CSS scales to width.
+    // The page draws into a fixed 1060×N buffer that is scaled to width.
     canvas.save();
     canvas.scale(size.width / kCanvasW, size.height / kCanvasH);
     canvas.clipRect(Rect.fromLTWH(0, 0, kCanvasW, kCanvasH));
@@ -169,8 +215,10 @@ class DiagramPainter extends CustomPainter {
       Paint()..color = c.sunk,
     );
 
+    _paintColumnTitles(canvas);
     _paintConnectors(canvas);
     _paintWires(canvas);
+    _paintPinDots(canvas); // wires end at the dot centres: dots go on top
 
     // cross-mode sweep marker
     if (s.scanX != null && !s.reduceMotion) {
@@ -186,39 +234,240 @@ class DiagramPainter extends CustomPainter {
     canvas.restore();
   }
 
+  // -- column titles -------------------------------------------------------
+
+  void _paintColumnTitles(Canvas canvas) {
+    final style = TextStyle(
+      fontFamily: kMonoFont,
+      fontFamilyFallback: kMonoFallback,
+      fontSize: 9.5,
+      fontWeight: FontWeight.w600,
+      letterSpacing: 1.4,
+      color: c.ink3,
+    );
+    final hasL = kConnsL.isNotEmpty;
+    final hasR = kConnsR.isNotEmpty;
+    if (hasL) {
+      _CanvasText('SIDE A', style).paint(canvas, 18, 17);
+      canvas.drawLine(
+        const Offset(16, kColTitleH),
+        Offset(16 + kConnW, kColTitleH),
+        Paint()
+          ..color = c.line
+          ..strokeWidth = 1,
+      );
+    }
+    if (hasR) {
+      final t = _CanvasText('SIDE B', style);
+      t.paint(canvas, kCanvasW - 18 - t.width, 17);
+      canvas.drawLine(
+        Offset(kCanvasW - 16 - kConnW, kColTitleH),
+        Offset(kCanvasW - 16, kColTitleH),
+        Paint()
+          ..color = c.line
+          ..strokeWidth = 1,
+      );
+    }
+  }
+
+  // -- connectors -------------------------------------------------------------
+
+  /// The outline of a connector body, by type.
+  Path _shell(ConnectorDef conn, Rect r) {
+    final left = conn.side == 'L'; // the outward edge is the far-left one
+    final path = Path();
+    switch (conn.type) {
+      case ConnType.dsub:
+        // the trapezoid of a D-shell: the outward corners are cut away
+        const ch = 12.0;
+        if (left) {
+          path
+            ..moveTo(r.left + ch, r.top)
+            ..lineTo(r.right, r.top)
+            ..lineTo(r.right, r.bottom)
+            ..lineTo(r.left + ch, r.bottom)
+            ..lineTo(r.left, r.bottom - ch)
+            ..lineTo(r.left, r.top + ch)
+            ..close();
+        } else {
+          path
+            ..moveTo(r.left, r.top)
+            ..lineTo(r.right - ch, r.top)
+            ..lineTo(r.right, r.top + ch)
+            ..lineTo(r.right, r.bottom - ch)
+            ..lineTo(r.right - ch, r.bottom)
+            ..lineTo(r.left, r.bottom)
+            ..close();
+        }
+      case ConnType.circ:
+        path.addRRect(RRect.fromRectAndRadius(
+            r, Radius.circular(math.min(26, r.height / 2))));
+      case ConnType.rect:
+        path.addRRect(RRect.fromRectAndRadius(r, const Radius.circular(4)));
+      case ConnType.term:
+        path.addRRect(RRect.fromRectAndRadius(r, const Radius.circular(2)));
+      case ConnType.mod:
+        // a jack: the body with a latch tab standing proud of one edge
+        path.addRRect(RRect.fromRectAndRadius(r, const Radius.circular(3)));
+    }
+    return path;
+  }
+
+  /// Detail drawn on top of the outline that says what kind of connector this
+  /// is: a second ring on a circular, mounting holes on a rectangular flange,
+  /// a screw head and separator per way on a terminal block, a latch on a jack.
+  void _paintShellDetail(
+      Canvas canvas, ConnectorDef conn, Rect r, Color line, double alpha) {
+    final stroke = Paint()
+      ..style = PaintingStyle.stroke
+      ..color = _alpha(line, alpha * .7)
+      ..strokeWidth = 1;
+    final left = conn.side == 'L';
+    switch (conn.type) {
+      case ConnType.circ:
+        final inner = r.deflate(5);
+        canvas.drawRRect(
+          RRect.fromRectAndRadius(
+              inner, Radius.circular(math.min(21, inner.height / 2))),
+          stroke,
+        );
+      case ConnType.rect:
+        for (final dy in [r.top + 7, r.bottom - 7]) {
+          final dx = left ? r.left + 7 : r.right - 7;
+          canvas.drawCircle(Offset(dx, dy), 2.4, stroke);
+        }
+      case ConnType.term:
+        // one screw head per way on the outward edge, a separator between ways
+        for (var i = 0; i < conn.pts.length; i++) {
+          final p = conn.pts[i];
+          final sx = left ? r.left + 8 : r.right - 14;
+          canvas.drawRect(Rect.fromLTWH(sx, p.y - 3.5, 6, 7), stroke);
+          if (i > 0) {
+            final y = (conn.pts[i - 1].y + p.y) / 2;
+            canvas.drawLine(
+                Offset(r.left + 2, y),
+                Offset(r.right - 2, y),
+                Paint()
+                  ..color = _alpha(line, alpha * .35)
+                  ..strokeWidth = .6);
+          }
+        }
+      case ConnType.mod:
+        final tabX = left ? r.left - 5 : r.right;
+        canvas.drawRect(
+            Rect.fromLTWH(tabX, r.top + r.height / 2 - 9, 5, 18), stroke);
+      case ConnType.dsub:
+        break;
+    }
+  }
+
+  /// The small outline in a connector's header that shows its kind at a
+  /// glance — D-sub trapezoid with two staggered rows, circular with a ring of
+  /// contacts, rectangular with a grid, terminal block with screws, modular
+  /// jack with a latch and a row of contacts.
+  void _paintPictogram(
+      Canvas canvas, ConnType type, Rect r, Color col, double alpha) {
+    final stroke = Paint()
+      ..style = PaintingStyle.stroke
+      ..color = _alpha(col, alpha)
+      ..strokeWidth = 1.2;
+    final fill = Paint()..color = _alpha(col, alpha);
+    switch (type) {
+      case ConnType.dsub:
+        canvas.drawPath(
+          Path()
+            ..moveTo(r.left, r.top)
+            ..lineTo(r.right, r.top)
+            ..lineTo(r.right - 4, r.bottom)
+            ..lineTo(r.left + 4, r.bottom)
+            ..close(),
+          stroke,
+        );
+        for (var i = 0; i < 5; i++) {
+          canvas.drawCircle(Offset(r.left + 5 + i * 5, r.top + 6), 1.2, fill);
+        }
+        for (var i = 0; i < 4; i++) {
+          canvas.drawCircle(
+              Offset(r.left + 7.5 + i * 5, r.top + 13), 1.2, fill);
+        }
+      case ConnType.circ:
+        final ctr = r.center;
+        final rad = math.min(r.width, r.height) / 2;
+        canvas.drawCircle(ctr, rad, stroke);
+        for (var i = 0; i < 6; i++) {
+          final a = i * math.pi / 3;
+          canvas.drawCircle(
+              Offset(ctr.dx + math.cos(a) * rad * .58,
+                  ctr.dy + math.sin(a) * rad * .58),
+              1.2,
+              fill);
+        }
+        canvas.drawCircle(ctr, 1.2, fill);
+      case ConnType.rect:
+        canvas.drawRRect(
+            RRect.fromRectAndRadius(r, const Radius.circular(3)), stroke);
+        for (var row = 0; row < 2; row++) {
+          for (var i = 0; i < 4; i++) {
+            canvas.drawCircle(
+                Offset(
+                    r.left + 5 + i * (r.width - 10) / 3, r.top + 6 + row * 8),
+                1.2,
+                fill);
+          }
+        }
+      case ConnType.term:
+        for (var i = 0; i < 3; i++) {
+          final x = r.left + 1 + i * (r.width - 2) / 3;
+          final cell =
+              Rect.fromLTWH(x, r.top + 2, (r.width - 2) / 3 - 2, r.height - 4);
+          canvas.drawRect(cell, stroke);
+          canvas.drawCircle(cell.center, 2.2, stroke);
+          canvas.drawLine(Offset(cell.center.dx - 1.6, cell.center.dy),
+              Offset(cell.center.dx + 1.6, cell.center.dy), stroke);
+        }
+      case ConnType.mod:
+        canvas.drawRect(
+            Rect.fromLTRB(r.left + 2, r.top + 4, r.right - 2, r.bottom),
+            stroke);
+        canvas.drawRect(
+            Rect.fromLTWH(r.center.dx - 4, r.top, 8, 4), stroke); // latch
+        for (var i = 0; i < 6; i++) {
+          final x = r.left + 5 + i * (r.width - 10) / 5;
+          canvas.drawLine(
+              Offset(x, r.bottom - 6), Offset(x, r.bottom - 2), stroke);
+        }
+    }
+  }
+
   void _paintConnectors(Canvas canvas) {
     for (final conn in kFix.connectors) {
       final dim = s.selConn != null && s.selConn != conn.id;
       final alpha = dim ? .35 : 1.0;
+      final isSel = s.selConn == conn.id;
+      final left = conn.side == 'L';
 
       final x = conn.x;
       final y = conn.y + kConnHeaderH;
       final w = conn.w;
       final h = conn.h - kConnHeaderH;
 
-      // One plain rounded-rect shell for every connector, whatever its real
-      // shape — a vertical pin column (model.dart's layoutConn) has nothing
-      // left to draw a D-shell or a ring of pins around; kTypeName below
-      // still says what the connector actually is.
-      final shell = RRect.fromRectAndRadius(
-        Rect.fromLTWH(x + 2, y + 3, w - 4, h - 6),
-        const Radius.circular(4),
-      );
-
-      canvas.drawRRect(shell, Paint()..color = _alpha(c.panel, alpha));
-      canvas.drawRRect(
+      // body
+      final body = Rect.fromLTWH(x + 2, y + 3, w - 4, h - 6);
+      final shell = _shell(conn, body);
+      canvas.drawPath(shell, Paint()..color = _alpha(c.panel, alpha));
+      canvas.drawPath(
         shell,
         Paint()
           ..style = PaintingStyle.stroke
-          ..color = _alpha(s.selConn == conn.id ? c.accent : c.line, alpha)
-          ..strokeWidth = s.selConn == conn.id ? 2 : 1.2,
+          ..color = _alpha(isSel ? c.accent : c.line, alpha)
+          ..strokeWidth = isSel ? 2 : 1.2,
       );
+      _paintShellDetail(canvas, conn, body, c.line, alpha);
 
       // pins — one vertical column, pin 1 at the top. The dot sits on the
-      // shell's canvas-facing edge (model.dart's layoutConn); the pin
-      // number is drawn in the space left over on the shell's outward edge,
-      // so numbers never collide with the wires crossing the canvas middle.
-      final pinLabelStyle = TextStyle(
+      // wire-facing edge; the number sits beside it and the signal label
+      // outboard of the number.
+      final numStyle = TextStyle(
         fontFamily: kMonoFont,
         fontFamilyFallback: kMonoFallback,
         fontSize: 8,
@@ -227,7 +476,7 @@ class DiagramPainter extends CustomPainter {
       for (var i = 0; i < conn.pts.length; i++) {
         final p = conn.pts[i];
         final n = s.netAt['${conn.id}:${i + 1}'];
-        final st = n != null ? s.netState(n) : null;
+        final st = n != null ? s.pinState(n, PinRef(conn.id, i + 1)) : null;
         final fill = n == null
             ? c.gridEmpty
             : st == 'fail'
@@ -235,53 +484,136 @@ class DiagramPainter extends CustomPainter {
                 : st == 'pass'
                     ? c.pass
                     : c.ink3;
-        canvas.drawCircle(
-            Offset(p.x, p.y), 3.1, Paint()..color = _alpha(fill, alpha));
+        final dot = Paint()..color = _alpha(fill, alpha);
+        if (conn.type == ConnType.term) {
+          canvas.drawRect(
+              Rect.fromCenter(center: Offset(p.x, p.y), width: 6, height: 6),
+              dot);
+        } else {
+          canvas.drawCircle(Offset(p.x, p.y), 3.1, dot);
+        }
         if (n != null && (identical(n, s.hoverNet) || identical(n, s.selNet))) {
           canvas.drawCircle(
             Offset(p.x, p.y),
-            3.1,
+            4.6,
             Paint()
               ..style = PaintingStyle.stroke
               ..color = _alpha(c.accent, alpha)
               ..strokeWidth = 1.6,
           );
         }
-        final pinNum = _CanvasText('${i + 1}', pinLabelStyle);
-        final numX = conn.side == 'L'
-            ? p.x - 6 - pinNum.width // left of the dot, inside the shell
-            : p.x + 6; // right of the dot, inside the shell
+        final pinNum = _CanvasText('${i + 1}', numStyle);
+        final numX = left ? p.x - 7 - pinNum.width : p.x + 7;
         pinNum.paint(canvas, numX, p.y + 3);
+
+        final lab = conn.pinLabels[i + 1];
+        if (lab != null) {
+          final room = (left
+                  ? (numX - 6) - (body.left + 14)
+                  : (body.right - 8) - (numX + pinNum.width + 6))
+              .clamp(0.0, 200.0);
+          final t = _fitText(
+            lab,
+            TextStyle(
+              fontFamily: kMonoFont,
+              fontFamilyFallback: kMonoFallback,
+              fontSize: 8.5,
+              color: _alpha(st == 'fail' ? c.fail : c.ink2, alpha),
+            ),
+            room,
+          );
+          final lx = left ? numX - 6 - t.width : numX + pinNum.width + 6;
+          t.paint(canvas, lx, p.y + 3);
+        }
       }
 
-      // label — ctx.font='600 11px <ui>'
-      final label = '${conn.id}  ${conn.label}';
-      final labelText = _CanvasText(
-        label,
-        TextStyle(
-          fontFamily: kUiFont,
-          fontFamilyFallback: kUiFallback,
-          fontSize: 11,
-          fontWeight: FontWeight.w600,
-          color: _alpha(dim ? c.ink3 : c.ink, alpha),
-        ),
+      // header: pictogram, designator, part number, type and way count
+      _paintPictogram(
+        canvas,
+        conn.type,
+        Rect.fromLTWH(x + 6, conn.y + 8, 30, 22),
+        isSel ? c.accent : c.ink3,
+        alpha,
       );
-      labelText.paint(canvas, x + 2, conn.y + 12);
-
-      // meta — ctx.font='9px <mono>', wrapped under the id/label line since
-      // the shell is narrow now (vertical layout), not to its right.
-      final meta = _CanvasText(
-        '${kTypeName[conn.type]} · ${conn.pins}w',
-        TextStyle(
-          fontFamily: kMonoFont,
-          fontFamilyFallback: kMonoFallback,
-          fontSize: 9,
-          color: _alpha(c.ink3, alpha),
-        ),
+      final textX = x + 44;
+      final room = w - 44 - 4;
+      final nameStyle = TextStyle(
+        fontFamily: kUiFont,
+        fontFamilyFallback: kUiFallback,
+        fontSize: 12,
+        fontWeight: FontWeight.w700,
+        color: _alpha(dim ? c.ink3 : c.ink, alpha),
       );
-      meta.paint(canvas, x + 2, conn.y + 12 + 12);
+      final monoSmall = TextStyle(
+        fontFamily: kMonoFont,
+        fontFamilyFallback: kMonoFallback,
+        fontSize: 9,
+        color: _alpha(c.ink3, alpha),
+      );
+      _fitText(conn.name, nameStyle, room).paint(canvas, textX, conn.y + 17);
+      final hasPart = conn.label.isNotEmpty && conn.label != conn.name;
+      if (hasPart) {
+        _fitText(conn.label, monoSmall, room).paint(canvas, textX, conn.y + 30);
+      }
+      _fitText('${kTypeName[conn.type]} · ${conn.pins} pins', monoSmall, room)
+          .paint(canvas, textX, conn.y + (hasPart ? 42 : 30));
     }
   }
+
+  /// The pin dots, again, over the wires — a wire's outline otherwise cuts
+  /// through the dot it ends on.
+  void _paintPinDots(Canvas canvas) {
+    for (final conn in kFix.connectors) {
+      final alpha = s.selConn != null && s.selConn != conn.id ? .35 : 1.0;
+      for (var i = 0; i < conn.pts.length; i++) {
+        final p = conn.pts[i];
+        final n = s.netAt['${conn.id}:${i + 1}'];
+        if (n == null) continue;
+        final st = s.pinState(n, PinRef(conn.id, i + 1));
+        final fill = st == 'fail'
+            ? c.fail
+            : st == 'pass'
+                ? c.pass
+                : c.ink3;
+        final dot = Paint()..color = _alpha(fill, alpha);
+        if (conn.type == ConnType.term) {
+          canvas.drawRect(
+              Rect.fromCenter(center: Offset(p.x, p.y), width: 6, height: 6),
+              dot);
+        } else {
+          canvas.drawCircle(Offset(p.x, p.y), 3.4, dot);
+        }
+        canvas.drawCircle(
+          Offset(p.x, p.y),
+          3.4,
+          Paint()
+            ..style = PaintingStyle.stroke
+            ..color = _alpha(c.sunk, alpha)
+            ..strokeWidth = 1,
+        );
+        if (identical(n, s.hoverNet) || identical(n, s.selNet)) {
+          canvas.drawCircle(
+            Offset(p.x, p.y),
+            4.8,
+            Paint()
+              ..style = PaintingStyle.stroke
+              ..color = _alpha(c.accent, alpha)
+              ..strokeWidth = 1.6,
+          );
+        }
+      }
+    }
+  }
+
+  // -- wires --------------------------------------------------------------------
+
+  Color _wireColor(String st, bool hot) => hot
+      ? c.accent
+      : st == 'fail'
+          ? c.fail
+          : st == 'pass'
+              ? c.pass
+              : c.ink3;
 
   void _paintWires(Canvas canvas) {
     // untested first, then pass, then fail, so faults are never hidden
@@ -290,72 +622,127 @@ class DiagramPainter extends CustomPainter {
       final hot = identical(n, s.hoverNet) || identical(n, s.selNet);
       final parts = netSegments(n);
 
-      // GUI-22: idle wires used to draw in `gridEmpty` (a near-background
-      // fill colour meant for *empty grid cells*, not stroked lines) at
-      // .55 alpha - on the old compact 8-connector canvas the short
-      // diagonal wires were tolerably faint, but this vertical ladder can
-      // run an idle wire most of the canvas's 1060px width, at which point
-      // that combination reads as no wire at all (confirmed by rendering
-      // it: technically non-transparent pixels, indistinguishable from the
-      // background by eye). `ink3` is the same colour untested pin dots
-      // already use for exactly this "present but not yet tested" meaning,
-      // so idle wires now match them instead of nearly vanishing.
-      final stroke = hot
-          ? c.accent
-          : st == 'fail'
-              ? c.fail
-              : st == 'pass'
-                  ? c.pass
-                  : c.ink3;
+      // GUI-22: idle wires draw in `ink3`, the same colour an untested pin dot
+      // uses for exactly this "present but not yet tested" meaning.
       final width = hot
-          ? 3.0
+          ? 2.6
           : st == 'fail'
-              ? 2.4
-              : 1.5;
+              ? 2.0
+              : 1.4;
       final alpha = hot
           ? 1.0
           : (s.selNet != null || s.selConn != null)
               ? .3
               : st == 'idle'
-                  ? .7
-                  : .85;
+                  ? .8
+                  : .95;
 
-      final path = Path();
-      for (final seg in parts.segs) {
-        _strokeBez(path, seg[0], seg[1]);
+      // failed branches last, so a fault is never painted under a good wire
+      final order = List<int>.generate(parts.segs.length, (i) => i)
+        ..sort((a, b) {
+          int rank(int i) {
+            final leaf = i < parts.leaves.length ? parts.leaves[i] : null;
+            return s.branchState(n, leaf) == 'fail' ? 1 : 0;
+          }
+
+          return rank(a) - rank(b);
+        });
+      for (final i in order) {
+        final leaf = i < parts.leaves.length ? parts.leaves[i] : null;
+        final bst = s.branchState(n, leaf);
+        final path = Path();
+        _strokeLine(path, parts.segs[i]);
+        // A dark outline under the coloured core keeps neighbouring wires and
+        // crossings distinguishable where lanes sit close together.
+        canvas.drawPath(
+          path,
+          Paint()
+            ..style = PaintingStyle.stroke
+            ..strokeJoin = StrokeJoin.round
+            ..color = _alpha(c.sunk, alpha)
+            ..strokeWidth = width + 2.4,
+        );
+        canvas.drawPath(
+          path,
+          Paint()
+            ..style = PaintingStyle.stroke
+            ..strokeJoin = StrokeJoin.round
+            ..color = _alpha(_wireColor(bst, hot), alpha)
+            ..strokeWidth = width,
+        );
       }
-      canvas.drawPath(
-        path,
-        Paint()
-          ..style = PaintingStyle.stroke
-          ..color = _alpha(stroke, alpha)
-          ..strokeWidth = width,
-      );
 
       final joint = parts.joint;
-      if (joint != null && parts.kind == 'Y') {
+      final kind = parts.kind;
+      for (final j in parts.junctions) {
+        canvas.drawCircle(Offset(j.x, j.y), 2.4,
+            Paint()..color = _alpha(hot ? c.accent : c.ink2, alpha));
+      }
+      if (joint != null && kind == 'Y') {
+        final col = hot ? c.accent : (st == 'fail' ? c.fail : c.accent);
+        canvas.drawCircle(
+            Offset(joint.x, joint.y), 4.8, Paint()..color = _alpha(col, alpha));
         canvas.drawCircle(
           Offset(joint.x, joint.y),
-          4.5,
-          Paint()
-            ..color = _alpha(
-                hot ? c.accent : (st == 'fail' ? c.fail : c.accent), alpha),
-        );
-        canvas.drawCircle(
-          Offset(joint.x, joint.y),
-          4.5,
+          4.8,
           Paint()
             ..style = PaintingStyle.stroke
             ..color = _alpha(c.panel, alpha)
             ..strokeWidth = 1.4,
         );
-      } else if (joint != null && parts.kind == 'I') {
-        final a = bez(pinXY(n.src), pinXY(n.dsts[0]), 0.46);
-        final b = bez(pinXY(n.src), pinXY(n.dsts[0]), 0.54);
-        final ang = math.atan2(b.y - a.y, b.x - a.x);
+        // "1:3" - how many wires leave the joint. Only for the wire under the
+        // cursor / selected: with many spines side by side the labels sit on
+        // top of one another and on the wires.
+        final fan = n.srcs.length == 1 ? n.dsts.length : n.srcs.length;
+        final mirrored = n.srcs.length > 1;
+        if (hot) {
+          final t = _CanvasText(
+            mirrored ? '$fan:1' : '1:$fan',
+            TextStyle(
+              fontFamily: kMonoFont,
+              fontFamilyFallback: kMonoFallback,
+              fontSize: 8.5,
+              fontWeight: FontWeight.w600,
+              color: _alpha(c.ink2, alpha),
+            ),
+          );
+          final lx = joint.x + (mirrored ? 7 : -7 - t.width);
+          _plate(canvas, lx - 2, joint.y - 15, t.width + 4, 12);
+          t.paint(canvas, lx, joint.y - 6);
+        }
+      } else if (joint != null && kind == 'M') {
+        final col = hot ? c.accent : (st == 'fail' ? c.fail : c.accent);
         canvas.save();
         canvas.translate(joint.x, joint.y);
-        canvas.rotate(ang);
+        canvas.rotate(math.pi / 4);
+        final r = RRect.fromRectAndRadius(
+            const Rect.fromLTWH(-4.6, -4.6, 9.2, 9.2),
+            const Radius.circular(1.5));
+        canvas.drawRRect(r, Paint()..color = _alpha(col, alpha));
+        canvas.drawRRect(
+            r,
+            Paint()
+              ..style = PaintingStyle.stroke
+              ..color = _alpha(c.panel, alpha)
+              ..strokeWidth = 1.3);
+        canvas.restore();
+        if (hot) {
+          final tag = _CanvasText(
+            '${n.srcs.length}×${n.dsts.length}',
+            TextStyle(
+              fontFamily: kMonoFont,
+              fontFamilyFallback: kMonoFallback,
+              fontSize: 8.5,
+              fontWeight: FontWeight.w600,
+              color: _alpha(c.ink2, alpha),
+            ),
+          );
+          _plate(canvas, joint.x + 6, joint.y - 6, tag.width + 4, 12);
+          tag.paint(canvas, joint.x + 8, joint.y + 3);
+        }
+      } else if (joint != null && kind == 'I') {
+        canvas.save();
+        canvas.translate(joint.x, joint.y);
         final rect = RRect.fromRectAndRadius(
           const Rect.fromLTWH(-7, -3.2, 14, 6.4),
           const Radius.circular(2),
@@ -371,12 +758,58 @@ class DiagramPainter extends CustomPainter {
         );
         canvas.restore();
       }
+
+      if (hot) _paintNetLabel(canvas, n, parts);
     }
+  }
+
+  /// A small opaque backing so a label stays legible over nearby wires.
+  void _plate(Canvas canvas, double x, double y, double w, double h) {
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+          Rect.fromLTWH(x, y, w, h), const Radius.circular(2)),
+      Paint()..color = _alpha(c.sunk, .92),
+    );
+  }
+
+  /// The net's name, on a small plate at its joint (or the middle of a plain
+  /// wire) — only for the wire under the cursor / selected, so the diagram
+  /// stays calm otherwise.
+  void _paintNetLabel(Canvas canvas, Net n, NetSegments parts) {
+    final at = parts.joint ?? polyMid(parts.segs.first);
+    final t = _CanvasText(
+      n.name,
+      TextStyle(
+        fontFamily: kMonoFont,
+        fontFamilyFallback: kMonoFallback,
+        fontSize: 10,
+        fontWeight: FontWeight.w600,
+        color: c.ink,
+      ),
+    );
+    final w = t.width + 12;
+    final x =
+        (at.x - w / 2).clamp(kFixLabelMargin, kCanvasW - w - kFixLabelMargin);
+    final y = at.y - 24;
+    final plate = RRect.fromRectAndRadius(
+        Rect.fromLTWH(x, y, w, 17), const Radius.circular(4));
+    canvas.drawRRect(plate, Paint()..color = c.panel);
+    canvas.drawRRect(
+      plate,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..color = c.accent
+        ..strokeWidth = 1.2,
+    );
+    t.paint(canvas, x + 6, y + 12.5);
   }
 
   @override
   bool shouldRepaint(DiagramPainter old) => true;
 }
+
+/// Keeps a net-name plate off the very edge of the canvas.
+const double kFixLabelMargin = 4;
 
 // ---------------------------------------------------------------------------
 // resistance histogram

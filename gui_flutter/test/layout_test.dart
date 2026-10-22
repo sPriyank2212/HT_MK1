@@ -55,6 +55,7 @@ const List<String> kViews = [
   'cont',
   'res',
   'hv',
+  'auto',
   'program',
   'results',
   'diag',
@@ -221,6 +222,20 @@ void main() {
 
     testWidgets('HV netlist picker modal', (tester) async {
       await check(tester, (s) => s.openNlPicker());
+    });
+
+    testWidgets('insulation prerequisites prompt, Mode 1 not run',
+        (tester) async {
+      await check(tester, (s) => s.runInsulation());
+    });
+
+    testWidgets('insulation prerequisites prompt, Mode 1 passed',
+        (tester) async {
+      await check(tester, (s) {
+        s.R['cont'] = 'pass';
+        s.R['res'] = 'pass';
+        s.runInsulation();
+      });
     });
 
     testWidgets('pre-HV verification modal', (tester) async {

@@ -300,8 +300,8 @@ void main() {
       expect(parsed.fixture, isNull);
     });
 
-    test('groups by Conn ID, orders by lowest pin seen, guesses shape from '
-        'Part Number', () {
+    test('groups by Conn ID per harness end, orders by lowest pin seen, '
+        'guesses shape from Part Number', () {
       final bytes = _workbook([
         [
           TextCellValue('Net'), TextCellValue('Conn ID'),
@@ -329,18 +329,19 @@ void main() {
       final parsed = parseNetlistWorkbook(bytes, fileName: 'x.xlsx');
       final fixture = parsed.fixture;
       expect(fixture, isNotNull);
-      expect(fixture!.length, 2);
-      expect(fixture[0].id, 'J1');
+      // Side A (Conn ID, the HI pins) first, then Side B (Conn ID B, LO).
+      expect(fixture!.map((c) => '${c.side}:${c.id}'),
+          ['src:J1', 'src:J2', 'dst:J1', 'dst:J2']);
       expect(fixture[0].shapeGuess, 'dsub');
-      // J1's pins observed: 1 (row A src), 3 (row C dst) — block runs from
-      // its own lowest observed pin (1) to just before J2's lowest (38), so
-      // 1..37 -> 37 pins, even though only 1 and 3 were actually seen wired.
-      expect(fixture[0].pins, 37);
-      expect(fixture[1].id, 'J2');
+      // Side A: J1 carries HI pins 1 and 2, J2 carries 39. J1's block runs
+      // from pin 1 to just before J2's lowest (39): 1..38 -> 38 pins, even
+      // though only two were seen wired. J2 is last: just its own pin 39.
+      expect(fixture[0].pins, 38);
       expect(fixture[1].shapeGuess, 'circ');
-      // Last connector: runs from its own lowest (38) to its own highest
-      // observed pin (39) -> 2 pins.
-      expect(fixture[1].pins, 2);
+      expect(fixture[1].pins, 1);
+      // Side B: J1 carries LO pins 1 and 3, J2 carries 38 -> 1..37, then 38.
+      expect(fixture[2].pins, 37);
+      expect(fixture[3].pins, 1);
     });
 
     test('rect is the fallback shape for an unrecognised part number', () {
@@ -358,10 +359,10 @@ void main() {
       expect(parsed.fixture!.single.shapeGuess, 'rect');
     });
 
-    test('side is src/dst when a connector id only ever appears under one '
-        'of Conn ID / Conn ID B, null when it appears under both '
-        '(GUI-18 — drives which half of the wiring diagram a connector '
-        'lands on)', () {
+    test('every connector is on exactly one harness end: an id under Conn ID '
+        'is Side A (src), under Conn ID B is Side B (dst), and an id under '
+        'both is TWO connectors, one per end (GUI-18 — drives which '
+        'column of the wiring diagram a connector lands in)', () {
       final bytes = _workbook([
         [
           TextCellValue('Conn ID'), TextCellValue('HI'), TextCellValue('LO'),
@@ -379,10 +380,11 @@ void main() {
       ]);
 
       final parsed = parseNetlistWorkbook(bytes, fileName: 'x.xlsx');
-      final byId = {for (final c in parsed.fixture!) c.id: c};
-      expect(byId['J1']!.side, 'src');
-      expect(byId['J2']!.side, 'dst');
-      expect(byId['J3']!.side, isNull);
+      final f = parsed.fixture!;
+      expect(f.where((c) => c.id == 'J1').map((c) => c.side), ['src']);
+      expect(f.where((c) => c.id == 'J2').map((c) => c.side), ['dst']);
+      expect(f.where((c) => c.id == 'J3').map((c) => c.side),
+          ['src', 'dst']);
     });
   });
 }

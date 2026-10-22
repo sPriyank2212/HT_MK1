@@ -67,6 +67,12 @@ class HtIcons {
   /// HV — `<path d="M13 2L4 14h6l-1 8 9-12h-6z"/>`
   static const hv = HtIconData([SvgPathShape('M13 2L4 14h6l-1 8 9-12h-6z')]);
 
+  /// Auto scan — corner brackets around a centre bar
+  static const scan = HtIconData([
+    SvgPathShape('M3 8V4h4M17 4h4v4M21 16v4h-4M7 20H3v-4'),
+    SvgPathShape('M7 12h10'),
+  ]);
+
   /// Netlist — `<path d="M4 6h16M4 12h16M4 18h10"/>`
   static const netlist = HtIconData([SvgPathShape('M4 6h16M4 12h16M4 18h10')]);
 

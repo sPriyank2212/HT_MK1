@@ -370,7 +370,7 @@ class HtType {
 
   /// `.act{mono 13px 700 .08em uppercase}`
   TextStyle act(Color color) => mono(
-        size: 13,
+        size: 18,
         weight: FontWeight.w700,
         letterSpacing: 1.04,
         color: color,
@@ -378,7 +378,7 @@ class HtType {
 
   /// `.act small{9px 600 .06em opacity .75}`
   TextStyle actSmall(Color color) => mono(
-        size: 9,
+        size: 11,
         weight: FontWeight.w600,
         letterSpacing: .54,
         // ignore: deprecated_member_use

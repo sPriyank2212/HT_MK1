@@ -163,9 +163,14 @@ void main() {
 
       expect(s.mdFixtureOpen, isTrue);
       expect(s.fixtureBeforeGuess, same(before));
-      expect(kFix.connectors.map((c) => c.id), ['J1', 'J2']);
+      // J1 is on both harness ends, so it is two connectors: the second one
+      // keeps the same designator for display under a distinct internal key.
+      expect(kFix.connectors.map((c) => c.id), ['J1', 'J1#B', 'J2']);
+      expect(kFix.connectors.map((c) => c.name), ['J1', 'J1', 'J2']);
+      expect(kFix.connectors.map((c) => c.side), ['L', 'R', 'R']);
       expect(kFix.connectors[0].type, ConnType.dsub);
-      expect(kFix.connectors[1].type, ConnType.circ);
+      expect(kFix.connectors[1].type, ConnType.dsub);
+      expect(kFix.connectors[2].type, ConnType.circ);
       // Applied optimistically - real per-pin lookup already resolves
       // against it, not the old modulo fabrication.
       expect(s.nets[0].src.c, 'J1');
@@ -276,11 +281,14 @@ void main() {
       ]);
       await boot(pickNetlistFile: () async => ('guessed2.xlsx', bytes));
       await s.browseMtxNetlist();
-      expect(kFix.connectors.single.type, ConnType.rect); // raw guess
+      // P1 sits on both ends: one connector per end, raw guess rect.
+      expect(kFix.connectors.length, 2);
+      expect(kFix.connectors.map((c) => c.type), everyElement(ConnType.rect));
 
       final edited = kFix.connectors
           .map((c) => ConnectorDef(
                 id: c.id,
+                name: c.name,
                 label: 'Operator label',
                 type: ConnType.dsub, // operator corrected the shape
                 pins: c.pins,
@@ -292,8 +300,9 @@ void main() {
 
       expect(s.mdFixtureOpen, isFalse);
       expect(s.fixtureBeforeGuess, isNull);
-      expect(kFix.connectors.single.type, ConnType.dsub);
-      expect(kFix.connectors.single.label, 'Operator label');
+      expect(kFix.connectors.map((c) => c.type), everyElement(ConnType.dsub));
+      expect(kFix.connectors.map((c) => c.label),
+          everyElement('Operator label'));
     });
 
     test('operator cancelling the file dialog sends nothing and changes '

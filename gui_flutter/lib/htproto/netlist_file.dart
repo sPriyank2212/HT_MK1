@@ -29,13 +29,41 @@ class NetlistFileFormatException implements Exception {
   String toString() => message;
 }
 
-/// One (hi, lo) pin pair, with the net name carried through for display only
-/// — the wire protocol's `NETLIST ADD` takes pins, never names.
+/// One (hi, lo) pin pair, with the row's descriptive metadata carried through
+/// for display only — the wire protocol's `NETLIST ADD` takes pins, never
+/// names.
+///
+/// Rows that share a [name] are ONE net: a source pin with several rows is a
+/// Y branch, several sources into one destination is the mirror image, and so
+/// on — `AppState.rebuildNets` groups by it. [detail] is the free-text
+/// `Connector Detail` column (`straight`, `crossed pin 5 -> 8`, `Y branch 1
+/// of 3`, `inline splice`, ...); [kindFromDetail] reads the joint it declares.
 class ParsedNetPair {
   final int hi;
   final int lo;
   final String? name;
-  const ParsedNetPair(this.hi, this.lo, [this.name]);
+  final String? srcLabel;
+  final String? dstLabel;
+  final String? detail;
+  const ParsedNetPair(this.hi, this.lo,
+      [this.name, this.srcLabel, this.dstLabel, this.detail]);
+}
+
+/// The joint a `Connector Detail` cell declares, or null when it says nothing
+/// about one (`straight`, `crossed ...`, blank). Structure beats this: a net
+/// with several rows is a Y/multi-drop whatever its detail says; the only
+/// joint that CANNOT be seen from structure is an inline splice, which is
+/// still one source to one destination, so that is what this exists for.
+String? kindFromDetail(String? detail) {
+  final d = (detail ?? '').toLowerCase();
+  if (d.isEmpty) return null;
+  if (d.contains('splice') || d.contains('inline') || d.contains('butt')) {
+    return 'I';
+  }
+  if (d.contains('y branch') || d.contains('y-branch') || d.contains('y joint')) {
+    return 'Y';
+  }
+  return null;
 }
 
 class ParsedNetlist {
@@ -65,40 +93,40 @@ class GuessedConnector {
   final String id;
   final int pins;
 
-  /// 'dsub' | 'circ' | 'rect' — see [_guessShape].
+  /// 'dsub' | 'circ' | 'rect' | 'term' | 'mod' — see [_guessShape].
   final String shapeGuess;
   final String partNumber;
 
-  /// 'src' | 'dst' | null — which side of the netlist (`Conn ID` vs `Conn ID
-  /// B`) this id was observed under, so `AppState._fixtureFromGuess` can put
-  /// every Source connector on one half of the wiring diagram and every
-  /// Destination connector on the other, instead of an arbitrary sorted-list
-  /// split. Null when the id showed up under both columns across different
-  /// rows — the ordinary case for a symmetric male/female connector pair
-  /// that reuses one designator for both mating halves (e.g.
-  /// `example_netlist27072026.xlsx`'s `DB15-1` on both `Conn ID` and `Conn
-  /// ID B`) — there the two "sides" are the same physical connector, not two
-  /// different ones, so there is no real src/dst distinction to report.
-  final String? side;
+  /// 'src' | 'dst' — which END of the harness this connector sits on: `Conn
+  /// ID` (Side-A, the HI pins) or `Conn ID B` (Side-B, the LO pins).
+  ///
+  /// Every connector is guessed per end, so a designator used on both ends —
+  /// `example_netlist27072026.xlsx`'s `DB15-1` is the male plug at one end and
+  /// the female socket at the other — yields TWO connectors, one per end, not
+  /// one connector with its pin range merged. (It used to be merged, which
+  /// drew every wire of a mated pair as a zero-length line on a single
+  /// connector.) HI and LO are separate 1..256 address spaces on the matrix
+  /// card, so each end's pins are numbered on their own.
+  final String side;
 
-  /// True when this id names two different physical roles in the same file
-  /// — its own mated pair (native, straight-through rows) *and* the far end
-  /// of a genuinely different connector's wires (foreign rows) — a real id
-  /// collision in the source data, not an ordinary ambiguous-side pair.
-  /// [pins]/[side] above already account for it (native range only, side
-  /// null), but the wires on the *foreign* rows still can't be placed on
-  /// this connector in the diagram — there's no second block for them to
-  /// live in. Surfaced here so the caller can warn the operator instead of
-  /// silently drawing those specific wires wrong.
-  final bool conflicting;
+  /// The pin count the part number itself states (`DB37-F-37S` -> 37,
+  /// `MS3116F14-19S` -> 19), or null when it states none. Used only as a
+  /// sanity check on [pins].
+  final int? partPins;
+
+  /// True when more pins were observed on this connector than its part number
+  /// has — a Conn ID reused for two different connectors, or a connector
+  /// whose first pins are unwired so the block boundaries came out shifted.
+  /// The layout is still built, but the operator is warned.
+  bool get exceedsPart => partPins != null && pins > partPins!;
 
   const GuessedConnector({
     required this.id,
     required this.pins,
     required this.shapeGuess,
     required this.partNumber,
-    this.side,
-    this.conflicting = false,
+    required this.side,
+    this.partPins,
   });
 }
 
@@ -122,6 +150,18 @@ const List<String> _connAHeaders = ['conn id', 'connector', 'conn'];
 const List<String> _partAHeaders = ['part number', 'part #', 'part no'];
 const List<String> _connBHeaders = ['conn id b', 'connector b', 'conn b'];
 const List<String> _partBHeaders = ['part number b', 'part # b', 'part no b'];
+
+// Per-pin signal labels and the free-text wire detail (`Y branch 1 of 3`,
+// `crossed pin 5 -> 8`, `inline splice`) - display only.
+const List<String> _srcLabelHeaders = [
+  'src pin label', 'source pin label', 'src label', 'pin label',
+];
+const List<String> _dstLabelHeaders = [
+  'dst pin label', 'destination pin label', 'dst label',
+];
+const List<String> _detailHeaders = [
+  'connector detail', 'wire detail', 'detail', 'joint',
+];
 
 String _norm(String s) => s.trim().toLowerCase();
 
@@ -207,6 +247,7 @@ ParsedNetlist _parse(Uint8List bytes, String fileName) {
 
   int? hiCol, loCol, nameCol, cardCol;
   int? connACol, partACol, connBCol, partBCol;
+  int? srcLabelCol, dstLabelCol, detailCol;
   final header = rows.first;
   for (var c = 0; c < header.length; c++) {
     final h = _cellText(header[c]);
@@ -224,6 +265,9 @@ ParsedNetlist _parse(Uint8List bytes, String fileName) {
     partBCol ??= _partBHeaders.contains(n) ? c : null;
     connACol ??= _connAHeaders.contains(n) ? c : null;
     partACol ??= _partAHeaders.contains(n) ? c : null;
+    srcLabelCol ??= _srcLabelHeaders.contains(n) ? c : null;
+    dstLabelCol ??= _dstLabelHeaders.contains(n) ? c : null;
+    detailCol ??= _detailHeaders.contains(n) ? c : null;
   }
   if (hiCol == null || loCol == null) {
     final seen = header.map(_cellText).whereType<String>().join(', ');
@@ -249,36 +293,20 @@ ParsedNetlist _parse(Uint8List bytes, String fileName) {
 
   final pairs = <ParsedNetPair>[];
   int? cards;
-  final connObs = <String, _ConnObs>{};
-  // A row's Conn ID/Conn ID B being equal is what actually means "one mated
-  // connector pair, straight through" - not just "this id was seen as both
-  // src and dst somewhere in the file." Tracked per row (isMirror) so a
-  // connector's own native block (observed on its own mirrored rows) can
-  // never be corrupted by it also being referenced, on OTHER rows, as the
-  // far end of a completely different connector's wires - see the "foreign"
-  // observation handling below and _guessFixture's use of it.
-  void observe(int? col, int? partCol, List<Data?> row, int pin,
-      {required bool isSrc, required bool isMirror}) {
+  // Each harness END is observed on its own: `Conn ID` with the Src (HI) pins,
+  // `Conn ID B` with the Dst (LO) pins. A designator that appears at both ends
+  // is two connectors (see GuessedConnector.side).
+  final srcObs = <String, _ConnObs>{};
+  final dstObs = <String, _ConnObs>{};
+  void observe(Map<String, _ConnObs> into, int? col, int? partCol,
+      List<Data?> row, int pin) {
     if (col == null) return;
     final id = _cellText(at(row, col));
     if (id == null) return;
-    final partNumber = partCol == null ? null : _cellText(at(row, partCol));
-    final o = connObs.putIfAbsent(id, _ConnObs.new);
-    o.partNumber ??= partNumber;
-    if (isMirror) {
-      o.nativeMin = o.nativeMin == null ? pin : math.min(o.nativeMin!, pin);
-      o.nativeMax = o.nativeMax == null ? pin : math.max(o.nativeMax!, pin);
-    } else if (isSrc) {
-      o.foreignSrcMin =
-          o.foreignSrcMin == null ? pin : math.min(o.foreignSrcMin!, pin);
-      o.foreignSrcMax =
-          o.foreignSrcMax == null ? pin : math.max(o.foreignSrcMax!, pin);
-    } else {
-      o.foreignDstMin =
-          o.foreignDstMin == null ? pin : math.min(o.foreignDstMin!, pin);
-      o.foreignDstMax =
-          o.foreignDstMax == null ? pin : math.max(o.foreignDstMax!, pin);
-    }
+    final o = into.putIfAbsent(id, _ConnObs.new);
+    o.partNumber ??= partCol == null ? null : _cellText(at(row, partCol));
+    o.min = o.min == null ? pin : math.min(o.min!, pin);
+    o.max = o.max == null ? pin : math.max(o.max!, pin);
   }
 
   for (var r = 1; r < rows.length; r++) {
@@ -298,12 +326,16 @@ ParsedNetlist _parse(Uint8List bytes, String fileName) {
       final n = _cellInt(at(row, cardCol));
       if (n != null) cards = cards == null ? n : math.max(cards, n);
     }
-    final srcId = connACol == null ? null : _cellText(at(row, connACol));
-    final dstId = connBCol == null ? null : _cellText(at(row, connBCol));
-    final isMirror = srcId != null && srcId == dstId;
-    observe(connACol, partACol, row, hi, isSrc: true, isMirror: isMirror);
-    observe(connBCol, partBCol, row, lo, isSrc: false, isMirror: isMirror);
-    pairs.add(ParsedNetPair(hi, lo, name));
+    observe(srcObs, connACol, partACol, row, hi);
+    observe(dstObs, connBCol, partBCol, row, lo);
+    pairs.add(ParsedNetPair(
+      hi,
+      lo,
+      name,
+      srcLabelCol == null ? null : _cellText(at(row, srcLabelCol)),
+      dstLabelCol == null ? null : _cellText(at(row, dstLabelCol)),
+      detailCol == null ? null : _cellText(at(row, detailCol)),
+    ));
   }
 
   if (pairs.isEmpty) {
@@ -319,109 +351,125 @@ ParsedNetlist _parse(Uint8List bytes, String fileName) {
     }
   }
 
-  return ParsedNetlist(pairs, cards, _guessFixture(connObs));
+  return ParsedNetlist(pairs, cards, _guessFixture(srcObs, dstObs));
 }
 
-/// Per-`Conn ID` pin observations while scanning rows — [_guessFixture] turns
-/// this into a [GuessedConnector] once every row has been visited.
-///
-/// A row's `Conn ID`/`Conn ID B` being equal is what actually means "one
-/// mated connector pair, straight through" (the ordinary case) — not merely
-/// "this id was seen as both src and dst somewhere in the file." So pin
-/// observations are kept in two separate buckets, not one merged min/max:
-///
-/// - [nativeMin]/[nativeMax]: pins from rows where this id mirrored itself
-///   (`Conn ID == Conn ID B`) — the connector's own true block.
-/// - [foreignSrcMin]/[foreignSrcMax] and [foreignDstMin]/[foreignDstMax]:
-///   pins from rows where this id was on one side while the *other* side
-///   named a genuinely different connector — a real box-to-box wire, not a
-///   mated pair.
-///
-/// Keeping these apart means one connector's own block can never be
-/// corrupted just because it also happens to be the far end of some other
-/// connector's wires on different rows (see `PROJECT_LOG.md`'s note on the
-/// TN-01 connector-id-reuse finding) — without this, editing one row's
-/// `Conn ID B` to point at an already-native connector silently expanded
-/// that connector's guessed pin range and offset, misplacing *unrelated*
-/// pins on the wiring diagram.
+/// Pin range seen for one `Conn ID` on one harness end while scanning rows.
 class _ConnObs {
-  int? nativeMin, nativeMax;
-  int? foreignSrcMin, foreignSrcMax;
-  int? foreignDstMin, foreignDstMax;
+  int? min, max;
   String? partNumber;
 }
 
-/// Turns per-connector pin observations into an ordered connector list.
-/// Block boundaries are inferred, not measured: connectors are sorted by
-/// the lowest pin number seen on each, and each one's pin count runs from
-/// its own lowest observed pin to just before the next connector's lowest
-/// (the last connector runs to its own highest observed pin). This is
-/// exactly right when the file's numbering is already sequential by
-/// connector, confirmed true of the real `required_format` sample
-/// (2026-08-14, GUI-08/CL-41) — but it is a guess from what happens to be
-/// wired in this file, not a real connector pin count, whenever a
-/// connector's trailing pins are entirely unused. The operator confirms/
-/// edits before this becomes the active fixture (`AppState`).
-List<GuessedConnector>? _guessFixture(Map<String, _ConnObs> connObs) {
-  if (connObs.isEmpty) return null;
+/// Turns per-connector pin observations into an ordered connector list: every
+/// Side-A (`src`) connector, then every Side-B (`dst`) connector.
+///
+/// Block boundaries are inferred, not measured. On each end, connectors are
+/// sorted by the lowest pin seen on them; a connector's block starts right
+/// after the previous one's ends (the first starts at pin 1) and runs to just
+/// before the next connector's lowest pin (the last runs to its own highest
+/// observed pin). That is exactly right when the file numbers pins
+/// sequentially by connector — true of the real `required_format` sample —
+/// but it is a guess from what happens to be wired in this file, not a real
+/// connector pin count, whenever a connector's trailing pins are entirely
+/// unused. The operator confirms or edits it before it becomes the active
+/// fixture (`AppState`).
+List<GuessedConnector>? _guessFixture(
+    Map<String, _ConnObs> srcObs, Map<String, _ConnObs> dstObs) {
+  if (srcObs.isEmpty && dstObs.isEmpty) return null;
 
-  // A connector's own range comes from its native (mirrored) block whenever
-  // it has one — foreign observations never widen it. Only a connector with
-  // no native block at all falls back to the old src-or-dst-only range.
-  int minPinOf(_ConnObs o) =>
-      o.nativeMin ?? math.min(o.foreignSrcMin ?? 1 << 30, o.foreignDstMin ?? 1 << 30);
-  int maxPinOf(_ConnObs o) =>
-      o.nativeMax ?? math.max(o.foreignSrcMax ?? 0, o.foreignDstMax ?? 0);
-
-  final ids = connObs.keys.toList()
-    ..sort((a, b) => minPinOf(connObs[a]!).compareTo(minPinOf(connObs[b]!)));
-  final out = <GuessedConnector>[];
-  for (var i = 0; i < ids.length; i++) {
-    final o = connObs[ids[i]]!;
-    final oMin = minPinOf(o);
-    final oMax = maxPinOf(o);
-    final blockEnd =
-        i + 1 < ids.length ? minPinOf(connObs[ids[i + 1]]!) - 1 : oMax;
-    final pins = math.max(oMax, blockEnd) - oMin + 1;
-    final hasNative = o.nativeMin != null;
-    final hasForeign = o.foreignSrcMin != null || o.foreignDstMin != null;
-    final String? side;
-    if (hasNative) {
-      // A mated pair by nature - even one also referenced elsewhere as a
-      // foreign far end (that reference just doesn't affect its own block).
-      side = null;
-    } else {
-      final seenSrc = o.foreignSrcMin != null;
-      final seenDst = o.foreignDstMin != null;
-      side = seenSrc == seenDst ? null : (seenSrc ? 'src' : 'dst');
+  List<GuessedConnector> end(Map<String, _ConnObs> obs, String side) {
+    final ids = obs.keys.toList()
+      ..sort((a, b) => obs[a]!.min!.compareTo(obs[b]!.min!));
+    final out = <GuessedConnector>[];
+    var start = 1; // first pin of this connector's block
+    for (var i = 0; i < ids.length; i++) {
+      final o = obs[ids[i]]!;
+      final last = i + 1 == ids.length;
+      final blockEnd = last ? o.max! : obs[ids[i + 1]]!.min! - 1;
+      final pins = math.max(o.max!, blockEnd) - start + 1;
+      out.add(GuessedConnector(
+        id: ids[i],
+        pins: pins,
+        shapeGuess: _guessShape(o.partNumber),
+        partNumber: o.partNumber ?? '',
+        side: side,
+        partPins: _pinsFromPart(o.partNumber),
+      ));
+      start += pins;
     }
-    out.add(GuessedConnector(
-      id: ids[i],
-      pins: pins,
-      shapeGuess: _guessShape(o.partNumber),
-      partNumber: o.partNumber ?? '',
-      side: side,
-      // Only the native+foreign combination is a genuine id collision (one
-      // designator standing for two different physical roles) - foreignSrc
-      // and foreignDst together with no native block is just the ordinary
-      // "this connector's other half lives under a different id" case
-      // (e.g. TN-02) and isn't flagged.
-      conflicting: hasNative && hasForeign,
-    ));
+    return out;
   }
-  return out;
+
+  return [...end(srcObs, 'src'), ...end(dstObs, 'dst')];
 }
 
-/// 'dsub' | 'circ' | 'rect' from a mating-connector part-number string —
-/// a keyword guess, not a lookup against a real parts database.
+/// The pin count a part number states: a D-sub's `DB<n>` or a trailing
+/// `<n>P` / `<n>S` (plug / socket) — `DB9-M-9P` -> 9, `MS3116F14-19S` -> 19.
+/// Null when it states none (most terminal blocks, CPC, Molex...).
+int? _pinsFromPart(String? partNumber) {
+  final p = (partNumber ?? '').toUpperCase();
+  final tail = RegExp(r'(\d{1,3})[PS]$').firstMatch(p);
+  if (tail != null) return int.parse(tail.group(1)!);
+  final db = RegExp(r'DB(\d{1,2})').firstMatch(p);
+  if (db != null) return int.parse(db.group(1)!);
+  return null;
+}
+
+/// 'dsub' | 'circ' | 'rect' | 'term' | 'mod' from a mating-connector
+/// part-number string — a keyword guess, not a lookup against a real parts
+/// database. The operator confirms it (and can change it) before it is used.
+///
+///  * `dsub` — D-subminiature, including high-density (`DB15`, `DE-9`,
+///    `DA-15`, `HD-44`, `D-SUB`)
+///  * `circ` — circular: MIL-DTL-38999 / MS3xxx, M8/M12/M16 sensor plugs,
+///    Amphenol round
+///  * `term` — terminal blocks / screw terminals / Phoenix / WAGO
+///  * `mod`  — modular and network jacks: RJ45, RJ11, USB, Ethernet
+///  * `rect` — everything else (TE CPC, Molex, Deutsch, JST, Amphenol
+///    rectangular...) - the default
 String _guessShape(String? partNumber) {
   final p = (partNumber ?? '').toUpperCase();
-  if (p.contains('DSUB') || p.contains('D-SUB') || p.contains('DB')) {
+  if (p.contains('TERMINAL') ||
+      p.contains('SCREW') ||
+      p.contains('PHOENIX') ||
+      p.contains('WAGO') ||
+      p.contains('MSTB') ||
+      p.contains('DINKLE') ||
+      p.contains('TBLOCK') ||
+      p.startsWith('TB-') ||
+      p.startsWith('TB_')) {
+    return 'term';
+  }
+  if (p.contains('RJ45') ||
+      p.contains('RJ-45') ||
+      p.contains('RJ11') ||
+      p.contains('RJ-11') ||
+      p.contains('RJ12') ||
+      p.contains('MODULAR') ||
+      p.contains('ETHERNET') ||
+      p.contains('USB') ||
+      p.contains('8P8C')) {
+    return 'mod';
+  }
+  if (p.contains('DSUB') ||
+      p.contains('D-SUB') ||
+      p.contains('DB') ||
+      RegExp(r'(^|[^A-Z])(D[A-E]|HD)-?\d').hasMatch(p)) {
     return 'dsub';
+  }
+  if (p.contains('RECT') ||
+      p.contains('CPC') ||
+      p.contains('MOLEX') ||
+      p.contains('DEUTSCH') ||
+      p.contains('JST')) {
+    return 'rect';
   }
   if (p.contains('CIRC') ||
       p.contains('MS3') ||
+      p.contains('MS27') ||
       p.contains('38999') ||
+      p.contains('MIL-DTL') ||
+      RegExp(r'(^|[^A-Z0-9])M(8|12|16|23|27)([^0-9]|$)').hasMatch(p) ||
       p.contains('AMPHENOL')) {
     return 'circ';
   }

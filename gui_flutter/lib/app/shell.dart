@@ -23,6 +23,9 @@ import 'build_tag.dart';
 /// `parts.dart`, next to the view grids it collapses.
 const double kNarrow = 860;
 
+/// Wide enough for the longest rail label ("RESISTANCE") without clipping.
+const double kRailWidth = 96;
+
 // ---------------------------------------------------------------------------
 // status header
 // ---------------------------------------------------------------------------
@@ -46,7 +49,10 @@ class StatusBar extends StatelessWidget {
     final c = context.colors;
     final t = context.type;
     final width = MediaQuery.sizeOf(context).width;
-    final narrow = width <= kNarrow;
+    // The bar scrolls sideways rather than overflowing. That used to start at
+    // the 860px layout breakpoint, but with a link up (Disconnect, the link
+    // pill and both state pills) it is already out of room well above that.
+    final narrow = width <= 1100;
     // DUT ID/Operator are the least safety-relevant thing in this bar - the
     // first to give way once the bar is tight, rather than fighting the
     // existing slots (or the conditional Clear Fault button, which can
@@ -54,6 +60,10 @@ class StatusBar extends StatelessWidget {
     // measured this bar overflowing at the 1480px "default" test width with
     // Clear Fault showing, so kMediumBreak alone left no real margin.
     final showOperatorFields = width > 1600;
+    // The company logo is wider than the old "HT" badge, so the name/firmware
+    // text beside it gives way first on a compact window (the window's own
+    // title bar already says "HT_MK1 Console").
+    final compactMark = width <= 1200;
 
     final children = <Widget>[
       // .mark
@@ -65,27 +75,20 @@ class StatusBar extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Container(
-              width: 26,
-              height: 26,
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                color: c.accent,
-                borderRadius: BorderRadius.circular(5),
+            const CompanyLogo(height: 30),
+            if (!compactMark) ...[
+              const SizedBox(width: 10),
+              Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('HT_MK1 Console', style: t.markName),
+                  // Real: fetched via >ID on connect (AppState._connect()).
+                  // Null until then, or if never connected this session.
+                  Text('fw ${s.fwVersion ?? "—"} · g474', style: t.markSub),
+                ],
               ),
-              child: Text('HT', style: t.markBadge),
-            ),
-            const SizedBox(width: 9),
-            Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('HT_MK1 Console', style: t.markName),
-                // Real: fetched via >ID on connect (AppState._connect()).
-                // Null until then, or if never connected this session.
-                Text('fw ${s.fwVersion ?? "—"} · g474', style: t.markSub),
-              ],
-            ),
+            ],
           ],
         ),
       ),
@@ -633,21 +636,27 @@ class Rail extends StatelessWidget {
       _RailButton(
           s: s,
           view: 'cont',
-          label: 'Contin',
+          label: 'Continuity',
           icon: HtIcons.cont,
           badge: s.railBadge('cont')),
       _RailButton(
           s: s,
           view: 'res',
-          label: 'Resist',
+          label: 'Resistance',
           icon: HtIcons.res,
           badge: s.railBadge('res')),
       _RailButton(
           s: s,
           view: 'hv',
-          label: 'HV',
+          label: 'Insulation',
           icon: HtIcons.hv,
           badge: s.railBadge('hv')),
+      _RailButton(
+          s: s,
+          view: 'auto',
+          label: 'Auto scan',
+          icon: HtIcons.scan,
+          badge: null),
       _RailButton(
           s: s,
           view: 'program',
@@ -689,7 +698,7 @@ class Rail extends StatelessWidget {
                 if (i > 0) const SizedBox(width: 2),
                 // .rail-end sits after a wider gap instead of margin-left:auto
                 if (i == buttons.length - 1) const SizedBox(width: 16),
-                SizedBox(width: 70, child: buttons[i]),
+                SizedBox(width: 84, child: buttons[i]),
               ],
             ],
           ),
@@ -698,7 +707,7 @@ class Rail extends StatelessWidget {
     }
 
     return Container(
-      width: 80,
+      width: kRailWidth,
       decoration: BoxDecoration(
         color: c.panel,
         border: Border(right: BorderSide(color: c.line)),
@@ -708,26 +717,28 @@ class Rail extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           buttons[0],
-          _RailStage('Stage 1 · MTX'),
+          _RailStage('Mode 1'),
           buttons[1],
           const SizedBox(height: 2),
           buttons[2],
-          _RailStage('Stage 2 · HV'),
+          _RailStage('Mode 2'),
           buttons[3],
+          _RailStage('Auto'),
+          buttons[4],
           // .rail hr{margin:5px 6px 0}
           Padding(
             padding: const EdgeInsets.only(left: 6, right: 6, top: 5),
             child: Container(height: 1, color: c.lineSoft),
           ),
           const SizedBox(height: 2),
-          buttons[4],
-          const SizedBox(height: 2),
           buttons[5],
+          const SizedBox(height: 2),
+          buttons[6],
           // .rail .rail-end{margin-top:auto}
           const Expanded(child: SizedBox()),
-          // Diag (buttons[6]) doesn't exist in a customer build - the first
-          // six are always present, this one is the only conditional entry.
-          if (buttons.length > 6) buttons[6],
+          // Diag (buttons[7]) doesn't exist in a customer build - the first
+          // seven are always present, this one is the only conditional entry.
+          if (buttons.length > 7) buttons[7],
         ],
       ),
     );
@@ -1100,4 +1111,87 @@ String _stampTime(DateTime t) {
   String two(int n) => n.toString().padLeft(2, '0');
   String three(int n) => n.toString().padLeft(3, '0');
   return '${two(t.hour)}:${two(t.minute)}:${two(t.second)}.${three(t.millisecond)}';
+}
+
+// ---------------------------------------------------------------------------
+// company branding
+// ---------------------------------------------------------------------------
+
+/// The company's infinity symbol on a white tile (the artwork is dark-on-white,
+/// so it needs its own light ground in the dark theme). Only the symbol, not
+/// the full "INFINITY INTEGRATIONS" lockup: the wordmark is unreadable at the
+/// sizes used here, so the company name is set as text next to it instead.
+/// Falls back to the "HT" badge if the asset cannot be loaded.
+class CompanyLogo extends StatelessWidget {
+  final double height;
+  const CompanyLogo({super.key, required this.height});
+
+  /// Width / height of `company_logo_symbol.png`.
+  static const double aspect = 2.09;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    return Container(
+      width: height * aspect,
+      height: height,
+      padding:
+          EdgeInsets.symmetric(horizontal: height * .1, vertical: height * .06),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFFFFF),
+        borderRadius: BorderRadius.circular(height * .2),
+      ),
+      child: Image.asset(
+        'assets/company_logo_symbol.png',
+        fit: BoxFit.contain,
+        filterQuality: FilterQuality.high,
+        errorBuilder: (context, _, __) => Center(
+          child: Text('HT',
+              style: context.type.markBadge.copyWith(color: c.accent)),
+        ),
+      ),
+    );
+  }
+}
+
+/// The credit line along the very bottom of the window.
+class FooterBar extends StatelessWidget {
+  final AppState s;
+  const FooterBar({super.key, required this.s});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    final t = context.type;
+    return Container(
+      height: 30,
+      padding: const EdgeInsets.symmetric(horizontal: 14),
+      decoration: BoxDecoration(
+        color: c.panel,
+        border: Border(top: BorderSide(color: c.line)),
+      ),
+      child: Row(
+        children: [
+          // Which build is this? GUI stamp always; firmware stamp once the
+          // instrument has answered >ID. Dropped on a narrow window rather
+          // than letting it collide with the credit line.
+          if (MediaQuery.sizeOf(context).width > 1100)
+            Text(
+              'GUI build ${prettyStamp(kBuildStamp)}'
+              '${s.fwBuild == null ? "" : "   ·   Firmware build ${prettyStamp(s.fwBuild!)}"}',
+              style: t.mono(size: 10.5, color: c.ink3),
+              maxLines: 1,
+              softWrap: false,
+            ),
+          const Spacer(),
+          const CompanyLogo(height: 20),
+          const SizedBox(width: 8),
+          Text('Design and developed by ',
+              style: t.ui(size: 11.5, color: c.ink3)),
+          Text('Infinity Integrations',
+              style: t.ui(size: 11.5, color: c.ink2, weight: FontWeight.w600)),
+        ],
+      ),
+    );
+  }
 }

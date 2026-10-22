@@ -35,6 +35,7 @@ import 'htproto/netlist_picker_io.dart' as netlist_picker;
 import 'htproto/paths.dart';
 import 'htproto/serial_transport.dart';
 import 'htproto/simulator.dart';
+import 'views/auto_scan_view.dart';
 import 'views/cont_view.dart';
 import 'views/misc_views.dart';
 import 'views/res_hv_views.dart';
@@ -201,6 +202,7 @@ Future<void> main(List<String> args) async {
 
   var host = o.host;
   var port = linkPortFor(o);
+  SimulatorServer? demoSim;
   // No --serial and no explicit TCP target: the link is serial, and the
   // operator picks the port from the status-bar selector.
   final bool serialLink = !o.tcp && !o.sim;
@@ -242,6 +244,7 @@ Future<void> main(List<String> args) async {
       port: 0,
       interval: Duration(microseconds: (o.interval * 1e6).round()),
     );
+    demoSim = sim;
     host = '127.0.0.1';
     port = sim.port;
     transportFactory = TcpTransport.new;
@@ -287,6 +290,13 @@ Future<void> main(List<String> args) async {
     // GUI-05: run history lives on the GUI host, not the instrument.
     history: RunHistoryStore(historyDir),
     pickSavePath: netlist_picker.pickSavePath,
+    // Only under --sim: lets the Run screen's demo selector change what the
+    // simulated instrument reports. With real hardware there is no such
+    // thing, and the selector is not shown.
+    demoScenario: demoSim == null
+        ? null
+        : (faulty) => demoSim!.setScenario(
+              makeScenario(faulty ? 'opens_shorts' : 'pass', nets: o.nets)),
   );
   state.refreshPorts();
   // --serial preselects its port; the selector shows it even when the
@@ -432,6 +442,7 @@ class _HtHomeState extends State<HtHome> {
         'cont' => ContView(s: s),
         'res' => ResView(s: s),
         'hv' => HvView(s: s),
+        'auto' => AutoScanView(s: s),
         'program' => ProgramView(s: s),
         'results' => ResultsView(s: s),
         // Customer builds have no Diag route at all - the Rail's button is
@@ -502,6 +513,7 @@ class _HtHomeState extends State<HtHome> {
                   Rail(s: s, horizontal: true),
                   Expanded(child: stage),
                   LogBar(s: s),
+                  FooterBar(s: s),
                 ],
               )
             : Column(
@@ -517,6 +529,7 @@ class _HtHomeState extends State<HtHome> {
                     ),
                   ),
                   LogBar(s: s),
+                  FooterBar(s: s),
                 ],
               );
 
@@ -526,6 +539,7 @@ class _HtHomeState extends State<HtHome> {
             children: [
               Positioned.fill(child: body),
               if (s.mdNlOpen) HvNetlistModal(s: s),
+              if (s.mdPreOpen) PreTestModal(s: s),
               if (s.mdVerifyOpen) VerifyModal(s: s),
               if (s.mdMtxOpen) MtxNetlistModal(s: s),
               if (s.mdFixtureOpen) FixtureGuessModal(s: s),

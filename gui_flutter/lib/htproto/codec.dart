@@ -193,6 +193,10 @@ T _enumOf<T>(T? value, String token, String what) {
   return value;
 }
 
+/// `build=` on the ID reply: ISO-8601 local time, `2026-10-22T18:30:12`.
+final RegExp _buildStampRe =
+    RegExp(r'^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$');
+
 String _kv(String token, String key, String what) {
   final prefix = '$key=';
   if (!token.startsWith(prefix)) {
@@ -384,7 +388,7 @@ m.Message parseLine(String line) {
 m.Message _parseReply(List<String> tokens, String line) {
   final head = tokens[0];
   if (head == 'PONG' && tokens.length == 1) return const m.Pong();
-  if (head == 'ID' && tokens.length == 4) {
+  if (head == 'ID' && (tokens.length == 4 || tokens.length == 5)) {
     if (tokens[1] != 'HT_MK1') {
       throw ProtocolError('ID: expected HT_MK1, got ${_r(tokens[1])}');
     }
@@ -393,7 +397,14 @@ m.Message _parseReply(List<String> tokens, String line) {
       throw ProtocolError('ID: bad semver ${_r(fw)}');
     }
     final proto = _kvUint(tokens[3], 'proto', 'ID');
-    return m.IdReply(fw: fw, proto: proto);
+    String? build;
+    if (tokens.length == 5) {
+      build = _kv(tokens[4], 'build', 'ID');
+      if (!_buildStampRe.hasMatch(build)) {
+        throw ProtocolError('ID: bad build stamp ${_r(build)}');
+      }
+    }
+    return m.IdReply(fw: fw, proto: proto, build: build);
   }
   if (head == 'STATUS' && tokens.length == 4) {
     final stateTok = _kv(tokens[1], 'state', 'STATUS');

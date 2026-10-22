@@ -31,20 +31,27 @@ class Pong extends Message {
   String toString() => 'Pong()';
 }
 
-/// `<ID HT_MK1 fw=<semver> proto=1`
+/// `<ID HT_MK1 fw=<semver> proto=1 [build=YYYY-MM-DDTHH:MM:SS]`
+///
+/// [build] is the date/time the firmware image was compiled, taken from the
+/// build PC's clock. Optional: firmware older than this field omits it.
 class IdReply extends Message {
   final String fw;
   final int proto;
-  const IdReply({required this.fw, required this.proto});
+  final String? build;
+  const IdReply({required this.fw, required this.proto, this.build});
   @override
   String get type => 'IdReply';
   @override
   bool operator ==(Object other) =>
-      other is IdReply && other.fw == fw && other.proto == proto;
+      other is IdReply &&
+      other.fw == fw &&
+      other.proto == proto &&
+      other.build == build;
   @override
-  int get hashCode => Object.hash(fw, proto);
+  int get hashCode => Object.hash(fw, proto, build);
   @override
-  String toString() => 'IdReply(fw: $fw, proto: $proto)';
+  String toString() => 'IdReply(fw: $fw, proto: $proto, build: $build)';
 }
 
 /// `<STATUS state=<state> fixture=<fixture> hv_mv=<int>`
