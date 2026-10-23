@@ -35,3 +35,7 @@ String prettyStamp(String stamp) {
       .firstMatch(stamp);
   return m == null ? stamp : '${m[1]} ${m[2]}';
 }
+
+/// The customer this build is delivered to. Shown in the window footer and in the
+/// header of every PDF test report.
+const String kCustomerName = 'Infinity Integrations Pvt Ltd';

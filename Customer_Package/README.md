@@ -1,6 +1,6 @@
 # HT_MK1 Harness Tester - Customer Package (Release v1)
 
-Atulya Core Tech (ACT)
+Prepared by Atulya Core Tech (ACT) for Infinity Integrations Pvt Ltd
 
 Everything needed to set up and run the HT_MK1 test, in one place.
 

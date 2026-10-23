@@ -12,4 +12,4 @@ All documents are in the standard document format, as editable Word files (`.doc
 | 6 | `6_Code_Walkthrough` | Engineers maintaining the firmware or GUI: architecture, serial protocol, known limitations. |
 
 Document numbers (shown in each page header): HT_MK1_OVW, HT_MK1_UM, HT_MK1_GUI, HT_MK1_FLASH, HT_MK1_FTP, HT_MK1_CWT.
-The company name and the approval names are left blank in the front matter for you to fill in.
+The documents are issued by Atulya Core Tech (ACT) (page footer) to Infinity Integrations Pvt Ltd (distribution list). The approval names and the registered office address are left blank for you to fill in.

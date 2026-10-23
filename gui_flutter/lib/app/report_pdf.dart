@@ -18,6 +18,7 @@ import 'package:flutter/services.dart' show rootBundle;
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 
+import 'build_tag.dart' show kCustomerName;
 import 'report.dart';
 
 final _title = pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold, color: PdfColors.blue800);
@@ -60,8 +61,10 @@ pw.Widget _header(String titleText, ReportMeta meta, pw.MemoryImage? logo) =>
       children: [
         if (logo != null) ...[
           pw.Image(logo, height: 46),
-          pw.SizedBox(height: 8),
+          pw.SizedBox(height: 4),
         ],
+        pw.Text(kCustomerName, style: _dut, textAlign: pw.TextAlign.center),
+        pw.SizedBox(height: 8),
         pw.Text(titleText, style: _title, textAlign: pw.TextAlign.center),
         pw.SizedBox(height: 6),
         pw.Text('DUT: ${meta.dutId.isEmpty ? "-" : meta.dutId}', style: _dut),

@@ -1193,7 +1193,7 @@ class FooterBar extends StatelessWidget {
           const SizedBox(width: 8),
           Text('Design and developed by ',
               style: t.ui(size: 11.5, color: c.ink3)),
-          Text('Atulya Core Tech (ACT)',
+          Text(kCustomerName,
               style: t.ui(size: 11.5, color: c.ink2, weight: FontWeight.w600)),
         ],
       ),
