@@ -24,8 +24,8 @@ Everything needed to set up and run the HT_MK1 test, in one place.
 
 | Item | Version |
 |---|---|
-| Firmware | fw 0.1.0, built from git commit `89c4ebe` |
-| GUI | built 2026-10-22 (the exact time is shown in the GUI footer) |
+| Firmware | fw 0.1.0, built from git commit `fe73672` |
+| GUI | built 2026-10-23 (the exact time is shown in the GUI footer) |
 | Documents | Issue 1.1.0 of the manuals (22-10-2026), GUI Functional Description 1.0.0 |
 
 Checksums for every file are in `MANIFEST.txt`.

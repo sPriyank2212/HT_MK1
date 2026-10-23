@@ -2,10 +2,17 @@ HT_MK1 firmware
 
 Target          STM32G474RE (Control Card), flash base 0x08000000
 Version         fw 0.1.0, protocol 1   (reported by the ID command)
-Source          git commit 89c4ebedf359d83b868263c64366ed65ed5e583a
-Built           2026-10-22 with GNU Tools for STM32 14.3.rel1, "Debug" configuration
+Source          git commit fe73672511036799111f0cf9e355655d05dcd6d4
+Built           2026-10-23 with GNU Tools for STM32 14.3.rel1, "Debug" configuration
                 (-O0 -g3, the configuration the Flashing Procedure flashes)
 Built from      a clean checkout of that commit - not from a working copy
+
+Changes in this build (see 0_Documents/6_Code_Walkthrough, Known Limitations)
+  - the HV rail is checked before and after every insulation reading, and proven discharged
+    before the relays open
+  - any HV-path error latches a fault (F01 relay bus, F02 DAC/ADC, F03 rail) and stops the run
+  - an idle HV rail latches a fault; stack overflow and allocation failure reset through the watchdog
+  - HV SET no longer reports a level it did not set; resistance and continuity report bus errors
 
 Files
   HT_MK1.elf    programming image with debug symbols (use with STM32CubeProgrammer / CubeIDE)
@@ -13,17 +20,20 @@ Files
   HT_MK1.bin    raw binary - flash at 0x08000000
 
 SHA-256
-  HT_MK1.elf    0097e46483b2df6414bf1cba5b191156d75d2841d88a76ad00f46591bd8ba0ff
-  HT_MK1.hex    264dac070cab149e790dd4b437e5341a78f20eda7857788ec8d67641032ad05e
-  HT_MK1.bin    5a8dd24178a85a88c01fba7290f64d7153202fdc2017d8f6a8b016bac4ce54f1
+  HT_MK1.elf    b96845e7ed87d9b539c945952da14fa37b38f2f6d4f6b021aa61bf283bba7263
+  HT_MK1.hex    4c3d56dda6d2e33bb4b81b761918a7beb3e5d19e9cfe9fb6e04d8934dc141cde
+  HT_MK1.bin    857bb52740a285baab0bdf2a56dcd98a3ba081b8c7c54f018ae1e50ac0e3e4d8
 
 Size (arm-none-eabi-size on the .elf)
-text	   data	    bss	    dec	    hex	filenameHT_MK1.elf
+text	   data	    bss	    dec	    hex	filename
+  74100	    100	  40868	 115068	  1c17c	Customer_Package\4_GUI_and_Firmware\Firmware\HT_MK1.elf
 
 Flashing
   Follow 0_Documents/4_Flashing_Procedure.pdf, then run its PING / PONG check before testing.
   Afterwards the GUI should connect and show "fw 0.1.0" in the status bar.
 
 Not yet verified on hardware
-  The Functional Test Procedure notes that the resistance and insulation paths are still to be
-  confirmed on real hardware. This image has been compiled, not exercised on a unit.
+  This image has been compiled and its pure logic unit-tested on a PC, but not exercised on a
+  unit. The resistance and insulation paths, the HV rail thresholds and the stack sizes are still
+  to be confirmed on real hardware (see the Functional Test Procedure and PROJECT_LOG.md BU-13 to BU-15).
+  There is also no hardware interlock signal.
