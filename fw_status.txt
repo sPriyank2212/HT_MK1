@@ -8,6 +8,21 @@
  and decisions are tracked in PROJECT_LOG.md and may have moved on since the
  "Last updated" line above. If the two disagree, PROJECT_LOG.md wins.
 ================================================================================
+ NEW (2026-10-23, PR-01): production-readiness fixes - see PROJECT_LOG.md.
+   - insulation_run(): HV_Sense is read before each leakage reading (rail must be
+     0.5x..1.5x of expected) and after it; insulation_safe() proves the rail has
+     fallen below INSULATION_DISCHARGED_V before the relays open. Any HV-path error
+     is reported in InsulationResult_t.hw_fault and run_insulation_all() latches the
+     fault (F01 relay bus / F02 DAC-ADC / F03 rail) and stops.
+   - tSafety monitors every card's rail while idle and latches a fault if it is live.
+   - FreeRTOS: stack-overflow check = 2 and malloc-failed hook both stop and let the
+     IWDG reset the MCU; stacks doubled, heap 32 KB.
+   - HV SET non-zero is refused (it never drove the DAC); HV SET 0 = make safe.
+   - Resistance: NaN is never a pass, < -100 mOhm is fail_low; continuity bus errors
+     raise F01. Pure logic lives in app/run_logic.c and test/insulation_logic.h with
+     host tests in tests/fw_host.
+   Compiled clean; NOT run on real hardware (BU-13..BU-15).
+================================================================================
  RESOLVED (was "firmware NOT updated yet" as of the 2026-08-12 sync): DAC8775
  is GONE from the schematic; every DAC8775 reference below (current-source
  register map, SPI2 8-bit framing, control_frontend.c's IDAC half) describes

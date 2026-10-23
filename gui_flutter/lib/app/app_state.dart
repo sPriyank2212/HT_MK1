@@ -46,6 +46,10 @@ import 'run_history.dart';
 /// matches PROTO_HV_LIVE_MV in the firmware
 const int kHvLiveMv = 50000;
 
+/// Shown beside every Run control while there is no link to the instrument.
+const String kNotConnectedReason =
+    'Not connected: choose the port and press Connect first';
+
 class LogEntry {
   final double t;
   final String lvl;
@@ -447,6 +451,7 @@ class AppState extends ChangeNotifier {
     List<PortEntry> Function()? listPorts,
     Future<(String, Uint8List)?> Function()? pickNetlistFile,
     RunHistoryStore? history,
+    this.reportsDir,
     Future<String?> Function({
       required String dialogTitle,
       required String fileName,
@@ -691,6 +696,7 @@ class AppState extends ChangeNotifier {
 
   (bool, String) can(String test) {
     if (running != null) return (false, 'A test is already running');
+    if (!link) return (false, kNotConnectedReason);
     if (test == 'cont') {
       if (onHv) {
         return (false, 'Harness is on J-HV — reset to return it to J-MTX');
@@ -790,6 +796,7 @@ class AppState extends ChangeNotifier {
 
   (bool, String) get canAutoScan {
     if (running != null) return (false, 'A test is already running');
+    if (!link) return (false, kNotConnectedReason);
     if (onHv) {
       return (false, 'Harness is on J-HV — reset to return it to J-MTX');
     }
@@ -1534,6 +1541,7 @@ class AppState extends ChangeNotifier {
   void paintLink() {
     if (!link) {
       hvPill = const PillState(PillVariant.warn, 'Link lost');
+      hvStatePill = hvPill;
       statePill = const PillState(PillVariant.warn, 'State unknown');
       stFix = 'link lost';
       hvLive = false;
@@ -1552,6 +1560,7 @@ class AppState extends ChangeNotifier {
     } else {
       hvPill = const PillState(PillVariant.idle, 'HV state unknown');
     }
+    hvStatePill = hvPill;
 
     final lbl = runKind ?? (instState?.wire ?? 'idle');
     statePill = PillState(
@@ -1627,6 +1636,7 @@ class AppState extends ChangeNotifier {
       case 'insul':
         _insulRows.clear();
     }
+    _abortedRun = false;
     _setDom(domSel, 'run');
     vTitle = 'RUNNING';
     vStage = label;
@@ -1993,6 +2003,16 @@ class AppState extends ChangeNotifier {
     }
     final kind = m.kind.wire; // cont | res | insul
     final key = kind == 'insul' ? 'hv' : kind;
+    if (_abortedRun) {
+      _abortedRun = false;
+      running = null;
+      runKind = null;
+      _countPass = _countFail = 0;
+      log('warn', kind, '$kind run aborted: partial result discarded');
+      updateControls();
+      paintLink();
+      return;
+    }
     if (inFault) {
       // FW-10: a latched fault refuses the run outright — !STATE fault, then
       // !DONE <kind> 0 0. Zero failed must never read as a pass; R[key] stays
@@ -2053,6 +2073,7 @@ class AppState extends ChangeNotifier {
       passed: m.passed,
       failed: m.failed,
     ));
+    unawaited(_autoSaveReport(kind));
     R[key] = pass ? 'pass' : 'fail';
     _setDom(
       kind == 'cont'
@@ -2096,7 +2117,27 @@ class AppState extends ChangeNotifier {
       updateControls();
     } else if (key == 'cont' || key == 'res') {
       finishStage1();
+    } else if (key == 'hv') {
+      finishInsulation();
     }
+  }
+
+  /// End of the insulation run: the verdict panel must stop saying RUNNING and
+  /// say what happened. The operator is still told to wait for the instrument's
+  /// own safe report before touching the harness.
+  void finishInsulation() {
+    final pass = R['hv'] == 'pass';
+    sb2S = pass ? 'pass' : 'fail';
+    sb2Pill = PillState(pass ? PillVariant.ok : PillVariant.bad,
+        pass ? 'Pass' : 'Fail');
+    vTitle = pass ? 'PASS' : 'FAIL';
+    vStage = 'insulation done';
+    vSub = pass
+        ? 'Insulation passed on ${hvConnName()}. Wait for HV Safe before handling the harness.'
+        : 'Insulation failed on ${hvConnName()}. Wait for HV Safe before handling the harness, then see the Faults panel.';
+    statePill = PillState(
+        pass ? PillVariant.ok : PillVariant.bad, pass ? 'Pass' : 'Fail');
+    updateControls();
   }
 
   // -------------------------------------------------------------------------
@@ -2570,10 +2611,19 @@ class AppState extends ChangeNotifier {
   /// `#abortHv` / `#abortHv2` — live.js sends ABORT on the capture phase,
   /// then the design's own listener resets the view.
   Future<void> abort() async {
+    // The firmware answers an ABORT with the run's `!DONE` carrying the counts
+    // of the part that ran. That partial result must never be recorded as a
+    // finished run (zero failures in a half-run would read as a PASS), so the
+    // next `!DONE` is discarded.
+    _abortedRun = running != null;
     await _cmd(proto.commands.abort());
     log('warn', 'seq', 'ABORT sent');
     resetAll();
   }
+
+  /// True from an operator ABORT of a run in flight until that run's `!DONE`
+  /// arrives (or the next run starts).
+  bool _abortedRun = false;
 
   /// `>FAULT CLEAR` — the only recovery from a latched fault (brief §3.2.1,
   /// FW-10): forces safe first, then clears the latch. A deliberate operator
@@ -2598,6 +2648,54 @@ class AppState extends ChangeNotifier {
     log('ok', 'seq',
         'limits set: r_max ${rMaxMohm}mΩ, ins_min ${insMinMohm}mΩ');
     updateControls();
+  }
+
+  /// Where every completed run's report is written automatically (CSV and
+  /// PDF), so a result is never lost because the operator closed the GUI before
+  /// pressing Export. `null` (tests, or no writable location) disables it.
+  final Directory? reportsDir;
+
+  /// Writes the report snapshot of [kind] (`cont` | `res` | `insul`) next to the
+  /// run history. Failure to write is logged, never thrown: a full disk must not
+  /// take down the run that just finished.
+  Future<void> _autoSaveReport(String kind) async {
+    final dir = reportsDir;
+    if (dir == null) return;
+    final String name;
+    final String csv;
+    final Future<Uint8List> Function() pdf;
+    switch (kind) {
+      case 'cont':
+        final r = lastContReport;
+        if (r == null) return;
+        name = 'continuity';
+        csv = r.toCsv();
+        pdf = () => buildContReportPdf(r);
+      case 'res':
+        final r = lastResReport;
+        if (r == null) return;
+        name = 'resistance';
+        csv = r.toCsv();
+        pdf = () => buildResReportPdf(r);
+      case 'insul':
+        final r = lastInsulReport;
+        if (r == null) return;
+        name = 'insulation';
+        csv = r.toCsv();
+        pdf = () => buildInsulReportPdf(r);
+      default:
+        return;
+    }
+    try {
+      dir.createSync(recursive: true);
+      final stem =
+          '${dir.path}${Platform.pathSeparator}report_${_csvStamp(DateTime.now())}_$name';
+      await File('$stem.csv').writeAsString(csv);
+      await File('$stem.pdf').writeAsBytes(await pdf());
+      log('ok', 'rpt', '$name report saved to $stem.(csv|pdf)');
+    } on Object catch (e) {
+      log('warn', 'rpt', 'could not save the $name report automatically: $e');
+    }
   }
 
   /// GUI-05: "Export CSV" on the Results view's Run history panel. Writes
@@ -2848,7 +2946,15 @@ class AppState extends ChangeNotifier {
   /// `$("#actBtn")` click.
   void actButtonPressed() {
     if (running != null) {
-      resetAll();
+      // Stop must STOP the instrument, not just forget the run: a GUI-only
+      // reset left the firmware executing (and, in Mode 2, the rail up).
+      unawaited(abort());
+      return;
+    }
+    if (!link) {
+      log('warn', 'link',
+          'not connected: choose the port and press Connect first');
+      notifyListeners();
       return;
     }
     if (onHv && R['hv'] == null && can('hv').$1) {
@@ -2954,6 +3060,10 @@ class AppState extends ChangeNotifier {
       mdVerifyOpen = false;
       mdMtxOpen = false;
       notifyListeners();
+      return;
+    }
+    if (running != null) {
+      unawaited(abort()); // Esc during a run = Stop = ABORT, never GUI-only
       return;
     }
     resetAll();

@@ -127,5 +127,27 @@ void StartDefaultTask(void *argument)
 /* Private application code --------------------------------------------------*/
 /* USER CODE BEGIN Application */
 
+/* Kernel failure hooks (configCHECK_FOR_STACK_OVERFLOW = 2,
+ * configUSE_MALLOC_FAILED_HOOK = 1). A stack overflow or a failed allocation
+ * means the RTOS state can no longer be trusted, and the HV DAC may be holding a
+ * non-zero code. Do NOT try to talk to the cards from here (the scheduler and the
+ * SPI/I2C timeouts depend on interrupts and on state that may be corrupt): stop
+ * and let the independent watchdog (tasks.c, ~500 ms) reset the MCU. Board_Init()
+ * then runs first and leaves the DAC at 0 V with every relay open. The watchdog
+ * is not refreshed here, so this cannot mask itself. */
+void vApplicationStackOverflowHook(TaskHandle_t xTask, char *pcTaskName)
+{
+  (void)xTask;
+  (void)pcTaskName;
+  __disable_irq();
+  for (;;) { }
+}
+
+void vApplicationMallocFailedHook(void)
+{
+  __disable_irq();
+  for (;;) { }
+}
+
 /* USER CODE END Application */
 

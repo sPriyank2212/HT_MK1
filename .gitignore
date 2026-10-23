@@ -10,3 +10,4 @@ Release/
 *.list
 *.bin
 *.hex
+tests/fw_host/out/

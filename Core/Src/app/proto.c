@@ -611,18 +611,21 @@ static void proto_exec(char *line)
   else if (strcmp(t[0], "HV") == 0 && n >= 3U && strcmp(t[1], "SET") == 0 &&
            proto_int(t[2], &a) == 0)
   {
-    if (a != 0 && s_armed == 0U)
-    {
-      proto_err("ENOTARMED", "INSUL ARM first");
-    }
-    else if (a < 0 || a > 500000)
+    /* HV SET is not implemented. It used to answer <OK and announce !HV <mV>
+     * without touching the DAC, which told the GUI a rail level that did not
+     * exist. High voltage is only ever raised by INSUL RUN (arm, self-test, then
+     * per-net supervision). HV SET 0 is kept as a plain "make safe". */
+    if (a < 0 || a > 500000)
     {
       proto_err("ERANGE", "0..500000 mV");
     }
+    else if (a == 0)
+    {
+      if (proto_hw_ready() != 0) { proto_post(CMD_FORCE_SAFE, 0U, 0U); }
+    }
     else
     {
-      Proto_EvtHv((int32_t)a);
-      proto_emit('<', "OK");
+      proto_err("EHW", "HV SET not supported: HV is raised only by INSUL RUN");
     }
   }
   else if (strcmp(t[0], "MANUAL") == 0 && n >= 2U)

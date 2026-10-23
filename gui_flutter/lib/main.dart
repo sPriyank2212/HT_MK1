@@ -260,6 +260,8 @@ Future<void> main(List<String> args) async {
   stdout.writeln('session logs in ${logDir.path}');
   final historyDir = defaultHistoryDir();
   stdout.writeln('run history in ${historyDir.path}');
+  final reportsDir = defaultReportsDir();
+  stdout.writeln('test reports in ${reportsDir.path}');
 
   late final AppState state;
   final cm = ConnectionManager(
@@ -289,6 +291,7 @@ Future<void> main(List<String> args) async {
     pickNetlistFile: netlist_picker.pickNetlistFile,
     // GUI-05: run history lives on the GUI host, not the instrument.
     history: RunHistoryStore(historyDir),
+    reportsDir: reportsDir,
     pickSavePath: netlist_picker.pickSavePath,
     // Only under --sim: lets the Run screen's demo selector change what the
     // simulated instrument reports. With real hardware there is no such

@@ -30,6 +30,10 @@ Directory defaultLogDir() => _writableAppDir('sessions');
 /// log directory, one leaf folder over.
 Directory defaultHistoryDir() => _writableAppDir('history');
 
+/// A writable directory for the automatically saved test reports (CSV + PDF
+/// of every completed run), created if needed.
+Directory defaultReportsDir() => _writableAppDir('reports');
+
 Directory _writableAppDir(String leaf) {
   final candidates = <String>[];
 

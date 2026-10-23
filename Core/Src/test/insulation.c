@@ -10,21 +10,66 @@
 #include "test/insulation.h"
 
 /**
-  * @brief  Drive an HV card to the fully-safe state.
-  * @note   Disables HV, programs the DAC to 0 V, pulses discharge for
-  *         INSULATION_DISCHARGE_MS, then opens all relays. Called both on entry
-  *         (pre-condition) and on every exit path of Insulation_TestPair().
-  * @param  hv : [in] HV-card instance to make safe.
-  * @retval None
+  * @brief  Read the rail monitor (HV_Sense, U301) in volts at the ADC.
+  * @param  hv : [in]  card; must be held (HvCard_Hold) by the caller.
+  * @param  v  : [out] volts at the ADC (not the rail voltage).
+  * @retval HAL_OK on success.
   */
-static void insulation_safe(HvCard_t *hv)
+static HAL_StatusTypeDef insulation_rail_volts(HvCard_t *hv, float *v)
 {
+  uint16_t code = 0U;
+  HAL_StatusTypeDef st = HvCard_ReadRailRaw(hv, &code);
+  if (st == HAL_OK)
+  {
+    *v = AD7476_CodeToVolts(code, hv->cfg.vref);
+  }
+  return st;
+}
+
+/**
+  * @brief  Drive an HV card to the fully-safe state and PROVE it.
+  * @note   Programs the DAC to 0 V, waits INSULATION_DISCHARGE_MS, then polls the
+  *         rail monitor until it reads below INSULATION_DISCHARGED_V (or
+  *         INSULATION_DISCHARGE_TIMEOUT_MS passes), and only then opens all
+  *         relays. The relays are opened on every path, including a timeout:
+  *         leaving them closed is no safer. Called both on entry (pre-condition)
+  *         and on every exit path of the test sequences.
+  * @param  hv : [in] HV-card instance to make safe; must be held by the caller.
+  * @retval HAL_OK    DAC zeroed, rail confirmed discharged, relays opened.
+  * @retval HAL_ERROR the DAC write failed, the rail monitor could not be read,
+  *                   or the rail did not discharge in time. The card has still
+  *                   been driven to the safest state reachable.
+  */
+static HAL_StatusTypeDef insulation_safe(HvCard_t *hv)
+{
+  HAL_StatusTypeDef st_dac, st_rail = HAL_ERROR, st_open;
+  float    v = 0.0f;
+  uint32_t t0;
+
   (void)HvCard_HvEnable(hv, 0U);
-  (void)HvCard_SetVoltageCode(hv, 0U);
+  st_dac = HvCard_SetVoltageCode(hv, 0U);
   (void)HvCard_Discharge(hv, 1U);
   Board_SettleMs(INSULATION_DISCHARGE_MS);
   (void)HvCard_Discharge(hv, 0U);
-  (void)HvCard_OpenAllRelays(hv);
+
+  t0 = HAL_GetTick();
+  for (;;)
+  {
+    st_rail = insulation_rail_volts(hv, &v);
+    if (st_rail == HAL_OK && v <= INSULATION_DISCHARGED_V)
+    {
+      break;
+    }
+    st_rail = HAL_ERROR;
+    if ((HAL_GetTick() - t0) >= INSULATION_DISCHARGE_TIMEOUT_MS)
+    {
+      break;
+    }
+    Board_SettleMs(10U);
+  }
+
+  st_open = HvCard_OpenAllRelays(hv);
+  return (st_dac == HAL_OK && st_rail == HAL_OK && st_open == HAL_OK) ? HAL_OK : HAL_ERROR;
 }
 
 /**
@@ -55,7 +100,10 @@ static HAL_StatusTypeDef insulation_run(uint8_t board, uint8_t inject_pin,
                                         InsulationResult_t *res)
 {
   HvCard_t *hv;
-  HAL_StatusTypeDef st;
+  HAL_StatusTypeDef st, st_safe;
+  const float expect = v_fraction * INSULATION_V_FULL * INSULATION_HV_SENSE_RATIO;
+  float    rail = 0.0f;
+  uint32_t t0;
 
   if (res == NULL || board >= (uint8_t)BOARD_HV_COUNT ||
       inject_pin < 1U || inject_pin > (uint8_t)HV_PINS_PER_SIDE ||
@@ -74,9 +122,17 @@ static HAL_StatusTypeDef insulation_run(uint8_t board, uint8_t inject_pin,
   res->sense_volts     = 0.0f;
   res->insulation_mohm = 0.0f;
   res->verdict         = TEST_ERROR;
+  res->hw_fault        = INS_HW_NONE;
+  res->rail_volts      = 0.0f;
 
-  /* Pre-condition: known safe state (HV at 0 V, all relays open). */
-  insulation_safe(hv);
+  /* Pre-condition: known safe state (HV at 0 V, relays open, rail confirmed
+   * down). A card that cannot reach it must not be energised. */
+  if (insulation_safe(hv) != HAL_OK)
+  {
+    res->hw_fault = INS_HW_DISCHARGE;
+    st = HAL_ERROR;
+    goto safe_exit;
+  }
 
   /* Connect the conductor pair FIRST, while the line is dead. There is no HV
    * enable line: programming the DAC is what raises HV. Closing the reed relays
@@ -88,6 +144,7 @@ static HAL_StatusTypeDef insulation_run(uint8_t board, uint8_t inject_pin,
   }
   if (st != HAL_OK)
   {
+    res->hw_fault = INS_HW_BUS;
     goto safe_exit;
   }
 
@@ -95,16 +152,56 @@ static HAL_StatusTypeDef insulation_run(uint8_t board, uint8_t inject_pin,
   st = HvCard_SetVoltageFraction(hv, v_fraction);
   if (st != HAL_OK)
   {
+    res->hw_fault = INS_HW_SPI;
     goto safe_exit;
   }
   Board_SettleMs(INSULATION_RAMP_MS);
 
+  /* Prove the rail is really up BEFORE trusting a leakage reading: with the rail
+   * dead (DAC, supply or chip-select fault) the leakage node reads ~0 V, which
+   * would be a false PASS. */
+  t0 = HAL_GetTick();
+  for (;;)
+  {
+    st = insulation_rail_volts(hv, &rail);
+    if (st == HAL_OK && Insulation_RailPlausible(0.0f, rail, expect))
+    {
+      break;
+    }
+    if ((HAL_GetTick() - t0) >= INSULATION_RAIL_TIMEOUT_MS)
+    {
+      res->hw_fault = (st == HAL_OK) ? INS_HW_RAIL : INS_HW_SPI;
+      st = HAL_ERROR;
+      goto safe_exit;
+    }
+    Board_SettleMs(10U);
+  }
+
   /* The insulation reading is the LEAKAGE node (HV_RET, U302), NOT the rail. */
   st = HvCard_ReadLeakageRaw(hv, &res->sense_code);
-  if (st == HAL_OK)
+  if (st != HAL_OK)
+  {
+    res->hw_fault = INS_HW_SPI;
+    goto safe_exit;
+  }
   {
     float v_leak = AD7476_CodeToVolts(res->sense_code, hv->cfg.vref);
     res->sense_volts = v_leak;
+
+    /* The rail must still be up now: if it collapsed during the measurement the
+     * reading above is meaningless. */
+    st = insulation_rail_volts(hv, &res->rail_volts);
+    if (st != HAL_OK)
+    {
+      res->hw_fault = INS_HW_SPI;
+      goto safe_exit;
+    }
+    if (!Insulation_RailPlausible(0.0f, res->rail_volts, expect))
+    {
+      res->hw_fault = INS_HW_RAIL;
+      st = HAL_ERROR;
+      goto safe_exit;
+    }
 
     /* Approximate insulation resistance from the leakage node:
      *   I_leak = V_leak / R_bottom
@@ -128,11 +225,23 @@ static HAL_StatusTypeDef insulation_run(uint8_t board, uint8_t inject_pin,
   }
 
 safe_exit:
-  /* Always de-energise, discharge and open relays before returning. */
-  insulation_safe(hv);
+  /* Always de-energise, confirm the discharge and open relays before returning.
+   * A card that will not discharge is a fault in its own right, and an
+   * un-discharged card must never be reported as a clean measurement. */
+  st_safe = insulation_safe(hv);
+  if (st_safe != HAL_OK && res->hw_fault == INS_HW_NONE)
+  {
+    res->hw_fault = INS_HW_DISCHARGE;
+    res->verdict  = TEST_ERROR;
+    st = HAL_ERROR;
+  }
   HvCard_Unhold(hv);
   return st;
 }
+
+/**
+  * @brief  Prove the HV path end to end before a run (see insulation.h).
+  */
 HAL_StatusTypeDef Insulation_HvSelfTest(uint8_t board, float *v_idle, float *v_hv)
 {
   HvCard_t *hv;
@@ -149,8 +258,8 @@ HAL_StatusTypeDef Insulation_HvSelfTest(uint8_t board, float *v_idle, float *v_h
   hv = &g_hv[board];
   HvCard_Hold(hv);
 
-  insulation_safe(hv);                       /* 0 V, relays open */
-  st = HvCard_ReadRailRaw(hv, &code);
+  st = insulation_safe(hv);                  /* 0 V, relays open, rail down */
+  if (st == HAL_OK) { st = HvCard_ReadRailRaw(hv, &code); }
   if (st == HAL_OK)
   {
     idle = AD7476_CodeToVolts(code, hv->cfg.vref);
@@ -162,7 +271,7 @@ HAL_StatusTypeDef Insulation_HvSelfTest(uint8_t board, float *v_idle, float *v_h
     st = HvCard_ReadRailRaw(hv, &code);
     rail = AD7476_CodeToVolts(code, hv->cfg.vref);
   }
-  insulation_safe(hv);                       /* always back to 0 V */
+  if (insulation_safe(hv) != HAL_OK) { st = HAL_ERROR; }   /* always back to 0 V */
   HvCard_Unhold(hv);
 
   if (v_idle != NULL) { *v_idle = idle; }

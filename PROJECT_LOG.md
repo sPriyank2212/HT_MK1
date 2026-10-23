@@ -951,6 +951,10 @@ primary build** — new items are filed against it. GUI-03 is against the now-su
 | BU-06 | Harness build must encode `ISO_HV_CARD_ENx` per card slot (card 1 → EN1 … card 4 → EN4). HV_Card-1 sheet 1 states this is done in the cable, not the schematic. | 2026-07-27 |
 | BU-12 | **Prove `>ABORT` on real hardware.** The FW-07 fix (CL-12) is verified only by inspection and a clean link — the failure was a scheduling one, and scheduling bugs do not show up in a build. Press abort during a 256-pin discover scan and again during an insulation run; the run must stop within roughly one measurement point and still emit its `!DONE`. Check at the same time that a mid-run `>PING` is answered inside 2 s, and that a `>FIXTURE` change during a run stops it. | 2026-08-05 |
 
+| BU-13 | **Tune the per-net HV supervision on the real card** (PR-01). `insulation.h`: `INSULATION_RAIL_TIMEOUT_MS` (500 ms to reach 0.5x..1.5x of the expected HV_Sense), `INSULATION_DISCHARGED_V` (0.0125 V at the ADC = about 25 V on the rail, with the **unconfirmed** R3003 = 5 k divider ratio `INSULATION_HV_SENSE_RATIO`, see HW-08 / the schematic still drawn 50 k) and `INSULATION_DISCHARGE_TIMEOUT_MS` (2000 ms). Measure the real rise time and the passive bleed time (500 V down to 25 V through the ~10 MOhm divider) and set these from the measurement. If the bleed is slower than the timeout every net will latch an F03 "HV rail did not discharge" - that is the check working, not a bug. Same for `RAIL_MON_*` in `tasks.c` (idle rail monitor: 250 ms period, 5 s hold-off after any HV activity, 50 V). | 2026-10-23 |
+| BU-14 | **Prove the new stack sizes with `uxTaskGetStackHighWaterMark()`** (PR-01). tSafety 512, tSequencer 1024, tComms 512, tLogger 256 words and a 32 KB heap are generous guesses; stack-overflow checking (`configCHECK_FOR_STACK_OVERFLOW = 2`) now resets the MCU through the watchdog instead of corrupting memory silently. Log the high-water marks after a full discover scan, an insulation run and a BUS SCAN, then size from the measurement. | 2026-10-23 |
+| BU-15 | **Insulation pin convention.** `run_insulation_all()` injects on the card/relay of the netlist's HI pin and leaves open only the return relays of the net's LO pins (pairs sharing an HS or LS pin are one net). For a straight-through harness (HI = LO numbering) that is what the HV netlist table shows (`all except LS-nn`). For a harness whose HI and LO pin numbers differ, confirm with the HW owner which pin number identifies the net at the HV connector before trusting a crossed-pin insulation result. | 2026-10-23 |
+
 ---
 
 ## Closed items
@@ -1021,6 +1025,48 @@ primary build** — new items are filed against it. GUI-03 is against the now-su
 ---
 
 ## Activity log
+
+### 2026-10-23 (PR-01: production-readiness review - safety fixes in firmware and GUI)
+A review of the whole system against "can this ship?" found the points below. Several that were
+first listed against a stale local copy turned out to be **already fixed on this branch**
+(IWDG, multi-card pin mapping, net-versus-all-others return scheme, run-time HV self-test,
+voltage-independent verdict, clamped wire values); they were checked on the real tip and are not
+repeated here. What was still open, and what was done:
+
+- **Per-net rail supervision (firmware).** `insulation_run()` now reads the HV_Sense rail monitor
+  before every leakage reading and refuses the net unless the rail is within 0.5x..1.5x of the
+  expected level (a dead DAC/supply/chip-select read ~0 V on the leakage node = false PASS), reads
+  it again after the measurement (rail collapse), and `insulation_safe()` now waits for the rail to
+  fall below a discharged threshold before it opens the relays. Reported as `InsulationResult_t.hw_fault`.
+- **Faults actually latch.** `run_insulation_all()` latches the fault (`Safety_SignalFault`), emits
+  `!FAULT F01/F02/F03` and stops on any HV-path error (relay bus, DAC/ADC, rail out of tolerance,
+  no discharge). A failed run-time self-test latches too (code corrected F06 -> F03; "HV not armed"
+  moved F03 -> F05 so F03 means only "HV ramp fault", as in the operation document).
+- **Idle rail monitor (firmware).** tSafety reads every fitted card's rail every 250 ms while nothing
+  is running (not within 5 s of any HV activity) and latches a fault if a rail is live. See BU-13.
+- **RTOS.** Stack-overflow checking (level 2) and the malloc-failed hook are on; both stop the
+  scheduler and let the independent watchdog reset the MCU (Board_Init then zeroes the DAC). Stacks
+  doubled, heap 16 KB -> 32 KB (CubeMX `.ioc` updated to match). See BU-14.
+- **`HV SET` no longer lies.** It used to answer `<OK` and announce `!HV <mV>` without touching the
+  DAC. Non-zero now answers `ERR EHW` (HV is raised only by `INSUL RUN`); `HV SET 0` = make safe.
+- **Resistance.** A NaN reading is never a pass; a reading below -100 mOhm reports `fail_low` (F09);
+  the float->int32 cast saturates instead of being undefined behaviour.
+- **Continuity.** A bus error in verify mode raises `!FAULT F01` (not just "open"); in a discover
+  scan bus errors are counted as failures with an F01 so an incomplete scan cannot read as clean.
+- **Testable logic.** `app/run_logic.{c,h}` and `test/insulation_logic.h` hold the pure rules (wire
+  conversion, the return-relay planner, pass limit, rail plausibility); 34 host-side checks run with
+  `tests\fw_host\run_tests.cmd`.
+- **GUI.** Stop, Esc and the round button now send `ABORT` when a test runs (they only reset the GUI
+  before); the partial `!DONE` after an abort is discarded (a half-run with zero failures would have
+  been recorded as a PASS); no Run control is enabled without a link; the verdict panel reports
+  PASS/FAIL when insulation ends (it kept saying RUNNING); the Insulation screen's rail pill follows
+  the instrument's report (it was a constant "Safe"); the placeholder voltages (`3.281 V`, `0.000 V`)
+  are gone from the wiring tooltip and Net inspector; every completed run's report is saved
+  automatically as CSV + PDF to `%LOCALAPPDATA%\HT_MK1\reports`; DUT ID / Operator are reachable on
+  narrow windows through a "Test details" panel. 8 new tests (`safety_behaviour_test.dart`).
+- **Not fixable in software, still open:** a hardware interlock signal (the GUI correctly keeps
+  "Interlock closed: unverified"), the HV-card I2C strap addresses (`hv_card.c` TODO, BU-03), a
+  Release build configuration, and every item above that needs a real card to tune (BU-13..15).
 
 ### 2026-08-16 (HW-13 schematic resync)
 - User added updated `Doc/Control_Card.pdf`/`HV_Card.pdf`/`Matrix_Card.pdf` and asked for a

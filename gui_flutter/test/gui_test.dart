@@ -161,7 +161,7 @@ void main() {
   // =========================================================================
   group('gating rules — can()', () {
     test('nothing runs while a run is in flight', () {
-      final s = newState();
+      final s = newState()..link = true;
       s.running = 'cont';
       expect(s.can('cont').$1, isFalse);
       expect(s.can('res').$1, isFalse);
@@ -170,7 +170,7 @@ void main() {
     });
 
     test('stage 1 is blocked once the harness is on J-HV', () {
-      final s = newState();
+      final s = newState()..link = true;
       s.onHv = true;
       expect(s.can('cont').$1, isFalse);
       expect(s.can('res').$1, isFalse);
@@ -178,7 +178,7 @@ void main() {
     });
 
     test('netlist continuity needs the MTX netlist, cross does not', () {
-      final s = newState();
+      final s = newState()..link = true;
       s.nlMtx.loaded = false;
       s.setMode('net');
       expect(s.can('cont').$1, isFalse);
@@ -187,7 +187,7 @@ void main() {
     });
 
     test('resistance always needs the MTX netlist', () {
-      final s = newState();
+      final s = newState()..link = true;
       s.nlMtx.loaded = false;
       s.setMode('cross');
       expect(s.can('res').$1, isFalse);
@@ -195,7 +195,7 @@ void main() {
     });
 
     test('HV is locked until the instrument says the fixture moved', () {
-      final s = newState();
+      final s = newState()..link = true;
       expect(s.can('hv').$1, isFalse);
       expect(s.can('hv').$2, contains('must pass before HV unlocks'));
 

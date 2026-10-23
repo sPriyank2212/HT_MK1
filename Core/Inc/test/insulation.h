@@ -23,6 +23,7 @@ extern "C" {
 #endif
 
 #include "test/harness_test.h"
+#include "test/insulation_logic.h"
 
 #ifndef INSULATION_RAMP_MS
 #define INSULATION_RAMP_MS       50U    /* settle after HV enable, before read  */
@@ -34,14 +35,6 @@ extern "C" {
 /* Acceptance threshold (Mohm). TUNE per harness standard. */
 #ifndef INSULATION_R_MIN_MOHM
 #define INSULATION_R_MIN_MOHM    100.0f
-#endif
-
-/* Leakage-node (HV_RET, across R3004 = 1 kohm) GO/NO-GO threshold. Higher V =
- * worse insulation. Board decision: 10 Mohm insulation -> 0.045 V leakage is
- * the pass/fail boundary (below 0.045 V => PASS >10 Mohm, at/above => FAIL).
- * Absolute volts, independent of the ADC vref. */
-#ifndef INSULATION_V_PASS_MAX
-#define INSULATION_V_PASS_MAX    0.045f
 #endif
 
 /* Sense-divider constants for the (informational) leakage -> ohms estimate.
@@ -76,20 +69,31 @@ extern "C" {
 #define INSULATION_SELFTEST_FRACTION  0.2f
 #define INSULATION_SELFTEST_SETTLE_MS 100U
 
-/** Pass limit for the leakage node at a given stimulus (volts). The limit scales
- *  linearly with the applied voltage: V(HV_RET) = V_applied x R3004 / (R + ...). */
-static inline float Insulation_PassLimitVolts(float v_fraction)
-{
-  return INSULATION_V_PASS_MAX * v_fraction;
-}
+/* Per-net HV supervision. The rail monitor (HV_Sense, U301) is read before every
+ * leakage measurement and the result is refused unless the rail is inside
+ * 0.5x..1.5x of the expected level; it is read again after the measurement to
+ * prove the rail did not collapse. After every net the rail must fall below
+ * INSULATION_DISCHARGED_V (volts at the ADC = about 25 V on the rail) before the
+ * relays are opened, within INSULATION_DISCHARGE_TIMEOUT_MS. All three are
+ * bring-up tunable: the passive bleed time of the real card is not known yet. */
+#ifndef INSULATION_RAIL_TIMEOUT_MS
+#define INSULATION_RAIL_TIMEOUT_MS      500U
+#endif
+#ifndef INSULATION_DISCHARGED_V
+#define INSULATION_DISCHARGED_V         0.0125f
+#endif
+#ifndef INSULATION_DISCHARGE_TIMEOUT_MS
+#define INSULATION_DISCHARGE_TIMEOUT_MS 2000U
+#endif
 
-/** True when the HV_Sense reading proves the DAC raised the rail and the rail ADC
- *  answered: idle reading near 0, energised reading within 0.5x..1.5x of the
- *  expected value. */
-static inline int Insulation_RailPlausible(float v_idle, float v_hv, float v_expect)
-{
-  return (v_idle < 0.2f * v_expect) && (v_hv > 0.5f * v_expect) && (v_hv < 1.5f * v_expect);
-}
+/* Hardware fault classes reported in InsulationResult_t.hw_fault. Any non-zero
+ * value means the HV path itself misbehaved (not "the harness failed"), so the
+ * caller must latch a fault and stop. */
+#define INS_HW_NONE       0U
+#define INS_HW_BUS        1U   /* relay expander (I2C) access failed               */
+#define INS_HW_SPI        2U   /* DAC / ADC (SPI) access failed                    */
+#define INS_HW_RAIL       3U   /* rail never reached, or left, the expected level  */
+#define INS_HW_DISCHARGE  4U   /* rail did not fall to the discharged level        */
 
 typedef struct
 {
@@ -97,6 +101,8 @@ typedef struct
   float         sense_volts;       /* leakage-node volts                     */
   float         insulation_mohm;   /* approximate estimate (see .c)          */
   TestVerdict_t verdict;
+  uint8_t       hw_fault;          /* INS_HW_*: HV path fault, 0 = none      */
+  float         rail_volts;        /* HV_Sense (at the ADC) at measurement   */
 } InsulationResult_t;
 
 /**

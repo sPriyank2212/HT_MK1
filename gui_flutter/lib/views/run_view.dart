@@ -8,6 +8,7 @@ import 'package:flutter/widgets.dart';
 import '../app/app_state.dart';
 import '../app/build_tag.dart';
 import '../app/parts.dart';
+import '../app/shell.dart' show kOperatorFieldsMinWidth;
 import '../design/icons.dart';
 import '../design/tokens.dart';
 import '../design/widgets.dart';
@@ -31,6 +32,10 @@ class RunView extends StatelessWidget {
     ]);
 
     final right = Cols([
+      // The status bar holds these two fields on a wide window; on a narrower
+      // one they would otherwise be unreachable.
+      if (MediaQuery.sizeOf(context).width <= kOperatorFieldsMinWidth)
+        _TestDetailsPanel(s: s),
       _FaultsPanel(s: s),
       // Only in a demo (--sim) build; with real hardware there is no
       // simulated harness to pick.
@@ -349,6 +354,47 @@ class _DemoPanel extends StatelessWidget {
 }
 
 /// The "HV stack" panel.
+/// DUT ID and Operator, for windows too narrow for the status bar to carry them.
+/// Both are copied into every test report made afterwards (not persisted).
+class _TestDetailsPanel extends StatelessWidget {
+  final AppState s;
+  const _TestDetailsPanel({required this.s});
+
+  @override
+  Widget build(BuildContext context) {
+    return HtPanel(
+      header: const [PanelTitle('Test details')],
+      child: PanelPad(
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Lbl('DUT ID'),
+                const SizedBox(height: 3),
+                TextInput(value: s.dutId, onChanged: s.setDutId, width: 140),
+              ],
+            ),
+            const SizedBox(width: 18),
+            Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Lbl('Operator'),
+                const SizedBox(height: 3),
+                TextInput(
+                    value: s.operatorName, onChanged: s.setOperatorName, width: 160),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _StackPanel extends StatelessWidget {
   final AppState s;
   const _StackPanel({required this.s});

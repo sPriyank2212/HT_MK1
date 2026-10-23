@@ -76,7 +76,7 @@ void main() {
   });
 
   test('the big Run button with no netlist explains instead of resetting', () {
-    final s = offline();
+    final s = offline()..link = true;
     expect(s.nlMtx.loaded, isFalse);
     s.actButtonPressed();
     expect(s.mdMtxOpen, isTrue);

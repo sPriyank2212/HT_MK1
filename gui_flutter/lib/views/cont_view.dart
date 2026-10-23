@@ -535,8 +535,8 @@ class _Tip extends StatelessWidget {
     detail.write(state == 'idle'
         ? 'not tested'
         : state == 'fail'
-            ? 'OPEN · 3.281 V (F06)'
-            : '${net.v.toStringAsFixed(3)} V · connected');
+            ? 'OPEN (F06)'
+            : 'connected');
 
     return Positioned(
       left: left,
@@ -671,7 +671,7 @@ class _Inspector extends StatelessWidget {
           KvRow('From', KvText('—')),
           KvRow('To', KvText('—')),
           KvRow('Topology', KvText('—')),
-          KvRow('Measured', KvText('—')),
+          KvRow('Result', KvText('—')),
         ])),
       );
     }
@@ -696,8 +696,8 @@ class _Inspector extends StatelessWidget {
     final measured = st == 'idle'
         ? '—'
         : st == 'fail'
-            ? '3.281 V  —  OPEN (F06)'
-            : '${n.v.toStringAsFixed(3)} V  —  below 0.80 V  ·  ${n.wire}';
+            ? 'OPEN (F06)'
+            : 'connected  ·  ${n.wire}';
 
     return HtPanel(
       header: [
@@ -722,7 +722,7 @@ class _Inspector extends StatelessWidget {
         KvRow('Topology', topology),
         if (n.detail != null && n.detail!.isNotEmpty)
           KvRow('Detail', KvText(n.detail!)),
-        KvRow('Measured', KvText(measured)),
+        KvRow('Result', KvText(measured)),
       ])),
     );
   }

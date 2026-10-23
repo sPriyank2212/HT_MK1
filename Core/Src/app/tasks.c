@@ -10,6 +10,7 @@
 #include "app/tasks.h"
 #include "app/log.h"
 #include "app/proto.h"
+#include "app/run_logic.h"
 #include "bsp/board.h"
 #include "test/continuity.h"
 #include "test/kelvin.h"
@@ -29,6 +30,7 @@ static UART_HandleTypeDef *s_console;   /* VCP carrying the GUI protocol      */
 static uint8_t            s_rx_byte;    /* landing slot for HAL_UART_Receive_IT */
 static volatile uint8_t   s_fault;
 static volatile uint8_t   s_hv_active;
+static volatile uint32_t  s_hv_last_tick;   /* last time any code drove HV      */
 
 /* ---- thread handles + attributes ----------------------------------------- */
 static osThreadId_t s_safety, s_seq, s_comms, s_logger;
@@ -37,9 +39,15 @@ static osThreadId_t s_safety, s_seq, s_comms, s_logger;
  * on the RX queue, so it costs nothing until a byte arrives; below the sequencer
  * it was never scheduled during a run, and >ABORT - which works by setting a
  * flag the run loops poll - could not be received at all. */
-static const osThreadAttr_t s_attr_safety = { .name = "tSafety",    .priority = osPriorityHigh,        .stack_size = 256 * 4 };
-static const osThreadAttr_t s_attr_seq    = { .name = "tSequencer", .priority = osPriorityNormal,      .stack_size = 512 * 4 };
-static const osThreadAttr_t s_attr_comms  = { .name = "tComms",     .priority = osPriorityAboveNormal, .stack_size = 256 * 4 };
+/* Stack sizes were doubled from the first bring-up values (256/512/256 words):
+ * every thread formats printf-style text (nano newlib, floats via snprintf in
+ * the log) and tSequencer also holds a BoardBusEntry_t array for BUS SCAN.
+ * Stack-overflow checking is now ON (FreeRTOSConfig.h), but a smaller stack that
+ * "passes" is no evidence it is big enough - measure with
+ * uxTaskGetStackHighWaterMark() at bring-up before shrinking any of these. */
+static const osThreadAttr_t s_attr_safety = { .name = "tSafety",    .priority = osPriorityHigh,        .stack_size = 512 * 4 };
+static const osThreadAttr_t s_attr_seq    = { .name = "tSequencer", .priority = osPriorityNormal,      .stack_size = 1024 * 4 };
+static const osThreadAttr_t s_attr_comms  = { .name = "tComms",     .priority = osPriorityAboveNormal, .stack_size = 512 * 4 };
 static const osThreadAttr_t s_attr_logger = { .name = "tLogger",    .priority = osPriorityLow,         .stack_size = 256 * 4 };
 
 #if (HT_ENABLE_ADS1232 != 0)
@@ -140,6 +148,48 @@ static void force_safe_all(void)
   (void)MatrixCard_AllOff(&g_matrix);
 }
 
+/* Note that HV was just driven (or just made safe). The idle rail monitor stays
+ * quiet for RAIL_MON_HOLDOFF_MS afterwards: the rail bleeds down passively
+ * through the sense divider, and a monitor that fired during that bleed would
+ * latch a fault on every healthy run. */
+static void hv_activity(void) { s_hv_last_tick = osKernelGetTickCount(); }
+
+/* ---- idle HV rail monitor ------------------------------------------------ */
+
+/* While nothing is driving HV, the rail monitor of every fitted card must read
+ * "off". A rail that is live with no test running means the DAC, the supply or
+ * a chip-select is wrong - latch a fault and force everything safe. Rail level
+ * at the ADC for RAIL_MON_LIVE_RAIL_V volts on the rail. Bring-up tunable. */
+#define RAIL_MON_PERIOD_MS    250U
+#define RAIL_MON_HOLDOFF_MS   5000U
+#define RAIL_MON_LIVE_RAIL_V  50.0f
+
+static void rail_monitor(void)
+{
+  uint8_t i;
+  uint8_t live = 0U;
+
+  if (Board_IsReady() == 0U) { return; }              /* cards not initialised */
+  if (osMutexAcquire(s_hwmtx, 0U) != osOK) { return; } /* a run owns the hardware */
+  for (i = 0U; i < (uint8_t)BOARD_HV_COUNT; i++)
+  {
+    uint16_t code = 0U;
+    HvCard_Hold(&g_hv[i]);
+    if (HvCard_ReadRailRaw(&g_hv[i], &code) == HAL_OK &&
+        AD7476_CodeToVolts(code, g_hv[i].cfg.vref) >
+            (RAIL_MON_LIVE_RAIL_V * INSULATION_HV_SENSE_RATIO))
+    {
+      live = 1U;
+    }
+    HvCard_Unhold(&g_hv[i]);
+  }
+  osMutexRelease(s_hwmtx);
+  if (live != 0U)
+  {
+    Safety_SignalFault("HV rail live while idle");
+  }
+}
+
 /* ---- independent watchdog ------------------------------------------------ */
 
 /* IWDG on the LSI (~32 kHz): /32 prescaler -> ~1 kHz tick, reload 499 -> ~500 ms
@@ -176,6 +226,7 @@ static inline void watchdog_refresh(void) { IWDG->KR = 0xAAAAU; }
   */
 static void SafetyTask(void *arg)
 {
+  uint32_t last_mon = 0U;
   (void)arg;
   LOG_I("SAFE", "task up");
   if ((RCC->CSR & RCC_CSR_IWDGRSTF) != 0U)
@@ -199,9 +250,16 @@ static void SafetyTask(void *arg)
     {
       /* Backstop: ensure HV outputs are disabled when idle (GPIO-only). */
       uint8_t i;
+      uint32_t now = osKernelGetTickCount();
       for (i = 0U; i < (uint8_t)BOARD_HV_COUNT; i++)
       {
         (void)HvCard_HvEnable(&g_hv[i], 0U);
+      }
+      if ((now - last_mon) >= RAIL_MON_PERIOD_MS &&
+          (now - s_hv_last_tick) >= RAIL_MON_HOLDOFF_MS)
+      {
+        last_mon = now;
+        rail_monitor();
       }
     }
     watchdog_refresh();
@@ -233,6 +291,7 @@ static void run_command(const TestCmd_t *c)
   {
     (void)osMutexAcquire(s_hwmtx, osWaitForever);
     force_safe_all();
+    hv_activity();
     Safety_ClearFault();
     Proto_ClearArm();
     Proto_EvtHv(0);
@@ -303,12 +362,16 @@ static void run_command(const TestCmd_t *c)
         LOG_E("INS", "b%u pins %u-%u outside 1..%u", c->board, c->a, c->b, HV_PINS_PER_SIDE);
         r.sense_volts = 0.0f;
         r.verdict = TEST_ERROR;
+        r.hw_fault = INS_HW_NONE;
       }
       else
       {
+        r.hw_fault = INS_HW_NONE;
         (void)Insulation_TestPair(c->board, (uint8_t)c->a, (uint8_t)c->b, c->vfrac, &r);
       }
       s_hv_active = 0U;
+      hv_activity();
+      if (r.hw_fault != INS_HW_NONE) { Safety_SignalFault("HV path fault during manual insulation test"); }
       LOG_I("INS", "b%u sense=%dmV v=%d", c->board, (int)(r.sense_volts * 1000.0f), (int)r.verdict);
       break;
     }
@@ -345,6 +408,7 @@ static void run_command(const TestCmd_t *c)
     }
     case CMD_FORCE_SAFE:
       force_safe_all();
+      hv_activity();
       Proto_ClearArm();
       /* Announce only now, with the rail actually down. Emitting !SAFE at the
        * point the command was *posted* told the GUI it was safe to handle the
@@ -390,6 +454,7 @@ static void run_continuity_all(uint8_t discover)
   ContinuityResult_t r;
   uint16_t i, n, hi, lo;
   uint16_t pass = 0U, fail = 0U;
+  uint16_t bus_err = 0U;
 
   /* Do NOT clear the abort flag here. proto_post_run() clears it before the
    * command is queued, which is the only point where clearing is correct; a
@@ -406,7 +471,11 @@ static void run_continuity_all(uint8_t discover)
     {
       for (lo = 1U; lo <= 256U; lo++)
       {
-        if (Continuity_TestPair(hi, lo, &r) == HAL_OK && r.verdict == TEST_PASS)
+        if (Continuity_TestPair(hi, lo, &r) != HAL_OK)
+        {
+          bus_err++;        /* a bus error is NOT "no connection": count it */
+        }
+        else if (r.verdict == TEST_PASS)
         {
           Proto_EvtCont(hi, lo, "pass");
           pass++;
@@ -414,6 +483,13 @@ static void run_continuity_all(uint8_t discover)
       }
       Proto_EvtProgress(hi, 256U);
       if (s_fault != 0U || Proto_AbortRequested() != 0U) { break; }
+    }
+    if (bus_err != 0U)
+    {
+      /* The scan is incomplete: say so, and count the errors as failures so the
+       * run cannot read as a clean pass. */
+      Proto_EvtFault("F01", "bus error during scan: result incomplete");
+      fail = bus_err;
     }
   }
   else
@@ -424,7 +500,10 @@ static void run_continuity_all(uint8_t discover)
       if (Proto_NetlistGet(i, &hi, &lo) != 0) { continue; }
       if (Continuity_TestPair(hi, lo, &r) != HAL_OK)
       {
+        /* Reported as open (the pair is NOT verified) but flagged as a bus error,
+         * not as a missing wire. */
         Proto_EvtCont(hi, lo, "open");
+        Proto_EvtFault("F01", "bus error: pair not verified");
         fail++;
       }
       else if (r.verdict == TEST_PASS)
@@ -487,6 +566,9 @@ static void run_manual_sweep(uint16_t hi)
   *         number computed from a failed conversion.
   * @retval None
   */
+
+#define RES_NEG_TOL_MOHM   100L   /* a reading below -100 mOhm is not noise */
+
 static void run_resistance_all(void)
 {
   KelvinResult_t r;
@@ -514,10 +596,23 @@ static void run_resistance_all(void)
     }
     else
     {
-      int32_t mohm = (int32_t)(r.resistance_ohm * 1000.0f);
-      const char *v = (mohm <= limit) ? "pass" : "fail_high";
+      int32_t mohm;
+      const char *v;
+      if (RunLogic_ResMohmToWire(r.resistance_ohm, &mohm) != 0)
+      {
+        v = "fail_high";                    /* not a number: never a pass */
+      }
+      else if (mohm < -RES_NEG_TOL_MOHM)
+      {
+        v = "fail_low";                     /* negative: offset or wiring error */
+        Proto_EvtFault("F09", "resistance negative: check wiring and calibration");
+      }
+      else
+      {
+        v = (mohm <= limit) ? "pass" : "fail_high";
+      }
       Proto_EvtRes(hi, lo, mohm, v);
-      if (mohm <= limit) { pass++; } else { fail++; }
+      if (v[0] == 'p') { pass++; } else { fail++; }
     }
     Proto_EvtProgress((uint16_t)(i + 1U), n);
     if (s_fault != 0U || Proto_AbortRequested() != 0U) { break; }
@@ -527,62 +622,8 @@ static void run_resistance_all(void)
   Proto_EvtDone("res", pass, fail);
 }
 
-/* Wire value for an insulation reading. The protocol field is int32 milliohms,
- * which tops out at 2.147 MOhm (INT32_MAX mOhm), so a larger float must be
- * clamped BEFORE the cast - an out-of-range float->int32 conversion is
- * undefined behaviour. INT32_MAX therefore means "2.147 MOhm or more" (this
- * includes every reading above the 10 MOhm pass line); the pass/fail verdict
- * sent beside it is authoritative, not this number. Widening the field needs a
- * protocol + GUI change. 2147483520.0f is the largest float below 2^31. */
-static int32_t insul_mohm_to_wire(float mohm)
-{
-  float v = mohm * 1.0e9f;      /* Mohm -> mohm */
-  if (!(v > 0.0f)) { return 0; }                    /* also catches NaN */
-  if (v >= 2147483520.0f) { return INT32_MAX; }
-  return (int32_t)v;
-}
-
-static uint8_t pin_test(const uint8_t *set, uint16_t pin) { return (uint8_t)((set[(pin - 1U) >> 3] >> ((pin - 1U) & 7U)) & 1U); }
-static void    pin_set(uint8_t *set, uint16_t pin)        { set[(pin - 1U) >> 3] |= (uint8_t)(1U << ((pin - 1U) & 7U)); }
-
-/**
-  * @brief  Return-relay mask for one net: every LS pin on @p board EXCEPT the
-  *         net's own return(s).
-  * @note   The net is the connected component of the netlist containing
-  *         (hi, lo): pairs sharing an HS pin or an LS pin are the same net.
-  *         The leakage of the net is then measured against all other conductors
-  *         (fw_status.txt, "insulation return scheme"). Closing no return relay
-  *         would read ~0 V and report a false PASS.
-  */
-static uint64_t insul_return_mask(uint16_t hi, uint16_t lo, uint8_t board)
-{
-  uint8_t  hs[32] = {0}, ls[32] = {0};   /* pin 1..256 bitsets */
-  uint16_t n = Proto_NetlistCount(), i, h, l, p;
-  uint8_t  changed;
-  uint64_t mask = 0ULL;
-
-  pin_set(hs, hi);
-  pin_set(ls, lo);
-  do
-  {
-    changed = 0U;
-    for (i = 0U; i < n; i++)
-    {
-      if (Proto_NetlistGet(i, &h, &l) != 0 || h < 1U || h > 256U || l < 1U || l > 256U) { continue; }
-      if (pin_test(hs, h) != pin_test(ls, l))
-      {
-        pin_set(hs, h); pin_set(ls, l); changed = 1U;
-      }
-    }
-  } while (changed != 0U);
-
-  for (p = 1U; p <= HV_PINS_PER_SIDE; p++)
-  {
-    uint16_t flat = (uint16_t)(board * HV_PINS_PER_SIDE + p);
-    if (flat <= 256U && pin_test(ls, flat) == 0U) { mask |= (1ULL << (p - 1U)); }
-  }
-  return mask;
-}
+/* Netlist accessor handed to the pure return-relay planner (run_logic.c). */
+static int netlist_get(uint16_t i, uint16_t *hi, uint16_t *lo) { return Proto_NetlistGet(i, hi, lo); }
 
 /**
   * @brief  Insulation over the loaded netlist.
@@ -595,10 +636,11 @@ static void run_insulation_all(void)
   InsulationResult_t r;
   uint16_t i, n, hi, lo;
   uint16_t pass = 0U, fail = 0U;
+  HAL_StatusTypeDef st_net;
 
   if (Proto_HvArmed() == 0U)
   {
-    Proto_EvtFault("F03", "HV not armed");
+    Proto_EvtFault("F05", "HV not armed");
     Proto_EvtDone("insul", 0U, 0U);
     return;
   }
@@ -633,8 +675,10 @@ static void run_insulation_all(void)
     {
       LOG_E("INS", "b%u HV self-test FAILED idle=%dmV rail=%dmV", (unsigned)i,
             (int)(v_idle * 1000.0f), (int)(v_hv * 1000.0f));
-      Proto_EvtFault("F06", "HV path self-test failed");
+      Proto_EvtFault("F03", "HV path self-test failed");
+      Safety_SignalFault("HV self-test failed");
       force_safe_all();
+      hv_activity();
       Proto_ClearArm();
       Proto_EvtHv(0);
       Proto_EvtSafe();
@@ -642,6 +686,7 @@ static void run_insulation_all(void)
       return;
     }
   }
+  hv_activity();
   Proto_EvtState("running");
 
   for (i = 0U; i < n; i++)
@@ -652,9 +697,31 @@ static void run_insulation_all(void)
 
     board = (uint8_t)((hi - 1U) / HV_PINS_PER_SIDE);
     local = (uint8_t)((hi - 1U) % HV_PINS_PER_SIDE + 1U);
-    rmask = insul_return_mask(hi, lo, board);
+    rmask = RunLogic_ReturnMask(netlist_get, n, hi, lo, board, HV_PINS_PER_SIDE);
 
-    if (Insulation_TestNet(board, local, rmask, INSULATION_RUN_FRACTION, &r) != HAL_OK)
+    r.hw_fault = INS_HW_NONE;
+    s_hv_active = 1U;
+    st_net = Insulation_TestNet(board, local, rmask, INSULATION_RUN_FRACTION, &r);
+    s_hv_active = 0U;
+    hv_activity();
+
+    if (r.hw_fault != INS_HW_NONE)
+    {
+      /* The HV path itself misbehaved (relay bus, DAC/ADC, rail out of
+       * tolerance, rail would not discharge). That is not a harness failure and
+       * no further net can be trusted: report it, latch the fault, stop. */
+      static const char *const why[] = {
+        "none", "HV relay bus error", "HV DAC/ADC error",
+        "HV rail out of tolerance", "HV rail did not discharge" };
+      Proto_EvtInsul(hi, 0, "fail");
+      Proto_EvtFault((r.hw_fault == INS_HW_BUS) ? "F01" :
+                     (r.hw_fault == INS_HW_SPI) ? "F02" : "F03",
+                     why[(r.hw_fault <= INS_HW_DISCHARGE) ? r.hw_fault : 0U]);
+      Safety_SignalFault(why[(r.hw_fault <= INS_HW_DISCHARGE) ? r.hw_fault : 0U]);
+      fail++;
+      break;
+    }
+    if (st_net != HAL_OK)
     {
       Proto_EvtInsul(hi, 0, "fail");
       Proto_EvtFault("F04", "insulation measurement failed");
@@ -665,7 +732,7 @@ static void run_insulation_all(void)
       const char *v = (r.verdict == TEST_PASS) ? "pass" : "fail";
       /* insulation_mohm is the header's megohm estimate; the protocol
        * carries milliohms, so scale by 1e9. */
-      Proto_EvtInsul(hi, insul_mohm_to_wire(r.insulation_mohm), v);
+      Proto_EvtInsul(hi, RunLogic_InsulMohmToWire(r.insulation_mohm), v);
       if (r.verdict == TEST_PASS) { pass++; }
       else { Proto_EvtFault("F04", "insulation low"); fail++; }
     }
@@ -675,6 +742,7 @@ static void run_insulation_all(void)
 
   /* Always leave HV down and disarmed. */
   force_safe_all();
+  hv_activity();
   Proto_ClearArm();
   Proto_EvtHv(0);
   Proto_EvtSafe();

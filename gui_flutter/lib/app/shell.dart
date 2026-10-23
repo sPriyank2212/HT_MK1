@@ -59,7 +59,7 @@ class StatusBar extends StatelessWidget {
     // appear at any time) for space. 1600 rather than kMediumBreak (1080):
     // measured this bar overflowing at the 1480px "default" test width with
     // Clear Fault showing, so kMediumBreak alone left no real margin.
-    final showOperatorFields = width > 1600;
+    final showOperatorFields = width > kOperatorFieldsMinWidth;
     // The company logo is wider than the old "HT" badge, so the name/firmware
     // text beside it gives way first on a compact window (the window's own
     // title bar already says "HT_MK1 Console").
@@ -169,6 +169,11 @@ class StatusBar extends StatelessWidget {
     );
   }
 }
+
+/// The status bar draws the DUT ID and Operator fields only above this window
+/// width. Below it the Run screen shows the same two fields in a "Test details"
+/// panel instead, so they are never simply unreachable (reports carry both).
+const double kOperatorFieldsMinWidth = 1600;
 
 /// `.slot{display:flex;flex-direction:column;gap:3px;min-width:0}`
 class _Slot extends StatelessWidget {
