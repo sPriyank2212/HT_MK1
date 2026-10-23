@@ -1,0 +1,29 @@
+HT_MK1 firmware
+
+Target          STM32G474RE (Control Card), flash base 0x08000000
+Version         fw 0.1.0, protocol 1   (reported by the ID command)
+Source          git commit 89c4ebedf359d83b868263c64366ed65ed5e583a
+Built           2026-10-22 with GNU Tools for STM32 14.3.rel1, "Debug" configuration
+                (-O0 -g3, the configuration the Flashing Procedure flashes)
+Built from      a clean checkout of that commit - not from a working copy
+
+Files
+  HT_MK1.elf    programming image with debug symbols (use with STM32CubeProgrammer / CubeIDE)
+  HT_MK1.hex    Intel HEX
+  HT_MK1.bin    raw binary - flash at 0x08000000
+
+SHA-256
+  HT_MK1.elf    0097e46483b2df6414bf1cba5b191156d75d2841d88a76ad00f46591bd8ba0ff
+  HT_MK1.hex    264dac070cab149e790dd4b437e5341a78f20eda7857788ec8d67641032ad05e
+  HT_MK1.bin    5a8dd24178a85a88c01fba7290f64d7153202fdc2017d8f6a8b016bac4ce54f1
+
+Size (arm-none-eabi-size on the .elf)
+text	   data	    bss	    dec	    hex	filenameHT_MK1.elf
+
+Flashing
+  Follow 0_Documents/4_Flashing_Procedure.pdf, then run its PING / PONG check before testing.
+  Afterwards the GUI should connect and show "fw 0.1.0" in the status bar.
+
+Not yet verified on hardware
+  The Functional Test Procedure notes that the resistance and insulation paths are still to be
+  confirmed on real hardware. This image has been compiled, not exercised on a unit.
