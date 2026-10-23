@@ -1,4 +1,6 @@
-# HT_MK1 Harness Tester - Customer Package
+# HT_MK1 Harness Tester - Customer Package (Release v1)
+
+Atulya Core Tech (ACT)
 
 Everything needed to set up and run the HT_MK1 test, in one place.
 
@@ -26,7 +28,7 @@ Everything needed to set up and run the HT_MK1 test, in one place.
 |---|---|
 | Firmware | fw 0.1.0, built from git commit `fe73672` |
 | GUI | built 2026-10-23 (the exact time is shown in the GUI footer) |
-| Documents | Issue 1.1.0 of the manuals (22-10-2026), GUI Functional Description 1.0.0 |
+| Documents | Issue 1.1.0 of the manuals (22-10-2026), GUI Functional Description 1.0.0; see `RELEASE_NOTES.md` |
 
 Checksums for every file are in `MANIFEST.txt`.
 
