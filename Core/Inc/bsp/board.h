@@ -98,19 +98,21 @@ typedef struct
 
 /* Matrix Card: 9 expanders (U101/102/105/106 force, U66/67/69/107/108
  * sense) + U21 (local, no bus-claim) + the ADS124S08 itself (SPI, probed by
- * identity rather than an I2C ACK) = 11. */
-#define BOARD_BUS_SCAN_MAX  11U
+ * identity rather than an I2C ACK) = 11, plus 8 relay expanders (4 HS + 4 LS)
+ * per HV card. */
+#define BOARD_BUS_SCAN_MAX  (11U + 8U * (uint8_t)BOARD_HV_COUNT)
 
 /**
   * @brief  Probe every device this project has a schematic-confirmed I2C
   *         address for, without disturbing anything - each is claimed/
   *         segment-selected/released exactly the way a normal access would
   *         be, then the bus is left however it was.
-  * @note   HV card expanders are deliberately NOT probed: `hv_card.c`'s own
-  *         strap assignment is still marked "TODO verify" pending bring-up
-  *         (BU-03), so reporting ok/fault against an address that hasn't
-  *         been confirmed would claim a confidence this project doesn't
-  *         have yet. Scope is Matrix Card + the ADS124S08 only.
+  * @note   Scope: the Matrix Card, the ADS124S08, and each HV card's eight
+  *         relay expanders (HVn_HS1..4 = 0x20..0x23, HVn_LS1..4 = 0x24..0x27,
+  *         straps confirmed against HV_Card schematic sheet 5). Each HV card
+  *         is put on the shared bus alone through its own HV_Card_ENx; a card
+  *         that is not fitted is reported as a fault. The HV DAC/ADCs (SPI2)
+  *         are not covered.
   * @param  out : [out] array to fill, at least BOARD_BUS_SCAN_MAX entries.
   * @param  max : [in]  capacity of @p out.
   * @retval Number of entries written.

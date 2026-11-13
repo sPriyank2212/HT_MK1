@@ -12,7 +12,7 @@
   *              actual UART transmit happens in the lowest-priority logger task.
   *            - Short lines: "<L>[tick] tag: msg".
   *            - UART-agnostic: bind any handle. For Nucleo bring-up a helper
-  *              brings up LPUART1 on PA2/PA3 -> the ST-LINK virtual COM port.
+  *              binds USART2 (PA2/PA3): the MCP2221A USB-UART on the product, the ST-LINK VCP on a Nucleo.
   *
   *          Usage:  LOG_I("HV", "en board=%u", b);
   ******************************************************************************
@@ -83,11 +83,13 @@ void Log_Task(void *argument);
 HAL_StatusTypeDef Log_ConsoleWrite(const uint8_t *data, uint16_t len, uint32_t timeout);
 
 /**
-  * @brief  Nucleo helper: bring up LPUART1 on PA2/PA3 (AF12) at 115200 8N1,
-  *         which reaches the ST-LINK virtual COM port. Returns the handle, or
-  *         NULL on failure. (In the product these pins are USART2; swap there.)
+  * @brief  Bind the console to USART2 (PA2 TX / PA3 RX, 115200 8N1) and arm its
+  *         RX interrupt. On the product these pins go to the MCP2221A USB-UART
+  *         bridge; on a Nucleo-G474RE they reach the ST-LINK virtual COM port.
+  *         USART2 itself is initialised by CubeMX's MX_USART2_UART_Init().
+  * @retval The UART handle, or NULL if USART2 was never initialised.
   */
-UART_HandleTypeDef *Log_HwInit_LPUART1(void);
+UART_HandleTypeDef *Log_HwInit_Console(void);
 
 #define LOG_E(tag, ...) do { if ((LOG_LEVEL) >= LOG_ERROR) Log_Write(LOG_ERROR, (tag), __VA_ARGS__); } while (0)
 #define LOG_W(tag, ...) do { if ((LOG_LEVEL) >= LOG_WARN ) Log_Write(LOG_WARN , (tag), __VA_ARGS__); } while (0)

@@ -311,7 +311,7 @@ extern ADS1232_t g_ads1232;
   *         PC1 = PDWN (output, driven high). GAIN0/GAIN1/SPEED/A0 are strapped
   *         on the board and are NOT driven. Configures the pins directly rather
   *         than through CubeMX so regenerating the .ioc cannot clobber it -
-  *         same approach as Log_HwInit_LPUART1().
+  *         same approach as the other hand-configured peripherals.
   * @retval HAL status from ADS1232_Init().
   */
 HAL_StatusTypeDef ADS1232_HwInit_Nucleo(void);

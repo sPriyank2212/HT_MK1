@@ -26,7 +26,7 @@
 static osMessageQueueId_t s_cmdq;
 static osMessageQueueId_t s_rxq;        /* console RX bytes, ISR -> tComms     */
 static osMutexId_t        s_hwmtx;      /* serialises I2C/SPI bus access      */
-static UART_HandleTypeDef *s_console;   /* VCP carrying the GUI protocol      */
+static UART_HandleTypeDef *s_console;   /* USB-UART carrying the GUI protocol  */
 static uint8_t            s_rx_byte;    /* landing slot for HAL_UART_Receive_IT */
 static volatile uint8_t   s_fault;
 static volatile uint8_t   s_hv_active;
@@ -788,7 +788,7 @@ static void SequencerTask(void *arg)
 
 /**
   * @brief  Console RX complete: hand the byte to tComms and re-arm.
-  * @note   Runs in the LPUART1 ISR at priority 5, the most urgent level allowed
+  * @note   Runs in the USART2 ISR at priority 5, the most urgent level allowed
   *         to call the FreeRTOS FromISR API. Re-arming here is what keeps the
   *         receiver alive; miss it once and the link goes deaf.
   * @param  huart : [in] UART reporting the completion.
@@ -925,7 +925,7 @@ static void console_puts(const char *s)
   */
 void Tasks_Init(void)
 {
-  s_console = Log_HwInit_LPUART1();   /* Nucleo VCP; swap for the product UART */
+  s_console = Log_HwInit_Console();   /* USART2 -> MCP2221A USB-UART (Nucleo: ST-LINK VCP) */
   console_puts("#[boot] HT_MK1 console up @115200\r\n");
   if (Log_Init(s_console) != HAL_OK)
   {

@@ -110,7 +110,7 @@ static uint8_t s_board_ready = 0U;
  * from the schematic diff, not yet carried into the CubeMX .ioc/gpio.c (no
  * main.h macro exists for PA0 yet) - configured directly in board_init_temp()
  * below, the same "configure directly so a regen can't clobber it" approach
- * Log_HwInit_LPUART1() and ADS1232_HwInit_Nucleo() use for pins ahead of
+ * ADS1232_HwInit_Nucleo() uses for pins ahead of
  * their own CubeMX registration. TODO: fold into the .ioc at the next real
  * CubeMX sync. */
 #define BOARD_TEMP_PORT   GPIOA
@@ -326,7 +326,7 @@ static const uint16_t board_hv_en_pin[4] = {
   *         HV_Card_EN line - see the bus-sharing note above), per-side expander
   *         straps (inject 0x20..0x23, return 0x24..0x27), isolated SPI2 for the
   *         DAC8830 and both sense ADCs, and the HV-card ADC reference
-  *         (+5V_ISO). Several straps/CS lines are placeholders pending the
+  *         (+5V_ISO). Expander straps are confirmed (HV_Card sheet 5); some CS lines are placeholders pending the
   *         connector netlist (TODO).
   * @param  idx : [in] HV board index into g_hv[] (0..BOARD_HV_COUNT-1); maps to
   *                    physical slot idx+1 (J2..J5) - see board_hv_en_port above.
@@ -343,7 +343,7 @@ static HAL_StatusTypeDef board_init_hv(uint8_t idx)
   cfg.en_pin  = board_hv_en_pin[slot];
   for (i = 0U; i < HV_MCP_PER_SIDE; i++)
   {
-    cfg.inject_strap[i] = i;       /* 0x20..0x23 - TODO verify straps   */
+    cfg.inject_strap[i] = i;       /* 0x20..0x23 - confirmed vs HV_Card sheet 5 */
     cfg.return_strap[i] = (uint8_t)(i + HV_MCP_PER_SIDE); /* 0x24..0x27  */
   }
   cfg.spi              = BOARD_HV_SPI;
@@ -520,6 +520,53 @@ uint8_t Board_ScanBus(BoardBusEntry_t *out, uint8_t max)
     out[n].addr7 = 0U; /* SPI, not I2C-addressed */
     out[n].ok = (ADS124S08_CheckId(&g_ads124s08, &id) == HAL_OK) ? 1U : 0U;
     n++;
+  }
+
+  /* HV cards: 4 high-side (HS, 0x20..0x23) + 4 low-side (LS, 0x24..0x27)
+   * relay expanders each. Straps confirmed against HV_Card schematic sheet 5
+   * (/GPIO_Expander/, the address annotations beside U1xx). Every card straps
+   * to the same range, so each is put on the shared bus alone via its own
+   * HV_Card_ENx - the same Hold/Unhold discipline as any relay access. A card
+   * that is not fitted simply NAKs and is reported as a fault. Names are
+   * single tokens (wire format: "!BUSLINE <name> ok|fault"). */
+  {
+    static const char *const hv_names[3][2U * HV_MCP_PER_SIDE] = {
+      { "HV1_HS1", "HV1_HS2", "HV1_HS3", "HV1_HS4",
+        "HV1_LS1", "HV1_LS2", "HV1_LS3", "HV1_LS4" },
+      { "HV2_HS1", "HV2_HS2", "HV2_HS3", "HV2_HS4",
+        "HV2_LS1", "HV2_LS2", "HV2_LS3", "HV2_LS4" },
+      { "HV3_HS1", "HV3_HS2", "HV3_HS3", "HV3_HS4",
+        "HV3_LS1", "HV3_LS2", "HV3_LS3", "HV3_LS4" },
+    };
+    uint8_t c;
+    for (c = 0U; c < (uint8_t)BOARD_HV_COUNT; c++)
+    {
+      HvCard_t *hv = &g_hv[c];
+      uint8_t   usable = (hv->cfg.i2c != NULL && hv->cfg.en_port != NULL) ? 1U : 0U;
+      uint8_t   k;
+
+      if (usable != 0U) { HvCard_Hold(hv); }
+      for (k = 0U; k < (2U * HV_MCP_PER_SIDE) && n < max; k++)
+      {
+        uint8_t strap = (k < HV_MCP_PER_SIDE) ? hv->cfg.inject_strap[k]
+                                              : hv->cfg.return_strap[k - HV_MCP_PER_SIDE];
+        uint8_t addr7 = (uint8_t)(MCP23017_ADDR_BASE | strap);
+        out[n].name = hv_names[c][k];
+        if (usable != 0U)
+        {
+          (void)board_probe(&out[n], hv->cfg.i2c, addr7);
+        }
+        else
+        {
+          /* Board_Init() never configured this card (no I2C handle / enable
+           * line): report the address it would have used as a fault. */
+          out[n].addr7 = addr7;
+          out[n].ok    = 0U;
+        }
+        n++;
+      }
+      if (usable != 0U) { HvCard_Unhold(hv); }
+    }
   }
 
   return n;

@@ -8,6 +8,7 @@
 /* USER CODE END Header */
 
 #include "app/log.h"
+#include "usart.h"
 #include "cmsis_os2.h"
 #include <stdarg.h>
 #include <stdio.h>
@@ -164,54 +165,24 @@ void Log_Task(void *argument)
 }
 
 /* -------------------------------------------------------------------------- */
-/* Nucleo LPUART1 (PA2/PA3 -> ST-LINK VCP) bring-up                           */
+/* Product console: USART2 (PA2/PA3) -> MCP2221A USB-UART bridge (Control Card */
+/* "USB to UART" sheet, U12). The same two pins reach the ST-LINK VCP on a     */
+/* Nucleo-G474RE, so the bench board needs no separate path.                   */
 /* -------------------------------------------------------------------------- */
-static UART_HandleTypeDef s_hlpuart1;
 
 /**
-  * @brief  Bring up LPUART1 on the Nucleo (PA2/PA3 -> ST-LINK VCP) at 115200 8N1.
-  * @note   Bring-up helper: selects the LPUART1 kernel clock, configures the
-  *         PA2/PA3 alternate-function pins and initialises the peripheral. Swap
-  *         for the product UART on the target hardware.
-  * @retval UART_HandleTypeDef* pointer to the initialised static handle, or
-  *                             NULL if clock or UART init failed.
+  * @brief  Bind the GUI/log console to USART2 (115200 8N1, PA2 TX / PA3 RX).
+  * @note   USART2 itself - clock, PA2/PA3 alternate function (AF7), baud,
+  *         framing - is brought up by CubeMX's MX_USART2_UART_Init() in main();
+  *         this only checks that it ran and arms the interrupt the RX path
+  *         depends on. Replaces the old Log_HwInit_LPUART1() Nucleo helper,
+  *         which fought MX_USART2_UART_Init() over the same two pins (AF12 vs
+  *         AF7) - the schematic net is USART2_TX/USART2_RX.
+  * @retval UART_HandleTypeDef* &huart2, or NULL if USART2 was never initialised.
   */
-UART_HandleTypeDef *Log_HwInit_LPUART1(void)
+UART_HandleTypeDef *Log_HwInit_Console(void)
 {
-  GPIO_InitTypeDef gpio = {0};
-  RCC_PeriphCLKInitTypeDef pclk = {0};
-
-  /* LPUART1 kernel clock = PCLK1 (default). */
-  pclk.PeriphClockSelection = RCC_PERIPHCLK_LPUART1;
-  pclk.Lpuart1ClockSelection = RCC_LPUART1CLKSOURCE_PCLK1;
-  if (HAL_RCCEx_PeriphCLKConfig(&pclk) != HAL_OK)
-  {
-    return NULL;
-  }
-
-  __HAL_RCC_GPIOA_CLK_ENABLE();
-  __HAL_RCC_LPUART1_CLK_ENABLE();
-
-  /* PA2 = LPUART1_TX, PA3 = LPUART1_RX (AF12). */
-  gpio.Pin       = GPIO_PIN_2 | GPIO_PIN_3;
-  gpio.Mode      = GPIO_MODE_AF_PP;
-  gpio.Pull      = GPIO_NOPULL;
-  gpio.Speed     = GPIO_SPEED_FREQ_LOW;
-  gpio.Alternate = GPIO_AF12_LPUART1;
-  HAL_GPIO_Init(GPIOA, &gpio);
-
-  s_hlpuart1.Instance                    = LPUART1;
-  s_hlpuart1.Init.BaudRate               = 115200;
-  s_hlpuart1.Init.WordLength             = UART_WORDLENGTH_8B;
-  s_hlpuart1.Init.StopBits               = UART_STOPBITS_1;
-  s_hlpuart1.Init.Parity                 = UART_PARITY_NONE;
-  s_hlpuart1.Init.Mode                   = UART_MODE_TX_RX;
-  s_hlpuart1.Init.HwFlowCtl              = UART_HWCONTROL_NONE;
-  s_hlpuart1.Init.OverSampling           = UART_OVERSAMPLING_16;
-  s_hlpuart1.Init.OneBitSampling         = UART_ONE_BIT_SAMPLE_DISABLE;
-  s_hlpuart1.Init.ClockPrescaler         = UART_PRESCALER_DIV1;
-  s_hlpuart1.AdvancedInit.AdvFeatureInit = UART_ADVFEATURE_NO_INIT;
-  if (HAL_UART_Init(&s_hlpuart1) != HAL_OK)
+  if (huart2.Instance != USART2 || huart2.gState == HAL_UART_STATE_RESET)
   {
     return NULL;
   }
@@ -224,22 +195,24 @@ UART_HandleTypeDef *Log_HwInit_LPUART1(void)
    * level still permitted to call the FreeRTOS *FromISR* API. Anything more
    * urgent would trip the configASSERT in the kernel.
    */
-  HAL_NVIC_SetPriority(LPUART1_IRQn, 5U, 0U);
-  HAL_NVIC_EnableIRQ(LPUART1_IRQn);
+  HAL_NVIC_SetPriority(USART2_IRQn, 5U, 0U);
+  HAL_NVIC_EnableIRQ(USART2_IRQn);
 
-  return &s_hlpuart1;
+  return &huart2;
 }
 
 /**
-  * @brief  LPUART1 interrupt entry point.
+  * @brief  USART2 interrupt entry point.
   * @note   Defined here rather than in stm32g4xx_it.c because this file owns
-  *         the peripheral: LPUART1 is brought up by hand above, not by CubeMX,
-  *         so no generated handler exists. The startup file's symbol is weak,
-  *         so this definition wins. HAL dispatches to HAL_UART_RxCpltCallback /
-  *         HAL_UART_ErrorCallback, both implemented in app/tasks.c.
+  *         the console binding: the CubeMX project does not enable the USART2
+  *         global interrupt, so no generated handler exists. The startup
+  *         file's symbol is weak, so this definition wins. HAL dispatches to
+  *         HAL_UART_RxCpltCallback / HAL_UART_ErrorCallback, both implemented
+  *         in app/tasks.c. If the interrupt is ever enabled in the .ioc, delete
+  *         this and keep CubeMX's handler.
   * @retval None
   */
-void LPUART1_IRQHandler(void)
+void USART2_IRQHandler(void)
 {
-  HAL_UART_IRQHandler(&s_hlpuart1);
+  HAL_UART_IRQHandler(&huart2);
 }
