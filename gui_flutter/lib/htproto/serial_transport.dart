@@ -1,8 +1,8 @@
 /// Serial transport — the real instrument's side of the wire.
 ///
-/// The firmware carries the protocol on LPUART1 (PA2/PA3), which on a
-/// NUCLEO-G474RE lands on the ST-LINK Virtual COM Port, 115200 8N1. See
-/// `Log_HwInit_LPUART1()` in `Core/Src/app/log.c`.
+/// The firmware carries the protocol on USART2 (PA2/PA3): the MCP2221A USB-UART
+/// on the Control Card, or the ST-LINK Virtual COM Port of a NUCLEO-G474RE (same pins), 115200 8N1. See
+/// `Log_HwInit_Console()` in `Core/Src/app/log.c`.
 ///
 /// Nothing above [Transport] changes: [ConnectionManager] still owns the
 /// timeouts, the link watchdog and the session log, and the codec still frames
@@ -47,12 +47,12 @@ class SerialTransport implements Transport {
 
   @override
   Future<void> open(String portName, int baud) async {
-    // `--serial auto` reaches here unresolved when no ST-LINK was found. Say
+    // `--serial auto` reaches here unresolved when no instrument port was found. Say
     // so in the operator's own terms rather than failing on a port literally
     // named "auto".
     if (portName == 'auto') {
       throw const SerialOpenError(
-          'no ST-LINK Virtual COM Port found — is the board plugged in?');
+          'no instrument serial port (MCP2221A USB-UART / ST-LINK VCP) found — is the board plugged in?');
     }
 
     final port = SerialPort(portName);
@@ -191,7 +191,31 @@ class SerialTransport implements Transport {
 class PortInfo {
   final String name;
   final String description;
-  const PortInfo(this.name, this.description);
+
+  /// USB vendor id, when the OS reports one (null otherwise).
+  final int? vendorId;
+  const PortInfo(this.name, this.description, [this.vendorId]);
+}
+
+/// USB vendor ids of the two serial bridges the instrument can sit behind:
+/// Microchip (the MCP2221A USB-UART on the Control Card, schematic sheet
+/// "USB to UART") and STMicroelectronics (the ST-LINK VCP of a Nucleo bench
+/// board - the same PA2/PA3 pins).
+const int usbVidMicrochip = 0x04D8;
+const int usbVidStMicro = 0x0483;
+
+/// True when [p] looks like the instrument's serial bridge. Windows usually
+/// names the MCP2221A "USB Serial Device", so the vendor id is the reliable
+/// test; the description strings are a fallback for hosts that do not report
+/// one.
+bool isInstrumentPort(PortInfo p) {
+  if (p.vendorId == usbVidMicrochip || p.vendorId == usbVidStMicro) return true;
+  final d = p.description.toLowerCase();
+  return d.contains('mcp2221') ||
+      d.contains('microchip') ||
+      d.contains('stlink') ||
+      d.contains('st-link') ||
+      d.contains('stmicroelectronics');
 }
 
 /// Enumerate the serial ports this machine can see.
@@ -199,6 +223,7 @@ List<PortInfo> availableSerialPorts() {
   final out = <PortInfo>[];
   for (final name in SerialPort.availablePorts) {
     var description = '';
+    int? vendorId;
     SerialPort? p;
     try {
       p = SerialPort(name);
@@ -207,23 +232,24 @@ List<PortInfo> availableSerialPorts() {
         if ((p.manufacturer ?? '').isNotEmpty) p.manufacturer!,
       ];
       description = bits.join(' · ');
+      try {
+        vendorId = p.vendorId;
+      } on SerialPortError {
+        vendorId = null;
+      }
     } on SerialPortError {
       description = '(details unavailable)';
     } finally {
       p?.dispose();
     }
-    out.add(PortInfo(name, description));
+    out.add(PortInfo(name, description, vendorId));
   }
   return out;
 }
 
-/// The ST-LINK VCP, if exactly one is present. Used by `--serial auto`.
-String? guessStLinkPort() {
-  final matches = availableSerialPorts()
-      .where((p) =>
-          p.description.toLowerCase().contains('stlink') ||
-          p.description.toLowerCase().contains('st-link') ||
-          p.description.toLowerCase().contains('stmicroelectronics'))
-      .toList();
+/// The instrument's serial port (MCP2221A USB-UART, or a Nucleo's ST-LINK
+/// VCP), if exactly one is present. Used by `--serial auto`.
+String? guessInstrumentPort() {
+  final matches = availableSerialPorts().where(isInstrumentPort).toList();
   return matches.length == 1 ? matches.first.name : null;
 }

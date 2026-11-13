@@ -559,11 +559,11 @@ class _DiagViewState extends State<DiagView> {
                 ],
               ),
             ),
-          // GUI-06/2026-08-21: real per-device results from BUS SCAN — only
-          // the Matrix Card expanders + ADS124S08 (the addresses this
-          // project has actually confirmed against the schematic). Not a
+          // GUI-06: real per-device results from BUS SCAN - the Matrix Card
+          // expanders, the ADS124S08 and each HV card's relay expanders (the
+          // addresses this project has confirmed against the schematic). Not a
           // replacement for the fixed rows above, which describe whole
-          // buses this scan doesn't fully cover (HV cards, SPI2/SPI3
+          // buses this scan doesn't fully cover (HV DAC/ADCs on SPI2, SPI3
           // devices) — see commands.busScan()'s own doc comment.
           Padding(
             padding: const EdgeInsets.fromLTRB(14, 9, 14, 9),

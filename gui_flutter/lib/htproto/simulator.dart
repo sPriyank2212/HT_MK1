@@ -520,6 +520,10 @@ class InstrumentSim {
   static const List<String> _busDevices = [
     'U21', 'U101', 'U105', 'U102', 'U106', 'U66', 'U67', 'U107', 'U108',
     'U69', 'U68',
+    // One HV card (the firmware default, BOARD_HV_COUNT = 1): 4 high-side +
+    // 4 low-side relay expanders, straps 0x20..0x27 (HV_Card sheet 5).
+    'HV1_HS1', 'HV1_HS2', 'HV1_HS3', 'HV1_HS4',
+    'HV1_LS1', 'HV1_LS2', 'HV1_LS3', 'HV1_LS4',
   ];
 
   String _busScan() {

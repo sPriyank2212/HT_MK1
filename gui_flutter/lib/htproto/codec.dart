@@ -302,9 +302,10 @@ class commands {
       _line('MANUAL SWEEP ${_checkPin(hi, 'hi')}');
 
   /// GUI-06 (2026-08-21): probes every I2C device the firmware has a
-  /// confirmed schematic address for (Matrix Card + the ADS124S08) —
-  /// deliberately not the HV cards, whose address straps are still
-  /// unverified (`hv_card.c`, BU-03).
+  /// confirmed schematic address for: the Matrix Card, the ADS124S08, and
+  /// each HV card's eight relay expanders (`HVn_HS1..4` / `HVn_LS1..4`,
+  /// straps 0x20..0x27 confirmed against HV_Card sheet 5). An HV card that
+  /// is not fitted answers fault.
   static Uint8List busScan() => _line('BUS SCAN');
 
   static Uint8List calGet() => _line('CAL GET');

@@ -333,8 +333,8 @@ class AppState extends ChangeNotifier {
   final List<int> sweepFound = [];
 
   /// `BUS SCAN` state (GUI-06) — real per-device results, only for the
-  /// subset the firmware actually probes (Matrix Card + ADS124S08; HV cards
-  /// are deliberately excluded, see `commands.busScan()`). Separate from
+  /// subset the firmware actually probes (Matrix Card, ADS124S08 and each HV
+  /// card's relay expanders; not the HV DAC/ADCs - see `commands.busScan()`). Separate from
   /// the Bus map panel's own fixed reference text, which this does not
   /// replace or validate.
   bool busScanning = false;

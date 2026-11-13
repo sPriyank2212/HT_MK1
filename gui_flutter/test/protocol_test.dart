@@ -488,6 +488,12 @@ void main() {
       expect(lines.length, done.passed);
       expect(lines.every((l) => l.ok), isTrue);
       expect(lines.map((l) => l.name), contains('U68'));
+      // HV card relay expanders: 4 high-side + 4 low-side (straps 0x20..0x27).
+      final names = lines.map((l) => l.name).toList();
+      for (final n in ['HV1_HS1', 'HV1_HS4', 'HV1_LS1', 'HV1_LS4']) {
+        expect(names, contains(n));
+      }
+      expect(names.where((n) => n.startsWith('HV1_')).length, 8);
     });
 
     test('CAL RUN reports a standalone ratiometric result, no !DONE',

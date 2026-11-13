@@ -2,15 +2,15 @@
 ///
 /// ```
 /// ht_mk1_gui.exe --serial COM7       talk to the instrument over the VCP
-/// ht_mk1_gui.exe --serial auto       find the ST-LINK VCP automatically
+/// ht_mk1_gui.exe --serial auto       find the instrument's USB-UART automatically
 /// ht_mk1_gui.exe --list-ports        which COM ports exist
 /// ht_mk1_gui.exe --sim               demo mode: built-in simulator
 /// ht_mk1_gui.exe --host 10.0.0.4 --port 46000
 /// ht_mk1_gui.exe --log-dir D:\logs
 /// ```
 ///
-/// `--serial` is the real link: the firmware carries the protocol on LPUART1
-/// (PA2/PA3), which on a NUCLEO-G474RE is the ST-LINK Virtual COM Port at
+/// `--serial` is the real link: the firmware carries the protocol on USART2
+/// (PA2/PA3) - the MCP2221A USB-UART on the Control Card, or on a NUCLEO-G474RE the ST-LINK Virtual COM Port - at
 /// 115200 8N1.
 ///
 /// `--sim` runs the simulator inside the same process and says so on the
@@ -54,7 +54,7 @@ class Options {
   int nets = 12;
   double interval = 0.02;
 
-  /// COM port name, or "auto" to find the ST-LINK VCP. null = use TCP.
+  /// COM port name, or "auto" to find the instrument's USB-UART. null = use TCP.
   String? serial;
   int baud = defaultBaud;
   bool listPorts = false;
@@ -129,9 +129,9 @@ int linkPortFor(Options o) => (o.tcp || o.sim) ? o.port : o.baud;
 const String _usage = '''
 HT_MK1 operator console
 
-  Talking to real hardware (LPUART1 -> ST-LINK VCP, 115200 8N1):
+  Talking to real hardware (USART2 -> MCP2221A USB-UART, 115200 8N1):
   --serial <port>    COM port, e.g. --serial COM7, or "auto" to pick the
-                     ST-LINK VCP when exactly one is attached
+                     instrument's USB-UART when exactly one is attached
   --baud <n>         line rate (default $defaultBaud)
   --list-ports       list the serial ports this machine can see, then exit
 
@@ -212,13 +212,13 @@ Future<void> main(List<String> args) async {
   if (o.serial != null) {
     var name = o.serial!;
     if (name == 'auto') {
-      final guess = guessStLinkPort();
+      final guess = guessInstrumentPort();
       if (guess == null) {
         // Do NOT exit. This is the double-click path: an operator console that
         // vanishes because the board is unplugged looks broken. Carry the
         // unresolved name through instead — SerialTransport.open turns it into
         // a readable failure, the window comes up, and the log says why.
-        stderr.writeln('no single ST-LINK VCP found; '
+        stderr.writeln('no single instrument serial port found; '
             'run --list-ports and name one explicitly.');
       } else {
         name = guess;
