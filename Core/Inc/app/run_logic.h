@@ -23,12 +23,35 @@ extern "C" {
 typedef int (*RunLogic_NetGet)(uint16_t i, uint16_t *hi, uint16_t *lo);
 
 /**
-  * @brief  Insulation reading (megohms, float) -> protocol milliohms (int32).
-  * @note   The wire field tops out at 2.147 MOhm, so larger readings clamp to
-  *         INT32_MAX (the verdict beside the number is authoritative). NaN,
-  *         zero and negative readings give 0. Never undefined behaviour.
+  * @brief  Insulation reading (megohms, float) -> protocol milliohms (int64).
+  * @note   10 Mohm is 1e10 mohm, which does not fit int32, so the wire field is
+  *         64-bit. Readings beyond the int64 range (the 9999 Mohm "negligible
+  *         leakage" sentinel fits; only INFINITY/huge floats do not) clamp to
+  *         INT64_MAX; the verdict beside the number is authoritative. NaN, zero
+  *         and negative readings give 0. Never undefined behaviour.
   */
-int32_t RunLogic_InsulMohmToWire(float mohm);
+int64_t RunLogic_InsulMohmToWire(float mohm);
+
+/**
+  * @brief  Format a 64-bit signed value as decimal.
+  * @note   Hand-rolled: this build links newlib-nano, whose printf has never been
+  *         exercised with "%lld" here, and a wrong conversion would silently
+  *         corrupt every !INSUL / LIMITS GET line.
+  * @param  buf : [out] destination.
+  * @param  cap : [in]  size of @p buf; 21 is always enough (sign + 19 digits + NUL).
+  * @retval Characters written, excluding the NUL; 0 (and buf[0] = 0 when cap > 0)
+  *         if @p buf is NULL or too small.
+  */
+size_t RunLogic_FormatI64(char *buf, size_t cap, int64_t v);
+
+/**
+  * @brief  Parse a decimal token into a 64-bit signed value.
+  * @note   Accepts an optional leading '+' or '-' then digits only; no spaces,
+  *         no trailing junk, nothing out of INT64_MIN..INT64_MAX. Hand-rolled for
+  *         the same reason as RunLogic_FormatI64().
+  * @retval 0 on success (*v set), -1 otherwise (*v untouched).
+  */
+int RunLogic_ParseI64(const char *s, int64_t *v);
 
 /**
   * @brief  Resistance (ohms, float) -> protocol milliohms (int32), saturating.

@@ -9,6 +9,39 @@
 
 #include "test/insulation.h"
 
+/* Operator-set minimum insulation resistance, milliohms (FW-11). Written only
+ * by Insulation_SetMinMohm(), which the protocol layer calls outside a run. */
+static int64_t s_limit_mohm = INSULATION_LIMIT_DEFAULT_MOHM;
+
+HAL_StatusTypeDef Insulation_SetMinMohm(int64_t mohm)
+{
+  uint32_t primask;
+
+  if (!Insulation_LimitValid(mohm))
+  {
+    return HAL_ERROR;
+  }
+  /* A 64-bit store is two 32-bit stores on Cortex-M4: keep an interrupt or a
+   * preempting task from ever reading half of it. */
+  primask = __get_PRIMASK();
+  __disable_irq();
+  s_limit_mohm = mohm;
+  __set_PRIMASK(primask);
+  return HAL_OK;
+}
+
+int64_t Insulation_GetMinMohm(void)
+{
+  int64_t  v;
+  uint32_t primask = __get_PRIMASK();
+
+  __disable_irq();
+  v = s_limit_mohm;
+  __set_PRIMASK(primask);
+  return v;
+}
+
+
 /**
   * @brief  Read the rail monitor (HV_Sense, U301) in volts at the ADC.
   * @param  hv : [in]  card; must be held (HvCard_Hold) by the caller.
@@ -80,8 +113,9 @@ static HAL_StatusTypeDef insulation_safe(HvCard_t *hv)
   *          control), to avoid hot-switching the contacts at 500 V.
   * @note   Sequence: force safe, connect dead, ramp HV to @p v_fraction, settle
   *         INSULATION_RAMP_MS, then read the LEAKAGE node (HV_RET, U302 - not
-  *         the rail). Verdict is TEST_FAIL when leakage voltage >=
-  *         INSULATION_V_PASS_MAX, else TEST_PASS. The card is always
+  *         the rail). Verdict is TEST_FAIL when leakage voltage >= the pass limit
+  *         for the configured minimum resistance (Insulation_PassLimitVoltsFor();
+  *         INSULATION_V_PASS_MAX at the default 10 Mohm), else TEST_PASS. The card is always
   *         de-energised, discharged and opened before return.
   * @param  board       : [in]  HV board index (0..BOARD_HV_COUNT-1).
   * @param  inject_pin  : [in]  1-based pin on the inject side (1..64).
@@ -107,7 +141,8 @@ static HAL_StatusTypeDef insulation_run(uint8_t board, uint8_t inject_pin,
 
   if (res == NULL || board >= (uint8_t)BOARD_HV_COUNT ||
       inject_pin < 1U || inject_pin > (uint8_t)HV_PINS_PER_SIDE ||
-      return_mask == 0ULL || v_fraction < INSULATION_MIN_FRACTION)
+      return_mask == 0ULL || v_fraction < INSULATION_MIN_FRACTION ||
+      Insulation_PassLimitVoltsFor(v_fraction, s_limit_mohm) < INSULATION_MIN_PASS_V)
   {
     return HAL_ERROR;
   }
@@ -221,7 +256,8 @@ static HAL_StatusTypeDef insulation_run(uint8_t board, uint8_t inject_pin,
     }
 
     /* Verdict: higher leakage voltage = worse insulation. */
-    res->verdict = (v_leak >= Insulation_PassLimitVolts(v_fraction)) ? TEST_FAIL : TEST_PASS;
+    res->verdict = (v_leak >= Insulation_PassLimitVoltsFor(v_fraction, s_limit_mohm))
+                     ? TEST_FAIL : TEST_PASS;
   }
 
 safe_exit:

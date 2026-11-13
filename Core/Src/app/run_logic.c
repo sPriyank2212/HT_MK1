@@ -12,12 +12,74 @@
 /* Largest float below 2^31: anything at or above this would overflow int32. */
 #define RL_F32_MAX_BELOW_2P31   2147483520.0f
 
-int32_t RunLogic_InsulMohmToWire(float mohm)
+/* Largest float below 2^63: anything at or above this would overflow int64. */
+#define RL_F32_MAX_BELOW_2P63   9223371487098961920.0f
+
+int64_t RunLogic_InsulMohmToWire(float mohm)
 {
   float v = mohm * 1.0e9f;                          /* Mohm -> mohm */
   if (!(v > 0.0f)) { return 0; }                    /* also catches NaN */
-  if (v >= RL_F32_MAX_BELOW_2P31) { return INT32_MAX; }
-  return (int32_t)v;
+  if (v >= RL_F32_MAX_BELOW_2P63) { return INT64_MAX; }
+  return (int64_t)v;
+}
+
+size_t RunLogic_FormatI64(char *buf, size_t cap, int64_t v)
+{
+  char     tmp[20];
+  uint8_t  n = 0U;
+  uint64_t mag;
+  size_t   i = 0U;
+
+  if (buf == NULL || cap == 0U) { return 0U; }
+  if (cap < 21U)                { buf[0] = '\0'; return 0U; }
+
+  if (v < 0)
+  {
+    buf[i++] = '-';
+    mag = (v == INT64_MIN) ? 9223372036854775808ULL : (uint64_t)(-v);
+  }
+  else
+  {
+    mag = (uint64_t)v;
+  }
+  do
+  {
+    tmp[n++] = (char)('0' + (mag % 10U));
+    mag /= 10U;
+  } while (mag != 0U);
+
+  while (n > 0U) { buf[i++] = tmp[--n]; }
+  buf[i] = '\0';
+  return i;
+}
+
+int RunLogic_ParseI64(const char *s, int64_t *v)
+{
+  uint64_t mag = 0U;
+  uint8_t  neg = 0U;
+
+  if (s == NULL || v == NULL || *s == '\0') { return -1; }
+  if (*s == '-')      { neg = 1U; s++; }
+  else if (*s == '+') { s++; }
+  if (*s == '\0') { return -1; }
+  while (*s != '\0')
+  {
+    if (*s < '0' || *s > '9') { return -1; }
+    if (mag > (UINT64_MAX - (uint64_t)(*s - '0')) / 10U) { return -1; }   /* overflow */
+    mag = mag * 10U + (uint64_t)(*s - '0');
+    s++;
+  }
+  if (neg != 0U)
+  {
+    if (mag > 9223372036854775808ULL) { return -1; }
+    *v = (mag == 9223372036854775808ULL) ? INT64_MIN : -(int64_t)mag;
+  }
+  else
+  {
+    if (mag > (uint64_t)INT64_MAX) { return -1; }
+    *v = (int64_t)mag;
+  }
+  return 0;
 }
 
 int RunLogic_ResMohmToWire(float ohm, int32_t *out)

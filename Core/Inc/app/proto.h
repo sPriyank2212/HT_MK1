@@ -75,7 +75,7 @@ void Proto_RxByte(uint8_t ch);
 void Proto_EvtProgress(uint16_t done, uint16_t total);
 void Proto_EvtCont(uint16_t hi, uint16_t lo, const char *verdict);
 void Proto_EvtRes(uint16_t hi, uint16_t lo, int32_t milliohms, const char *verdict);
-void Proto_EvtInsul(uint16_t net, int32_t leak_mohm, const char *verdict);
+void Proto_EvtInsul(uint16_t net, int64_t leak_mohm, const char *verdict);
 void Proto_EvtFault(const char *code, const char *text);
 void Proto_EvtDone(const char *what, uint16_t passed, uint16_t failed);
 void Proto_EvtState(const char *state);
@@ -207,9 +207,11 @@ uint8_t Proto_AbortRequested(void);
 int32_t Proto_LimitRMaxMohm(void);
 
 /**
-  * @brief  Configured insulation limit, milliohms.
+  * @brief  Configured minimum insulation resistance, milliohms.
+  * @note   int64_t: 10 MOhm = 1e10 mOhm overflows int32_t (max ~2.1 MOhm).
+  *         Owned by test/insulation.c; set with `LIMITS SET ins_min_mohm=`.
   */
-int32_t Proto_LimitInsMinMohm(void);
+int64_t Proto_LimitInsMinMohm(void);
 
 #ifdef __cplusplus
 }

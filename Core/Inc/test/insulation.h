@@ -106,6 +106,24 @@ typedef struct
 } InsulationResult_t;
 
 /**
+  * @brief  Set the minimum acceptable insulation resistance (FW-11,
+  *         `LIMITS SET ins_min_mohm`), in milliohms.
+  * @note   The verdict stays a voltage comparison on the leakage node; this
+  *         only moves its threshold (Insulation_PassLimitVoltsFor()). Default
+  *         is INSULATION_LIMIT_DEFAULT_MOHM (10 Mohm), identical to the board
+  *         decision. NOT safe to call while a test is running (64-bit store is
+  *         not atomic on Cortex-M4): the protocol layer refuses LIMITS SET with
+  *         ERR EBUSY during a run.
+  * @param  mohm : [in] limit in milliohms; must satisfy Insulation_LimitValid().
+  * @retval HAL_OK     stored.
+  * @retval HAL_ERROR  outside INSULATION_LIMIT_MIN_MOHM..MAX_MOHM; unchanged.
+  */
+HAL_StatusTypeDef Insulation_SetMinMohm(int64_t mohm);
+
+/** @brief  The limit in force, milliohms. */
+int64_t Insulation_GetMinMohm(void);
+
+/**
   * @brief  Apply a controlled stress between two conductors on one HV board and
   *         measure. v_fraction sets the HV DAC (0.0..1.0 of full scale).
   * @param  board       HV board index (0..BOARD_HV_COUNT-1)

@@ -10,8 +10,11 @@
 #include "app/proto.h"
 #include "app/tasks.h"
 #include "app/log.h"
+#include "app/build_info.h"
+#include "app/run_logic.h"
 #include "bsp/board.h"
 #include "test/kelvin.h"
+#include "test/insulation.h"
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -37,13 +40,10 @@ static ProtoFixture_t s_fixture = PROTO_FIXTURE_NONE;
 static uint8_t  s_armed;
 static int32_t  s_hv_mv;
 static int32_t  s_lim_r_mohm   = 5000;    /* 5 ohm  */
-/* Insulation pass/fail is NOT configurable: the board decision is a fixed
- * go/no-go at 10 MOhm <-> 0.045 V on the HV_RET node (INSULATION_V_PASS_MAX in
- * test/insulation.h), nothing reads a user-set limit (FW-11). 10 MOhm is 1e10
- * mOhm, which does not fit this int32 mOhm field (max 2.147 MOhm), so the field
- * reports INT32_MAX = "fixed, at/above range". The old default 10000000 was
- * commented "10 Mohm" but is really 10 kOhm. */
-static const int32_t s_lim_ins_mohm = INT32_MAX;
+/* The minimum insulation resistance (FW-11) lives in test/insulation.c
+ * (Insulation_SetMinMohm / Insulation_GetMinMohm) so the verdict and the limit
+ * can never disagree. It is 64-bit milliohms: 10 MOhm = 1e10 mOhm, which does not
+ * fit int32 (max 2.147 MOhm). */
 static volatile uint8_t s_busy;    /* a whole-run command is executing */
 static volatile uint8_t s_abort;   /* operator asked the run to stop    */
 
@@ -134,9 +134,12 @@ void Proto_EvtRes(uint16_t hi, uint16_t lo, int32_t milliohms, const char *verdi
              (long)milliohms, verdict);
 }
 
-void Proto_EvtInsul(uint16_t net, int32_t leak_mohm, const char *verdict)
+void Proto_EvtInsul(uint16_t net, int64_t leak_mohm, const char *verdict)
 {
-  proto_emit('!', "INSUL %u %ld %s", (unsigned)net, (long)leak_mohm, verdict);
+  char buf[24];
+
+  (void)RunLogic_FormatI64(buf, sizeof buf, leak_mohm);
+  proto_emit('!', "INSUL %u %s %s", (unsigned)net, buf, verdict);
 }
 
 void Proto_EvtFault(const char *code, const char *text)
@@ -253,7 +256,7 @@ uint8_t  Proto_AbortRequested(void) { return s_abort; }
 uint8_t  Proto_HvArmed(void)      { return s_armed; }
 void     Proto_ClearArm(void)     { s_armed = 0U; }
 int32_t  Proto_LimitRMaxMohm(void)   { return s_lim_r_mohm; }
-int32_t  Proto_LimitInsMinMohm(void) { return s_lim_ins_mohm; }
+int64_t  Proto_LimitInsMinMohm(void) { return Insulation_GetMinMohm(); }
 
 int Proto_NetlistGet(uint16_t i, uint16_t *hi, uint16_t *lo)
 {
@@ -463,7 +466,7 @@ static void proto_exec(char *line)
   }
   else if (strcmp(t[0], "ID") == 0)
   {
-    proto_emit('<', "ID HT_MK1 fw=0.1.0 proto=1");
+    proto_emit('<', "ID HT_MK1 fw=0.1.0 proto=1 build=%s", BuildInfo_Stamp());
   }
   else if (strcmp(t[0], "STATUS") == 0)
   {
@@ -697,24 +700,52 @@ static void proto_exec(char *line)
   {
     if (strcmp(t[1], "GET") == 0)
     {
-      proto_emit('<', "LIMITS r_max_mohm=%ld ins_min_mohm=%ld",
-                 (long)s_lim_r_mohm, (long)s_lim_ins_mohm);
+      char ins_buf[24];
+
+      (void)RunLogic_FormatI64(ins_buf, sizeof ins_buf, Insulation_GetMinMohm());
+      proto_emit('<', "LIMITS r_max_mohm=%ld ins_min_mohm=%s",
+                 (long)s_lim_r_mohm, ins_buf);
     }
     else if (strcmp(t[1], "SET") == 0)
     {
-      uint8_t i;
+      /* All-or-nothing: parse and validate every key first, apply only if the
+       * whole command is acceptable, so a refused ins_min_mohm can never leave
+       * r_max_mohm half-changed (and the reply always tells the truth). */
+      uint8_t i, have_r = 0U, have_ins = 0U, bad = 0U;
+      long    r_new = 0;
+      int64_t ins_new = 0;
+
       for (i = 2U; i < n; i++)
       {
-        if (strncmp(t[i], "r_max_mohm=", 11U) == 0 &&
-            proto_int(&t[i][11], &a) == 0) { s_lim_r_mohm = (int32_t)a; }
+        if (strncmp(t[i], "r_max_mohm=", 11U) == 0)
+        {
+          if (proto_int(&t[i][11], &a) == 0) { r_new = a; have_r = 1U; } else { bad = 1U; }
+        }
         else if (strncmp(t[i], "ins_min_mohm=", 13U) == 0)
         {
-          /* Accepted for GUI compatibility but deliberately ignored: the
-           * insulation limit is fixed (see s_lim_ins_mohm). A LIMITS GET
-           * read-back shows the fixed value, not what was sent. */
+          if (RunLogic_ParseI64(&t[i][13], &ins_new) == 0) { have_ins = 1U; } else { bad = 1U; }
         }
       }
-      proto_emit('<', "OK");
+      if (bad != 0U)
+      {
+        proto_err("ESYNTAX", "LIMITS SET value is not an integer");
+      }
+      else if (have_ins != 0U && s_busy != 0U)
+      {
+        /* Changing the pass threshold between two nets of one run would judge
+         * them against different limits. */
+        proto_err("EBUSY", "insulation limit cannot change during a run");
+      }
+      else if (have_ins != 0U && !Insulation_LimitValid(ins_new))
+      {
+        proto_err("ERANGE", "ins_min_mohm must be 100000000..40000000000");
+      }
+      else
+      {
+        if (have_r != 0U)   { s_lim_r_mohm = (int32_t)r_new; }
+        if (have_ins != 0U) { (void)Insulation_SetMinMohm(ins_new); }
+        proto_emit('<', "OK");
+      }
     }
     else
     {
