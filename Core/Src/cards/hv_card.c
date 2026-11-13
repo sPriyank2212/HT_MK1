@@ -39,8 +39,14 @@ static void hv_bus_claim(HvCard_t *hv)
   }
   if (hv->bus_depth == 0U)
   {
-    HAL_GPIO_WritePin(hv->cfg.en_port, hv->cfg.en_pin, GPIO_PIN_SET);
-    HAL_Delay(HV_BUS_ENABLE_SETTLE_MS);
+    /* A line shared with another card (HV1 + Matrix on EN1): that card must be
+     * off the bus BEFORE this one is put on, or both answer the same address. */
+    if (hv->cfg.pre_enable == NULL ||
+        hv->cfg.pre_enable(hv->cfg.pre_enable_ctx) == HAL_OK)
+    {
+      HAL_GPIO_WritePin(hv->cfg.en_port, hv->cfg.en_pin, GPIO_PIN_SET);
+      HAL_Delay(HV_BUS_ENABLE_SETTLE_MS);
+    }
   }
   hv->bus_depth++;
 }

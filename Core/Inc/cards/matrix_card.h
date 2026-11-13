@@ -155,9 +155,9 @@ typedef enum
  * that bus straps its expanders to the same 0x20..0x27, so the Matrix Card
  * must be switched onto the bus the same way each HV card is: one dedicated
  * enable line, asserted only for the duration of a transaction. This one is
- * HV_Card_EN1 (J1 is the Matrix Card's own connector - see PROJECT_LOG HW-09),
- * reused here under its own name so this file does not need to know about the
- * HV card slots. */
+ * HV_Card_EN1 (J1: shared with HV Card 1, PROJECT_LOG HW-15 - see
+ * MatrixCard_Deselect()), reused here under its own name so this file does not
+ * need to know about the HV card slots. */
 #define MATRIX_BUS_EN_SETTLE_MS  1U
 
 /* -------------------------------------------------------------------------- */
@@ -233,6 +233,22 @@ void MatrixCard_BusRelease(MatrixCard_t *m);
   *         go through here first.
   */
 HAL_StatusTypeDef MatrixCard_SelectSegment(MatrixCard_t *m, MatrixSeg_t seg);
+
+/**
+  * @brief  Switch BOTH Matrix I2C segments off the shared bus.
+  * @note   The Matrix Card and HV Card 1 share HV_Card_EN1 (HW-15), and every card
+  *         straps its expanders to 0x20..0x27. While EN1 is high, whichever
+  *         Matrix segment is selected is on the bus together with HV Card 1, so a
+  *         write meant for one lands on both - and the Matrix's "all enables
+  *         off" word (0xFFFF, active-low) means "close every relay" to an HV
+  *         expander. Call this BEFORE raising a line shared with the Matrix
+  *         (hv_card.c does, through HvCardCfg_t.pre_enable). The next
+  *         MatrixCard_SelectSegment() re-selects normally. Local to the Control
+  *         Card (U21 on I2C3): needs no bus claim.
+  * @retval HAL_OK on success (also when already off), HAL_ERROR on NULL, else the
+  *         propagated I2C status.
+  */
+HAL_StatusTypeDef MatrixCard_Deselect(MatrixCard_t *m);
 
 /**
   * @brief  Mirror every bank enable onto the sense array.

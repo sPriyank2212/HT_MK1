@@ -62,6 +62,14 @@ typedef struct
    * risks colliding with the Matrix Card or another HV board on the same bus. */
   GPIO_TypeDef      *en_port;          uint16_t en_pin;
 
+  /* Optional: runs each time this card's enable is about to go high (outermost
+   * claim only). Used when the enable line is SHARED with another card - HV Card 1
+   * shares HV_Card_EN1 with the Matrix Card (HW-15) - to take that other card off
+   * the bus first. If it does not return HAL_OK the enable is NOT raised (the
+   * card stays unreachable and the access fails, rather than two cards answering
+   * the same address). NULL = no sharing. */
+  HAL_StatusTypeDef (*pre_enable)(void *ctx);   void *pre_enable_ctx;
+
   SPI_HandleTypeDef *spi;                 /* isolated SPI bus (DAC8830 + ADCs)  */
   GPIO_TypeDef      *dac_cs_port;      uint16_t dac_cs_pin;   /* DAC8830 CS      */
   GPIO_TypeDef      *adc_rail_cs_port; uint16_t adc_rail_cs_pin; /* U301 HV_Sense */

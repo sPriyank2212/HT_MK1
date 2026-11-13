@@ -300,12 +300,14 @@ static HAL_StatusTypeDef board_init_frontend(void)
   return Frontend_Init(&g_frontend, &cfg);
 }
 
-/* HV_Card_EN1..4 (Control_Card-5 /uC/ + /Isolator/): one bus-segment enable
- * per physical slot, J1..J4. J1 is the Matrix Card's own connector (it carries
- * LO_S1-4, HI_S1-4, the SPI1 bus and IN - see PROJECT_LOG HW-09), not a free
- * HV slot - EN1 is used directly by MatrixCard_Init() (board_init_matrix()
- * above), not through this table. So board index 0 maps to slot 1 (J2/EN2)
- * below: at most 3 HV boards fit alongside the Matrix Card. */
+/* HV_Card_EN1..4 (Control_Card /uC/ + /Isolator/): one bus-segment enable per
+ * physical slot, J1..J4. HW-15 (decided by the hardware owner, 2026-11-13): the
+ * Control Card's J1 (the Matrix Card's J101) is SHARED between the Matrix Card
+ * and HV Card 1; J2 carries HV Card 2, J3 HV Card 3, J4 HV Card 4. So HV board
+ * index i is on slot i: EN1 (PC5) for HV1 .. EN4 (PA9) for HV4, and EN1 is
+ * ALSO the Matrix Card's enable (MatrixCard_Init()). Both cards strap their
+ * expanders to 0x20..0x27, so board_init_hv() installs a pre-enable hook that
+ * switches the Matrix segments off the bus before EN1 goes high for HV1. */
 static GPIO_TypeDef * const board_hv_en_port[4] = {
   HV_CARD_EN1_GPIO_Port, HV_CARD_EN2_GPIO_Port,
   HV_CARD_EN3_GPIO_Port, HV_CARD_EN4_GPIO_Port
@@ -314,11 +316,21 @@ static const uint16_t board_hv_en_pin[4] = {
   HV_CARD_EN1_Pin, HV_CARD_EN2_Pin, HV_CARD_EN3_Pin, HV_CARD_EN4_Pin
 };
 
-/* board_init_hv() maps board index -> slot idx+1, so at most 3 boards fit
- * (idx 0..2 -> J2..J4) once J1 is reserved for the Matrix Card. */
-#if BOARD_HV_COUNT > 3
-#error "BOARD_HV_COUNT > 3 needs J1 to also serve as an HV slot - see HW-09"
+/* board_init_hv() maps board index -> slot idx (J1..J4), so at most 4 boards. */
+#if BOARD_HV_COUNT > 4
+#error "BOARD_HV_COUNT > 4: the Control Card has four HV slots (J1..J4)"
 #endif
+
+/**
+  * @brief  HvCardCfg_t.pre_enable for a slot that shares its enable with the
+  *         Matrix Card: take both Matrix segments off the shared I2C bus.
+  * @param  ctx : [in] unused.
+  */
+static HAL_StatusTypeDef board_matrix_off_bus(void *ctx)
+{
+  (void)ctx;
+  return MatrixCard_Deselect(&g_matrix);
+}
 
 /**
   * @brief  Instantiate and bind one HV card at board index @p idx.
@@ -329,18 +341,22 @@ static const uint16_t board_hv_en_pin[4] = {
   *         (+5V_ISO). Expander straps are confirmed (HV_Card sheet 5); some CS lines are placeholders pending the
   *         connector netlist (TODO).
   * @param  idx : [in] HV board index into g_hv[] (0..BOARD_HV_COUNT-1); maps to
-  *                    physical slot idx+1 (J2..J5) - see board_hv_en_port above.
+  *                    physical slot idx (J1..J4, EN1..EN4) - see board_hv_en_port.
   * @retval HAL status from HvCard_Init().
   */
 static HAL_StatusTypeDef board_init_hv(uint8_t idx)
 {
   HvCardCfg_t cfg = {0};
   uint8_t i;
-  uint8_t slot = (uint8_t)(idx + 1U);   /* 0 -> J2/EN2, reserving J1 for Matrix */
+  uint8_t slot = idx;                   /* HV1 -> J1/EN1 (shared with Matrix) ... HV4 -> J4/EN4 */
 
   cfg.i2c = BOARD_HV_I2C;
   cfg.en_port = board_hv_en_port[slot];
   cfg.en_pin  = board_hv_en_pin[slot];
+  if (cfg.en_port == g_matrix.en_port && cfg.en_pin == g_matrix.en_pin)
+  {
+    cfg.pre_enable = board_matrix_off_bus;   /* HW-15: shared with the Matrix Card */
+  }
   for (i = 0U; i < HV_MCP_PER_SIDE; i++)
   {
     cfg.inject_strap[i] = i;       /* 0x20..0x23 - confirmed vs HV_Card sheet 5 */
@@ -530,13 +546,15 @@ uint8_t Board_ScanBus(BoardBusEntry_t *out, uint8_t max)
    * that is not fitted simply NAKs and is reported as a fault. Names are
    * single tokens (wire format: "!BUSLINE <name> ok|fault"). */
   {
-    static const char *const hv_names[3][2U * HV_MCP_PER_SIDE] = {
+    static const char *const hv_names[4][2U * HV_MCP_PER_SIDE] = {
       { "HV1_HS1", "HV1_HS2", "HV1_HS3", "HV1_HS4",
         "HV1_LS1", "HV1_LS2", "HV1_LS3", "HV1_LS4" },
       { "HV2_HS1", "HV2_HS2", "HV2_HS3", "HV2_HS4",
         "HV2_LS1", "HV2_LS2", "HV2_LS3", "HV2_LS4" },
       { "HV3_HS1", "HV3_HS2", "HV3_HS3", "HV3_HS4",
         "HV3_LS1", "HV3_LS2", "HV3_LS3", "HV3_LS4" },
+      { "HV4_HS1", "HV4_HS2", "HV4_HS3", "HV4_HS4",
+        "HV4_LS1", "HV4_LS2", "HV4_LS3", "HV4_LS4" },
     };
     uint8_t c;
     for (c = 0U; c < (uint8_t)BOARD_HV_COUNT; c++)

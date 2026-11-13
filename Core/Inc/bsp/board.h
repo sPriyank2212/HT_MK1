@@ -33,7 +33,8 @@ extern "C" {
 #include "drivers/ads124s08.h"
 #include "drivers/ds18b20.h"
 
-/* Number of HV boards fitted in this build (1..4). TODO: confirm. */
+/* Number of HV boards fitted in this build (1..4). HV card N is on Control Card
+ * slot N (J1..J4, HV_Card_EN1..EN4); J1 is shared with the Matrix Card (HW-15). */
 #ifndef BOARD_HV_COUNT
 #define BOARD_HV_COUNT        1
 #endif

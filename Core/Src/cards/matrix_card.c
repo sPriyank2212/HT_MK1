@@ -210,6 +210,36 @@ HAL_StatusTypeDef MatrixCard_SelectSegment(MatrixCard_t *m, MatrixSeg_t seg)
   return HAL_OK;
 }
 
+HAL_StatusTypeDef MatrixCard_Deselect(MatrixCard_t *m)
+{
+  uint16_t b1, b2;
+
+  if (m == NULL)
+  {
+    return HAL_ERROR;
+  }
+  if (m->seg == (MatrixSeg_t)0xFF)
+  {
+    return HAL_OK;                         /* already off the bus */
+  }
+
+  b1 = (uint16_t)(1U << MATRIX_SEL_BUFF1_OE_BIT);
+  b2 = (uint16_t)(1U << MATRIX_SEL_BUFF2_OE_BIT);
+
+#if (MATRIX_SEG_OE_ACTIVE_HIGH != 0)
+  m->sel_cache &= (uint16_t)~(b1 | b2);    /* OE low  = buffer disabled */
+#else
+  m->sel_cache |= (uint16_t)(b1 | b2);     /* OE high = buffer disabled */
+#endif
+
+  if (matrix_flush_select(m) != HAL_OK)
+  {
+    return HAL_ERROR;
+  }
+  m->seg = (MatrixSeg_t)0xFF;              /* next SelectSegment() must act */
+  return HAL_OK;
+}
+
 /**
   * @brief  Bring up U21 and all eight enable expanders, and open every mux.
   * @note   Order matters twice over. U21 comes first because nothing else is
