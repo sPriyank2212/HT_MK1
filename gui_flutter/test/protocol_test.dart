@@ -469,6 +469,55 @@ void main() {
           isEmpty);
     });
 
+    test('LIMITS: the insulation limit is 64-bit, defaults to 10 MΩ, and is validated',
+        () async {
+      sim = await SimulatorServer.start(
+        makeScenario('pass', nets: 4),
+        port: 0,
+        interval: const Duration(milliseconds: 1),
+      );
+      cm = ConnectionManager(
+          onEvent: (_) {}, logDir: Directory.systemTemp);
+      await cm.connect(port: sim.port);
+
+      // Default is the board decision: 10 MΩ = 1e10 mΩ, which does not fit int32.
+      var r = await cm.execute(commands.limitsGet());
+      expect(r, isA<LimitsReply>());
+      expect((r as LimitsReply).insMinMohm, 10000000000);
+      expect(r.insMinMohm, greaterThan(0x7FFFFFFF));
+
+      // A valid 20 MΩ limit round-trips.
+      r = await cm.execute(commands.limitsSet(5000, 20000000000));
+      expect(r, isA<Ok>());
+      r = await cm.execute(commands.limitsGet());
+      expect((r as LimitsReply).insMinMohm, 20000000000);
+      expect(r.rMaxMohm, 5000);
+
+      // Out of range is REFUSED (ERANGE), not clamped, and changes nothing - 0 would
+      // make every net pass; 41 MΩ is beyond what the leakage ADC can resolve.
+      for (final bad in [0, 99999999, 40000000001, 100000000000]) {
+        r = await cm.execute(commands.limitsSet(7777, bad));
+        expect(r, isA<ErrReply>(), reason: 'ins_min_mohm=$bad');
+        expect((r as ErrReply).code, 'ERANGE');
+      }
+      r = await cm.execute(commands.limitsGet());
+      expect((r as LimitsReply).insMinMohm, 20000000000);
+      expect(r.rMaxMohm, 5000, reason: 'a refused SET must not half-apply r_max');
+
+      // The range edges are accepted.
+      expect(await cm.execute(commands.limitsSet(5000, 100000000)), isA<Ok>());
+      expect(await cm.execute(commands.limitsSet(5000, 40000000000)), isA<Ok>());
+    });
+
+    test('a 64-bit !INSUL reading parses (10 MΩ = 1e10 mΩ)', () {
+      expect(parseLine('!INSUL 5 10000000000 pass'),
+          const InsulResult(net: 5, leakMohm: 10000000000, status: InsulStatus.pass));
+      expect(parseLine('!INSUL 5 9999000000000 pass'),
+          const InsulResult(net: 5, leakMohm: 9999000000000, status: InsulStatus.pass));
+      expect(parseLine('<LIMITS r_max_mohm=5000 ins_min_mohm=10000000000'),
+          const LimitsReply(rMaxMohm: 5000, insMinMohm: 10000000000));
+    });
+
     test('BUS SCAN reports one line per probed device, ends with !DONE bus',
         () async {
       final events = <Message>[];

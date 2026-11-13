@@ -122,7 +122,7 @@ class ProgramView extends StatelessWidget {
       // declaring a card count to cross-check against the fitted stack
       // before a run (`stackMatch()`) - that stays a separate concept from
       // this per-net listing. "Insul min" reads live from
-      // `s.limits.insMinMohm` (GUI-34, FW-11) - same value and conversion
+      // `s.limits.insMinMohm` (GUI-34, FW-11, now configurable) - same value and conversion
       // as the HV view's "Limit" band item.
       HtPanel(
         header: [
@@ -424,14 +424,14 @@ class _DiagViewState extends State<DiagView> {
   // milliohms displayed as ohms (÷1000), same convention as r_max_mohm's use
   // elsewhere (e.g. the Calibration panel's reference-resistor readout).
   double? _rMaxOhm;
-  double? _insMinOhm;
+  double? _insMinMohm; // megohms (the firmware limit is 100 kΩ..40 MΩ, see insulation_logic.h)
 
   @override
   Widget build(BuildContext context) {
     final s = widget.s;
     if (s.limits != null && _rMaxOhm == null) {
       _rMaxOhm = s.limits!.rMaxMohm / 1000.0;
-      _insMinOhm = s.limits!.insMinMohm / 1000.0;
+      _insMinMohm = s.limits!.insMinMohm / 1.0e9;
     }
     final panels = <Widget>[
       _busMap(context, s),
@@ -988,7 +988,7 @@ class _DiagViewState extends State<DiagView> {
     final t = context.type;
     final synced = s.limits != null;
     final rMax = _rMaxOhm ?? 5.0;
-    final insMin = _insMinOhm ?? 10.0;
+    final insMin = (_insMinMohm ?? 10.0).clamp(0.1, 40.0).toDouble();
 
     return HtPanel(
       header: [
@@ -1032,17 +1032,17 @@ class _DiagViewState extends State<DiagView> {
               Expanded(
                 child: HtSlider(
                   value: insMin,
-                  min: 0,
-                  max: 20000,
-                  step: 100,
-                  onChanged: (v) => setState(() => _insMinOhm = v),
+                  min: 0.1,
+                  max: 40,
+                  step: 0.1,
+                  onChanged: (v) => setState(() => _insMinMohm = v),
                 ),
               ),
               const SizedBox(width: 11),
               SizedBox(
                 width: 90,
                 child:
-                    Text('${insMin.toStringAsFixed(0)} Ω', style: t.out(c.ink)),
+                    Text('${insMin.toStringAsFixed(1)} MΩ', style: t.out(c.ink)),
               ),
             ]),
           ),
@@ -1053,7 +1053,7 @@ class _DiagViewState extends State<DiagView> {
               variant: BtnVariant.primary,
               onTap: () => s.setLimits(
                 (rMax * 1000).round(),
-                (insMin * 1000).round(),
+                (insMin * 1.0e9).round(),
               ),
             ),
           ]),

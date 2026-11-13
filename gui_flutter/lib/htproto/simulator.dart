@@ -42,7 +42,12 @@ String simBuildStamp() {
 
 /// Simulator defaults, standing in for instrument configuration.
 const int defaultLimitRMaxMohm = 1000;
-const int defaultLimitInsMinMohm = 100;
+/// Insulation limit, milliohms. 10 MΩ = 1e10 mΩ - 64-bit on the wire. The range
+/// mirrors the firmware's INSULATION_LIMIT_MIN/MAX_MOHM (insulation_logic.h):
+/// outside it LIMITS SET is refused with ERR ERANGE, never clamped.
+const int defaultLimitInsMinMohm = 10000000000;
+const int insLimitMinMohm = 100000000; // 100 kΩ
+const int insLimitMaxMohm = 40000000000; // 40 MΩ
 /// Matches the real firmware's kelvin.h constants (KELVIN_FORCE_CURRENT_A,
 /// KELVIN_CAL_R_REF_OHM/_TOL_PCT) and its CAL GET reply shape - see
 /// Core/Src/app/proto.c. Kept in sync by hand; there is no shared source
@@ -419,8 +424,20 @@ class InstrumentSim {
     if (!rTok.startsWith('r_max_mohm=') || !insTok.startsWith('ins_min_mohm=')) {
       return 'ERR ESYNTAX expected r_max_mohm=<int> ins_min_mohm=<int>';
     }
-    _st.rMaxMohm = int.parse(rTok.split('=')[1]);
-    _st.insMinMohm = int.parse(insTok.split('=')[1]);
+    // All-or-nothing, like the firmware: validate both before applying either.
+    final r = int.tryParse(rTok.split('=')[1]);
+    final ins = int.tryParse(insTok.split('=')[1]);
+    if (r == null || ins == null) {
+      return 'ERR ESYNTAX LIMITS SET value is not an integer';
+    }
+    if (_st.state == State.running) {
+      return 'ERR EBUSY insulation limit cannot change during a run';
+    }
+    if (ins < insLimitMinMohm || ins > insLimitMaxMohm) {
+      return 'ERR ERANGE ins_min_mohm must be $insLimitMinMohm..$insLimitMaxMohm';
+    }
+    _st.rMaxMohm = r;
+    _st.insMinMohm = ins;
     return 'OK';
   }
 
