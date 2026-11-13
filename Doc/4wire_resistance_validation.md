@@ -609,7 +609,7 @@ PA0 and PC7 are therefore free. **Minimum viable wiring is two signals** — `SC
    └──────────────┘         3V3 ──[PU]─►│GAIN0        │
                             3V3 ──[PU]─►│GAIN1        │
                                         └──────────────┘
-                     LPUART1 PA2/PA3 → ST-LINK VCP, 115200 8N1, for the log
+                     USART2 PA2/PA3 → MCP2221A USB-UART (Nucleo: ST-LINK VCP), 115200 8N1, for the log
 ```
 
 ### ⚠ The driver must be TOLD the strapped gain

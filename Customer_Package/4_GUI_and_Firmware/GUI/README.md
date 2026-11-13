@@ -9,7 +9,7 @@
 
 * Windows 10 or 11, 64-bit. Nothing to install - double-click. (It unpacks to a temporary folder on each
   launch, so the first window takes a second or two.)
-* Real instrument: connect the instrument's serial port (the ST-LINK virtual COM port, 115200 8N1), open the
+* Real instrument: connect the instrument's USB cable (it appears as a COM port - the MCP2221A USB-UART, 115200 8N1), open the
   **port selector** in the status bar, pick the port and press **Connect**.
 * The window opens maximized. The footer shows the GUI build time and, once connected, the firmware.
 

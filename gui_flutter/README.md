@@ -67,7 +67,7 @@ Two ~7.8 MB portable executables in `dist\`:
 
 | | |
 |---|---|
-| `HT_MK1_GUI.exe` | connects to the instrument on the ST-LINK VCP (`--serial auto`) |
+| `HT_MK1_GUI.exe` | connects to the instrument on its USB-UART (`--serial auto`) |
 | `HT_MK1_GUI_demo.exe` | built-in simulator, no hardware |
 
 Copy either anywhere and double-click. Neither needs Flutter, Python, or any
@@ -101,8 +101,8 @@ used to catch its relative-`sessions\` bug.
 ## Running it
 
 ```
-ht_mk1_gui.exe --serial COM7          talk to the instrument over the VCP
-ht_mk1_gui.exe --serial auto          find the ST-LINK VCP automatically
+ht_mk1_gui.exe --serial COM7          talk to the instrument over its USB-UART
+ht_mk1_gui.exe --serial auto          find the instrument's USB-UART automatically (MCP2221A, or a Nucleo's ST-LINK VCP)
 ht_mk1_gui.exe --list-ports           which COM ports exist
 ht_mk1_gui.exe --sim                  demo mode: built-in simulator
 ht_mk1_gui.exe --host 10.0.0.4 --port 46000
@@ -134,9 +134,9 @@ bar: a dropdown, a refresh button, and Connect.
 
 ## Testing against the Nucleo
 
-The firmware in this repo already speaks the protocol, on **LPUART1 (PA2/PA3)
-at 115200 8N1** — which on a NUCLEO-G474RE is the ST-LINK Virtual COM Port, so
-it shows up as an ordinary COM port. See `Log_HwInit_LPUART1()` in
+The firmware in this repo already speaks the protocol, on **USART2 (PA2/PA3)
+at 115200 8N1** — the MCP2221A USB-UART on the Control Card, and on a NUCLEO-G474RE the ST-LINK Virtual COM Port (same pins), so
+it shows up as an ordinary COM port. See `Log_HwInit_Console()` in
 `Core/Src/app/log.c` and `Core/Src/app/proto.c`.
 
 Checked against the firmware, and compatible:

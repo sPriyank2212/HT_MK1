@@ -2,18 +2,18 @@ HT_MK1 Customer Package - file manifest
 firmware commit fe73672511036799111f0cf9e355655d05dcd6d4
 
 SHA-256                                                           size  file
-74332b221efd755eb1aee671a168c8badf93886ba2f2079ff30de5187dde8ea2     662908  0_Documents/1_System_Overview.docx
-6cd7e46736439971f127ebe3f419c628faa2bae43ae61bba5a62ffc5fcc0fad4     714794  0_Documents/1_System_Overview.pdf
-5b9b0ef2a4ba9f478be25551011f31a542754eb89ee490d2ffdb8c983f740eb6    1733165  0_Documents/2_User_Manual.docx
-3d843b941f94b02ae03ec59bf258d174bf111fe2120ad2ef97275aee17ee8306    1594625  0_Documents/2_User_Manual.pdf
-ffe62b3e30b8575fb614865cf02ad753bf07675f0f6361ee9a2c311d9a846393    2281784  0_Documents/3_GUI_Functional_Description.docx
-ea35ff460837e17f6e1bf5cfc75c6b136a26ea563863ecf032df70ed78236891    2200684  0_Documents/3_GUI_Functional_Description.pdf
-450b7866e4b2c9593f082a65314db9ebf4a62c93907db726968d81294575fbe0     255281  0_Documents/4_Flashing_Procedure.docx
-bf1f63d02cad1e165e2e1f9d20f6f8546b491c646ec81959067501a5d0c5be6c     459649  0_Documents/4_Flashing_Procedure.pdf
+3257f42d6854e73e11e215b2259a4e30c1295f8720766d27462d6cf46fb4ee2c     662827  0_Documents/1_System_Overview.docx
+a233201152e5fbd217be96c8a402ac5396f3095029a2f9404d717179e1371c94     714832  0_Documents/1_System_Overview.pdf
+4959630aca78752925a8f623a63b91974ee8e28363f1f1de3262c4f2337dd733    1733189  0_Documents/2_User_Manual.docx
+8a9d76473bbd2fe3e6491a0861bdf3e7bfe72da86bbbe5ba274bf33131108bad    1594635  0_Documents/2_User_Manual.pdf
+76ab09811d6bc44bee475d1fe24d786ee9ddfc36b150f6336ad4bcc171be0e52    2281269  0_Documents/3_GUI_Functional_Description.docx
+19378bb6db15f80ceae54ab74479dff42f36d95e3bdc182965151155fd2d0e39    2200601  0_Documents/3_GUI_Functional_Description.pdf
+91baeb116f94f7cdfdc687ba8e2264c99d85a73a46651ba4fac9b215c2f59ec6     255250  0_Documents/4_Flashing_Procedure.docx
+d8ae0699433fa8ca111c7aba98a045cfc7f6a04a3ef885eb00eb5f2707e0c378     459607  0_Documents/4_Flashing_Procedure.pdf
 65f104ed5f67ae8f2d9760a1579c5bcfe0bd694a16f66e91affbc1bac2a286cf      96980  0_Documents/5_Functional_Test_Procedure.docx
 3f7914012b09edfc79cf1f07b96531c75df8225501403486df29183e7637a36f     346136  0_Documents/5_Functional_Test_Procedure.pdf
-eb45f94bf6e03f62fca59ad86bd411324933324d91dee72c4673c000d407e895     110847  0_Documents/6_Code_Walkthrough.docx
-64964a7c7192f4f0e905986c011a39f9ba9668367344088754884361bdc2db2b     450344  0_Documents/6_Code_Walkthrough.pdf
+ffa619934a8abe8f8ae5be00f8389e4d47425f54c6bd2526d4f9097776e82730     110894  0_Documents/6_Code_Walkthrough.docx
+aeaa6e6f45c95f6e3c5558e805fb7808d81223860f610d1ec2b8b82090fffe17     450434  0_Documents/6_Code_Walkthrough.pdf
 45c922c6f7be986ca683bc167fcdafae187ab93ff3852b144d4f7942b0c4b005       1154  0_Documents/README.md
 781740b4e5755148640d89507936a9fe24a3ffdb16e441b2d40321566f3c1dfe      11815  1_Test_Harness_Plan/Example_Netlists/HW-01_dsub_family_mated_pairs.xlsx
 f917319fc3d4ac7a776f9fae91ff423f61fff06bf51f328c8dd00b835620392d       8089  1_Test_Harness_Plan/Example_Netlists/HW-02_circular_connectors.xlsx
@@ -44,5 +44,5 @@ b96845e7ed87d9b539c945952da14fa37b38f2f6d4f6b021aa61bf283bba7263    1919444  4_G
 4c3d56dda6d2e33bb4b81b761918a7beb3e5d19e9cfe9fb6e04d8934dc141cde     208814  4_GUI_and_Firmware/Firmware/HT_MK1.hex
 e10ca699f1dfbb8a84feb3af2a68dec8c9b187f986ea3d3c7b31b8496d7e139d    8768507  4_GUI_and_Firmware/GUI/HT_MK1_GUI.exe
 14ee944077a917dba1c25b2bdeaccae58289a7b22dce5a8d84cce36a22a4bea3    8768505  4_GUI_and_Firmware/GUI/HT_MK1_GUI_Demo.exe
-8d26cdbdafee08623d58ec51a12292e76b6383b05922a9677481f5c82dccc27b       1199  4_GUI_and_Firmware/GUI/README.md
+136ffd002692985b49fd30c12f833ee9f5ee33f7f067ce4125dcedbfbc522267       1193  4_GUI_and_Firmware/GUI/README.md
 89c18167a83b1ab331dde77d3d8462023309473e06bf066be59bbf6869c33e3d       1897  README.md

@@ -144,8 +144,8 @@ in the protocol does this.
                                        int32. r_max_mohm stays int32.
 
 >TEMP READ                     -> <OK started   read the Control Card's DS18B20 (U2, PA0)
->BUS SCAN                      -> <OK started   probes Matrix Card + ADS124S08 (confirmed
-                                       addresses only, not HV cards) - !BUSLINE per device,
+>BUS SCAN                      -> <OK started   probes Matrix Card + ADS124S08 + each HV card's 8 relay expanders (confirmed
+                                       addresses; HV names HVn_HS1..4 / HVn_LS1..4) - !BUSLINE per device,
                                        !DONE bus <ok_count> <fault_count>
 ```
 
@@ -316,7 +316,7 @@ anything. A 256×256 discovery scan takes tens of seconds.
                                         that assumption turned out not to match Continuity_TestPair's
                                         real behaviour.
 
-!BUSLINE <name> <ok|fault>             Answers BUS SCAN, one per device (2026-08-21, GUI-06).
+!BUSLINE <name> <ok|fault>             Answers BUS SCAN, one per device (2026-08-21, GUI-06; HV expanders added 2026-11-13 - names HVn_HS1..4 = 0x20..0x23, HVn_LS1..4 = 0x24..0x27, an unfitted card reports fault).
                                         Terminated by !DONE bus <ok_count> <fault_count>.
 
 !CAL_RESULT r_mohm=<int> ratiometric=<0|1> <pass|fail>   Answers CAL RUN (2026-08-21, GUI-06) -

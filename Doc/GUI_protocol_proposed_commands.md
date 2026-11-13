@@ -12,9 +12,12 @@ differ from two of the drafts below in real ways, not just naming):
   immediately after `MANUAL PATH`'s own one-shot read, on every exit path. Fixed the real gap
   instead: `MANUAL PATH` now reports the reading it already takes internally, via a new `!MANUAL`
   event.
-- **`BUS SCAN`** shipped scoped down from "every bus" to the Matrix Card + ADS124S08 only — the
-  HV cards' address straps are still unconfirmed (`hv_card.c`, BU-03), and reporting ok/fault
-  against them would have claimed a confidence this project doesn't have yet.
+- **`BUS SCAN`** shipped scoped down from "every bus" to the Matrix Card + ADS124S08 only. The HV
+  cards were left out at first because their address straps were unconfirmed (`hv_card.c`, BU-03) and
+  reporting ok/fault against them would have claimed a confidence this project didn't have. **Since
+  2026-11-13 it also probes each HV card's eight relay expanders** (`HVn_HS1..4` = 0x20..0x23,
+  `HVn_LS1..4` = 0x24..0x27), after the straps were read off the HV_Card sheet 5 address annotations.
+  A card that is not fitted reports `fault`. The HV DAC/ADCs (SPI2) are still not covered.
 - **`MANUAL SWEEP <hi>`** and **`CAL RUN <hi> <lo>`** shipped close to the drafts below — `CAL RUN`
   once HW-04 (the ratiometric R131 reference this section's write-up was waiting on) landed the
   same session.

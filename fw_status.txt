@@ -1,12 +1,32 @@
 ================================================================================
  HT_MK1  -  AUTOMATED HARNESS TEST SYSTEM  -  FIRMWARE STATUS
  MCU: STM32G474RET6 (Cortex-M4F, FreeRTOS, STM32CubeIDE / HAL)
- Last updated: 2026-08-22 (FW-15/FW-16, GUI-06: ratiometric resistance + new commands)
+ Last updated: 2026-11-13 (schematic update, USART2 console, HV straps confirmed, BUS SCAN HV)
 ================================================================================
  LIVE TRACKING IS PROJECT_LOG.md, NOT THIS FILE. This file is a snapshot of
  the architecture and driver status for quick orientation; open items, dates
  and decisions are tracked in PROJECT_LOG.md and may have moved on since the
  "Last updated" line above. If the two disagree, PROJECT_LOG.md wins.
+================================================================================
+ NEW (2026-11-13): schematic set updated + open software points closed.
+   - SCHEMATICS: new Control/Matrix/HV PDFs (real changes - see README "2026-11-13").
+     Control Card gained a "USB to UART" sheet (12 sheets): U12 MCP2221A on
+     USART2_TX/RX = PA2/PA3, USB Type-C J8, R4/R5 5.1k CC, JP3 USB_+5V_Jumper;
+     test points TP15-TP22; R83 10k pull-up on NRST.
+   - CONSOLE UART: the GUI/log link now runs on USART2 (log.c Log_HwInit_Console()
+     + USART2_IRQHandler, priority 5), not LPUART1. PA2/PA3 are the same pins; the
+     old LPUART1 helper reconfigured them AF12 after MX_USART2_UART_Init() had set
+     AF7 - the two inits fought over the pins. On a Nucleo-G474RE the same pins
+     still reach the ST-LINK VCP. GUI "--serial auto" now also finds the MCP2221A
+     (Microchip VID 0x04D8), not only an ST-LINK.
+   - HV EXPANDER STRAPS: confirmed from the HV_Card sheet 5 address annotations
+     (HS 0x20-0x23, LS 0x24-0x27); matches hv_card.c (inject i -> strap i, return
+     i -> strap i+4). BUS SCAN now probes them (HVn_HS1..4 / HVn_LS1..4, up to
+     BOARD_HV_COUNT cards, each alone via its HV_Card_ENx; unfitted = fault).
+   - I2C3 speed (FW-04): UNCHANGED, still 100 kHz (Timing 0x10B17DB5 @ 64 MHz =
+     about 104 kHz). 400 kHz needs a new timing word that has to be generated in
+     CubeMX and checked with a scope on the real isolated bus - bring-up (BU-03).
+   Compiled clean (-Wall -Wextra) with arm-none-eabi-gcc 14.3; NOT run on hardware.
 ================================================================================
  NEW (2026-10-23, PR-01): production-readiness fixes - see PROJECT_LOG.md.
    - insulation_run(): HV_Sense is read before each leakage reading (rail must be
@@ -54,10 +74,10 @@
      CONT RUN discover's inner loop. New CMD_MANUAL_SWEEP/run_manual_sweep().
    - BUS SCAN - probes every I2C device with a schematic-confirmed address
      (Matrix Card's 9 expanders + the ADS124S08 by identity check). New
-     Board_ScanBus() in bsp/board.c/.h. Deliberately does NOT probe the HV
-     cards - their address straps are still marked TODO-verify in
-     hv_card.c (BU-03), so reporting ok/fault there would claim a confidence
-     this project doesn't have yet.
+     Board_ScanBus() in bsp/board.c/.h. HV cards were left out at first and
+     are probed since 2026-11-13 (their straps were confirmed from the HV_Card
+     schematic, sheet 5): 8 relay expanders per card, HVn_HS1..4 / HVn_LS1..4.
+     An unfitted card reports fault. See the 2026-11-13 block above.
    - CAL RUN <hi> <lo> - a standalone Kelvin_MeasurePair on an operator-
      chosen pair, reporting whether the ratiometric R131 reference actually
      worked for that one reading (KelvinResult_t.ratiometric) - the one
@@ -81,7 +101,8 @@ The Doc/ folder is now authoritative:
     true by the user directly (PROJECT_LOG.md HW-04/CL-61), not by anything
     readable in these PDFs; treat this revision as a filename/export event,
     not evidence of a schematic content change, until a schematic that
-    actually differs shows up.
+    actually differs shows up.  >>> SUPERSEDED 2026-11-13: the next export DOES differ (USB to UART
+    sheet, test points, R83, HV jumper/TP, title blocks) - see README "2026-11-13".
   - Harness_Tester_Operation_Document.docx  (v1.1 original)
   - Harness_Tester_Operation_Document_v1.3.docx  (was v1.2_corrected; renamed
     and updated to v1.3 - firmware review, see the v1.3 section below)
@@ -130,6 +151,9 @@ BUS / PERIPHERAL MAP  (CURRENT as of FW-02 / CL-23, 2026-08-11)
     SPI2  PB13/14/15, CS PB2  -> DAC8775 + HV DAC8830 + HV AD7476 x2 (ISOLATED,
                                  shared bus, per-device CS)
     SPI3  PB3/4/5, CS PB1     -> Control AD7476 U4 (ADC_IN) = CONTINUITY measure
+    USART2 PA2(TX)/PA3(RX)    -> GUI/log console, 115200 8N1, RX interrupt-driven (prio 5).
+                                 MCP2221A USB-UART U12 on the Control Card ("USB to UART"
+                                 sheet, USB Type-C J8); ST-LINK VCP on a Nucleo. Log_HwInit_Console().
     GPIO  OPT0_CNTR = PC12 (mode switch; the Op-Doc's "PA15" was WRONG = buzzer)
           HV_Card_x.0 / x.1  = the two ADC chip-selects per HV board (see below)
           HV_Card_EN1..4     = per-slot I2C2 bus-segment gate (PC5/PC6/PA10/
@@ -140,7 +164,7 @@ BUS / PERIPHERAL MAP  (CURRENT as of FW-02 / CL-23, 2026-08-11)
                                  Driven (FW-14): drivers/ds18b20.{h,c}, bound
                                  in board.c as g_ds18b20 (open-drain, no CubeMX
                                  .ioc entry yet - configured directly, same as
-                                 Log_HwInit_LPUART1()/ADS1232_HwInit_Nucleo()).
+                                 ADS1232_HwInit_Nucleo()).
                                  Read via `>TEMP READ` -> `!TEMP <deci_C>`.
                                  Unverified on real hardware.
 
@@ -229,7 +253,7 @@ PER-BUS SPI SETTINGS NEEDED (change in CubeMX - generated default is 4-bit!)
 
 6) Logging + RTOS tasks  -  Core/{Inc,Src}/app/{log,tasks}.{h,c}
 --------------------------------------------------------------------------------
-   Leveled non-blocking logger (drop-if-full queue -> LPUART1 PA2/PA3 = Nucleo
+   Leveled non-blocking logger (drop-if-full queue -> USART2 PA2/PA3 = MCP2221A USB-UART / Nucleo
    VCP). Tasks: tSafety(High, forces safe-all on fault), tSequencer(Nrm, one cmd
    under HW mutex), tComms(BelowN, c/k/i/s/f/r VCP console), tLogger(Low).
    Board_Init in main.c USER CODE 2; Tasks_Init in app_freertos RTOS_THREADS.

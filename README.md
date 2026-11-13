@@ -54,6 +54,18 @@ text-identical to the revision replaced — a re-export event, not a schematic c
 files don't visibly show the HW-04 `AIN8`/`LO_COM` routing). That routing is real, confirmed by the
 user directly rather than by anything readable in these PDFs — see `PROJECT_LOG.md` HW-04/CL-61.
 
+**2026-11-13: schematic set updated to a new KiCad export — this one *does* differ** (unlike the
+2026-08-21 re-export above; verified by `pdftotext -layout` diff). Same filenames, overwritten in place:
+- **Control Card (2026-10-12, now 12 sheets):** new `USB to UART` sheet — **U12 MCP2221A** USB-UART bridge
+  on `USART2_TX`/`USART2_RX` (`PA2`/`PA3`), USB Type-C receptacle **J8**, 5.1 kΩ CC resistors R4/R5,
+  `USB_+5V_Jumper` JP3; `+5V`/`+3V3`/`GND` test points TP15–TP22; **R83** 10 kΩ pull-up on `NRST`.
+  Firmware console follows it: GUI/log link is now **USART2** (`Log_HwInit_Console()`), no longer LPUART1.
+- **Matrix Card (2026-09-16):** U103 now `ADUM1250ARZ-RL7` (part-number suffix only); mounting holes H7–H16 added.
+- **HV Card:** `+5V_ISO_Jumper` and test point `TP_5V1` added. The expander address annotations on sheet 5
+  (`/GPIO_Expander/`) read **HS 0x20–0x23, LS 0x24–0x27** — this closed the "TODO verify straps" in `hv_card.c`.
+- All three: title blocks renamed `IHT-MKI-CC` / `IHT-MKI-MC`, company name now "INFINITY INTEGRATIONS PVT. LTD.".
+No net or topology change on the Matrix or HV cards beyond the above.
+
 ## Firmware layout
 
 ```
