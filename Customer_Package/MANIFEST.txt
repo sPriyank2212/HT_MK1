@@ -1,5 +1,5 @@
 HT_MK1 Customer Package - file manifest
-firmware commit fe73672511036799111f0cf9e355655d05dcd6d4
+firmware commit 959de5a8f96fe1dff1283c02d49876f127add17e
 
 SHA-256                                                           size  file
 c3e8dd054f58d04251f5e4bd3b47e491ea688350fa6748a1b8abc940be1ef1f2     663022  0_Documents/1_System_Overview.docx
@@ -38,10 +38,10 @@ d9dcf93000b2e98de16e19f7f56058442d77a0344d9cc50f6261b588d012857e       1388  3_T
 9869cd913a6b3653d3ce8f2b0b835978c24f5dbeb320943bee59b9e15282f9e4        507  3_Test_Results/Sample_Reports/report_20260810_150430_HT-0004_insulation.csv
 55bfe4bdfdcb955dfbaa39707bd730a3048d8fe8aebc0301b81df89843e467bf     487023  3_Test_Results/Sample_Reports/report_20260810_150430_HT-0004_insulation.pdf
 8db1c986021b768314c8a89100036e4c885b0d34bc496d34d4763dad0ee9a150       8102  3_Test_Results/Test_Results_Record.xlsx
-521dfaa480cc85e84a0559d47a812d178783306ab2f199ddf3889ad90cf9bbbf       2147  4_GUI_and_Firmware/Firmware/FIRMWARE_INFO.txt
-857bb52740a285baab0bdf2a56dcd98a3ba081b8c7c54f018ae1e50ac0e3e4d8      74208  4_GUI_and_Firmware/Firmware/HT_MK1.bin
-b96845e7ed87d9b539c945952da14fa37b38f2f6d4f6b021aa61bf283bba7263    1919444  4_GUI_and_Firmware/Firmware/HT_MK1.elf
-4c3d56dda6d2e33bb4b81b761918a7beb3e5d19e9cfe9fb6e04d8934dc141cde     208814  4_GUI_and_Firmware/Firmware/HT_MK1.hex
+5b5b604fb0ee71d337841510a56f9fb5ba1cade9f90e47e995cb5297c36e6b9e       2856  4_GUI_and_Firmware/Firmware/FIRMWARE_INFO.txt
+a8b067ad919553b5aa4ea8a526dd14f37943282c3b91072c87adfe0bb90a0139      79012  4_GUI_and_Firmware/Firmware/HT_MK1.bin
+879d77e4880b48a981bfeba0e964bd3453533028b97a5f87a86376794528af3f    1931756  4_GUI_and_Firmware/Firmware/HT_MK1.elf
+0fc37136700b81448626d05a96a9c7cf2db333de229c778058051bd1d501d1d5     222322  4_GUI_and_Firmware/Firmware/HT_MK1.hex
 e10ca699f1dfbb8a84feb3af2a68dec8c9b187f986ea3d3c7b31b8496d7e139d    8768507  4_GUI_and_Firmware/GUI/HT_MK1_GUI.exe
 14ee944077a917dba1c25b2bdeaccae58289a7b22dce5a8d84cce36a22a4bea3    8768505  4_GUI_and_Firmware/GUI/HT_MK1_GUI_Demo.exe
 271dbeb4cb4bc5b1e1074e1f61869c5a428681ff20c28c121ab80237d3629484       1217  4_GUI_and_Firmware/GUI/README.md

@@ -1,18 +1,25 @@
 HT_MK1 firmware
 
 Target          STM32G474RE (Control Card), flash base 0x08000000
-Version         fw 0.1.0, protocol 1   (reported by the ID command)
-Source          git commit fe73672511036799111f0cf9e355655d05dcd6d4
-Built           2026-10-23 with GNU Tools for STM32 14.3.rel1, "Debug" configuration
+Version         fw 0.1.0, protocol 1   (reported by the ID command, with build=<compile time>)
+Source          git commit 959de5a8f96fe1dff1283c02d49876f127add17e
+Built           2026-11-13 13:10 with GNU Tools for STM32 14.3.rel1, "Debug" configuration
                 (-O0 -g3, the configuration the Flashing Procedure flashes)
+                by STM32CubeIDE 1.19.0 (headless build, clean build)
 Built from      a clean checkout of that commit - not from a working copy
+Build stamp     the ID reply ends "build=2026-11-13T13:10:02"-style (the compile time of
+                build_info.c on the build PC; no real-time clock is involved)
 
-Changes in this build (see 0_Documents/6_Code_Walkthrough, Known Limitations)
-  - the HV rail is checked before and after every insulation reading, and proven discharged
-    before the relays open
-  - any HV-path error latches a fault (F01 relay bus, F02 DAC/ADC, F03 rail) and stops the run
-  - an idle HV rail latches a fault; stack overflow and allocation failure reset through the watchdog
-  - HV SET no longer reports a level it did not set; resistance and continuity report bus errors
+Changes in this build (since the 2026-10-23 image, see PROJECT_LOG.md CL-77 to CL-86)
+  - console moved from LPUART1 to USART2 (PA2/PA3): the MCP2221A USB-UART on the Control Card
+    ("USB to UART" sheet, USB Type-C J8); a Nucleo's ST-LINK VCP uses the same pins
+  - HV card N is on Control Card slot J<N> / enable EN<N> (HW-15); HV card 1 shares J1/EN1 with
+    the Matrix Card, so the Matrix segments are switched off the I2C bus before EN1 is raised
+    for HV card 1. Up to 4 HV cards (BOARD_HV_COUNT, default 1)
+  - BUS SCAN also probes each HV card's 8 relay expanders (HVn_HS1..4, HVn_LS1..4)
+  - the minimum insulation resistance is configurable: LIMITS SET ins_min_mohm=<mohm>,
+    100 kohm to 40 Mohm, default 10 Mohm; !INSUL and LIMITS GET carry 64-bit milliohms (FW-11)
+  - the ID reply carries the firmware build stamp (FW-20)
 
 Files
   HT_MK1.elf    programming image with debug symbols (use with STM32CubeProgrammer / CubeIDE)
@@ -20,20 +27,21 @@ Files
   HT_MK1.bin    raw binary - flash at 0x08000000
 
 SHA-256
-  HT_MK1.elf    b96845e7ed87d9b539c945952da14fa37b38f2f6d4f6b021aa61bf283bba7263
-  HT_MK1.hex    4c3d56dda6d2e33bb4b81b761918a7beb3e5d19e9cfe9fb6e04d8934dc141cde
-  HT_MK1.bin    857bb52740a285baab0bdf2a56dcd98a3ba081b8c7c54f018ae1e50ac0e3e4d8
+  HT_MK1.elf    879d77e4880b48a981bfeba0e964bd3453533028b97a5f87a86376794528af3f
+  HT_MK1.hex    0fc37136700b81448626d05a96a9c7cf2db333de229c778058051bd1d501d1d5
+  HT_MK1.bin    a8b067ad919553b5aa4ea8a526dd14f37943282c3b91072c87adfe0bb90a0139
 
 Size (arm-none-eabi-size on the .elf)
 text	   data	    bss	    dec	    hex	filename
-  74100	    100	  40868	 115068	  1c17c	Customer_Package\4_GUI_and_Firmware\Firmware\HT_MK1.elf
+  78896	    108	  40748	 119752	  1d3c8	Customer_Package\4_GUI_and_Firmware\Firmware\HT_MK1.elf
 
 Flashing
   Follow 0_Documents/4_Flashing_Procedure.pdf, then run its PING / PONG check before testing.
   Afterwards the GUI should connect and show "fw 0.1.0" in the status bar.
+  The console is now the USB Type-C connector (J8); it appears as "USB Serial Device".
 
 Not yet verified on hardware
-  This image has been compiled and its pure logic unit-tested on a PC, but not exercised on a
-  unit. The resistance and insulation paths, the HV rail thresholds and the stack sizes are still
-  to be confirmed on real hardware (see the Functional Test Procedure and PROJECT_LOG.md BU-13 to BU-15).
-  There is also no hardware interlock signal.
+  This image has been compiled and its pure logic unit-tested on a PC (124 checks), but not
+  exercised on a unit. First power-up checks and the shared-EN1 / insulation-limit tests are in
+  Doc/hardware_test_plan_2026-11-13.md (PROJECT_LOG.md BU-16, BU-17). Do not arm HV before BU-17
+  passes. There is also no hardware interlock signal.
