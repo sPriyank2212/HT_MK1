@@ -1,7 +1,7 @@
 ================================================================================
  HT_MK1  -  AUTOMATED HARNESS TEST SYSTEM  -  FIRMWARE STATUS
  MCU: STM32G474RET6 (Cortex-M4F, FreeRTOS, STM32CubeIDE / HAL)
- Last updated: 2026-11-13 (schematic update, USART2 console, HV straps confirmed, BUS SCAN HV)
+ Last updated: 2026-11-13 (schematic update, USART2 console, HV straps, BUS SCAN HV, FW-11 configurable, build stamp)
 ================================================================================
  LIVE TRACKING IS PROJECT_LOG.md, NOT THIS FILE. This file is a snapshot of
  the architecture and driver status for quick orientation; open items, dates
@@ -26,6 +26,11 @@
    - I2C3 speed (FW-04): UNCHANGED, still 100 kHz (Timing 0x10B17DB5 @ 64 MHz =
      about 104 kHz). 400 kHz needs a new timing word that has to be generated in
      CubeMX and checked with a scope on the real isolated bus - bring-up (BU-03).
+   - BUILD STAMP (FW-20): app/build_info.{c,h}; the >ID reply now ends
+     "build=YYYY-MM-DDTHH:MM:SS" (build PC's clock via __DATE__/__TIME__, no RTC).
+     .cproject touches build_info.c in a pre-build step (Debug and Release) so
+     every build is re-stamped.
+   - FW-11: see the next block. Insulation limit is configurable.
    Compiled clean (-Wall -Wextra) with arm-none-eabi-gcc 14.3; NOT run on hardware.
 ================================================================================
  NEW (2026-10-23, PR-01): production-readiness fixes - see PROJECT_LOG.md.
@@ -85,6 +90,21 @@
      which existed in tasks.c but was never posted from proto.c until now.
  None of the four built or run on real hardware yet - see PROJECT_LOG.md
  FW-16. Full wire formats: Doc/GUI_development_brief.md SS3.2/3.3.
+================================================================================
+ NEW (2026-11-13, FW-11 - supersedes the 2026-08-24 design): the minimum insulation
+ resistance is CONFIGURABLE (LIMITS SET ins_min_mohm=<mohm>), and it really
+ gates the verdict. It lives in test/insulation.c (Insulation_SetMinMohm/Get,
+ default 10 Mohm = 1e10 mohm) and moves the THRESHOLD of the one existing voltage
+ verdict on the leakage node: pass limit = 0.045 V x fraction x (10M+Rs)/(limit+Rs),
+ bit-identical to the old fixed constant at the default. PR-01's rail
+ supervision, fault latching and self-test are untouched. LIMITS SET accepts
+ 100 kohm .. 40 Mohm only (ERR ERANGE otherwise - never clamped; 0 would pass
+ every net), is refused during a run (ERR EBUSY), and is all-or-nothing. The run
+ is also refused if the threshold would be under 10 mV (a few ADC counts).
+ !INSUL and LIMITS GET carry int64 milliohms (the int32 field topped out at
+ 2.1 Mohm); the 64-bit text helpers are RunLogic_FormatI64/ParseI64 in
+ app/run_logic.c with host unit tests. Compiled clean, host tests 124/124, NOT
+ run on hardware - PROJECT_LOG.md FW-11 / CL-81 / BU-16.
 ================================================================================
 
 SOURCE OF TRUTH
@@ -247,7 +267,10 @@ PER-BUS SPI SETTINGS NEEDED (change in CubeMX - generated default is 4-bit!)
                                  reads the ADS124S08 (HI_SENSE/LO_SENSE, 4-wire)
                                  instead - see the PENDING-FIRMWARE entry above.
              insulation.{h,c} - full safe HV sequence; reads HV_RET leakage node;
-             GO/NO-GO verdict (PASS < 0.045 V, FAIL >= 0.045 V = 10 Mohm limit).
+             verdict: FAIL when the leakage voltage >= the pass limit for the
+             operator-set minimum resistance (LIMITS SET ins_min_mohm, FW-11);
+             at the default 10 Mohm that is exactly 0.045 V x stimulus fraction.
+             tasks.c reports r.verdict as-is (no second, separate comparison).
    BSP:      board.c - Board_Init instantiates g_matrix (+ADC), g_frontend, g_hv[]
              to a safe idle state. SPI map corrected; open bindings marked VERIFY.
 

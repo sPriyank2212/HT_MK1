@@ -357,7 +357,7 @@ through the tree. Run it before believing any layout change.
   (10 MΩ in wire milliohms), not this capture's `10000000` — the old default
   was 1000× too small and, separately, had no effect on the insulation
   verdict either way. See `Doc/GUI_development_brief.md` §3.2 and
-  `PROJECT_LOG.md` FW-11/CL-73.
+  `PROJECT_LOG.md` FW-11/CL-81 (the limit is configurable, 100 kΩ to 40 MΩ).
 
   The limits match `s_lim_r_mohm` / `s_lim_ins_mohm` in `Core/Src/app/proto.c`,
   so those values came off the board rather than out of the simulator. With the

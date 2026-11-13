@@ -2,8 +2,8 @@ HT_MK1 Customer Package - file manifest
 firmware commit fe73672511036799111f0cf9e355655d05dcd6d4
 
 SHA-256                                                           size  file
-3257f42d6854e73e11e215b2259a4e30c1295f8720766d27462d6cf46fb4ee2c     662827  0_Documents/1_System_Overview.docx
-a233201152e5fbd217be96c8a402ac5396f3095029a2f9404d717179e1371c94     714832  0_Documents/1_System_Overview.pdf
+c3e8dd054f58d04251f5e4bd3b47e491ea688350fa6748a1b8abc940be1ef1f2     663022  0_Documents/1_System_Overview.docx
+2e0300226d24e8afbc848a5ffb7dc4dca0dea047753d7dc644f1a90e891be21b     715243  0_Documents/1_System_Overview.pdf
 4959630aca78752925a8f623a63b91974ee8e28363f1f1de3262c4f2337dd733    1733189  0_Documents/2_User_Manual.docx
 8a9d76473bbd2fe3e6491a0861bdf3e7bfe72da86bbbe5ba274bf33131108bad    1594635  0_Documents/2_User_Manual.pdf
 76ab09811d6bc44bee475d1fe24d786ee9ddfc36b150f6336ad4bcc171be0e52    2281269  0_Documents/3_GUI_Functional_Description.docx
@@ -44,5 +44,5 @@ b96845e7ed87d9b539c945952da14fa37b38f2f6d4f6b021aa61bf283bba7263    1919444  4_G
 4c3d56dda6d2e33bb4b81b761918a7beb3e5d19e9cfe9fb6e04d8934dc141cde     208814  4_GUI_and_Firmware/Firmware/HT_MK1.hex
 e10ca699f1dfbb8a84feb3af2a68dec8c9b187f986ea3d3c7b31b8496d7e139d    8768507  4_GUI_and_Firmware/GUI/HT_MK1_GUI.exe
 14ee944077a917dba1c25b2bdeaccae58289a7b22dce5a8d84cce36a22a4bea3    8768505  4_GUI_and_Firmware/GUI/HT_MK1_GUI_Demo.exe
-136ffd002692985b49fd30c12f833ee9f5ee33f7f067ce4125dcedbfbc522267       1193  4_GUI_and_Firmware/GUI/README.md
+271dbeb4cb4bc5b1e1074e1f61869c5a428681ff20c28c121ab80237d3629484       1217  4_GUI_and_Firmware/GUI/README.md
 89c18167a83b1ab331dde77d3d8462023309473e06bf066be59bbf6869c33e3d       1897  README.md

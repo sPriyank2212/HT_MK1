@@ -139,9 +139,14 @@ in the protocol does this.
                                        !CAL_RESULT r_mohm=<int> ratiometric=<0|1> <pass|fail>
 >LIMITS GET                    -> <LIMITS r_max_mohm=<int32> ins_min_mohm=<int64>
 >LIMITS SET r_max_mohm=<int32> ins_min_mohm=<int64>  -> <OK
-                                       ins_min_mohm is int64 (FW-11, 2026-08-24): a real MOhm-
-                                       scale limit in milliohms (10 Mohm = 1e10) overflows
-                                       int32. r_max_mohm stays int32.
+                                       ins_min_mohm is int64 (FW-11): a real MOhm-scale limit in
+                                       milliohms (10 Mohm = 1e10) overflows int32. r_max_mohm
+                                       stays int32. It is the minimum acceptable insulation
+                                       resistance and DOES gate the insulation verdict (default
+                                       10 Mohm). Accepted range 100000000..40000000000 (100 kohm
+                                       .. 40 Mohm); outside it: ERR ERANGE (never clamped).
+                                       ERR EBUSY while a run is in progress. A refused SET changes
+                                       neither field. Malformed value: ERR ESYNTAX.
 
 >TEMP READ                     -> <OK started   read the Control Card's DS18B20 (U2, PA0)
 >BUS SCAN                      -> <OK started   probes Matrix Card + ADS124S08 + each HV card's 8 relay expanders (confirmed
@@ -703,7 +708,7 @@ negative is a legal wire value:
 |---|---|
 | `!RES <milliohms>` | a near-zero resistance reads negative once system offset is subtracted — that is the whole subject of BU-10, and `fail_low` exists as a verdict for exactly this |
 | `!INSUL <leak_mohm>` | same `int32_t` path |
-| `<STATUS hv_mv=` / `<LIMITS ...` | `int32_t`; `LIMITS SET` accepts any value and echoes it back |
+| `<STATUS hv_mv=` / `<LIMITS ...` | `int32_t` (`ins_min_mohm` is `int64` since FW-11, and `LIMITS SET` validates it: 100 kΩ to 40 MΩ, else `ERR ERANGE`) |
 
 `parse_line('!RES 12 34 -5 pass')` raises `ProtocolError`, so the GUI would classify a correct
 measurement as a contract violation. It has not bitten yet only because `RES RUN` currently
