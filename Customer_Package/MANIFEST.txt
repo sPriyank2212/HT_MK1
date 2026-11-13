@@ -12,8 +12,8 @@ c3e8dd054f58d04251f5e4bd3b47e491ea688350fa6748a1b8abc940be1ef1f2     663022  0_D
 d8ae0699433fa8ca111c7aba98a045cfc7f6a04a3ef885eb00eb5f2707e0c378     459607  0_Documents/4_Flashing_Procedure.pdf
 65f104ed5f67ae8f2d9760a1579c5bcfe0bd694a16f66e91affbc1bac2a286cf      96980  0_Documents/5_Functional_Test_Procedure.docx
 3f7914012b09edfc79cf1f07b96531c75df8225501403486df29183e7637a36f     346136  0_Documents/5_Functional_Test_Procedure.pdf
-ffa619934a8abe8f8ae5be00f8389e4d47425f54c6bd2526d4f9097776e82730     110894  0_Documents/6_Code_Walkthrough.docx
-aeaa6e6f45c95f6e3c5558e805fb7808d81223860f610d1ec2b8b82090fffe17     450434  0_Documents/6_Code_Walkthrough.pdf
+38d2b38eb523566692a495b4593e29cfed06db563ab937bb21437b7e2d9d946c     111106  0_Documents/6_Code_Walkthrough.docx
+16797395280b38feda3a80cb9c0853a5e7b7e377744d993e399231d6fe937f23     450820  0_Documents/6_Code_Walkthrough.pdf
 45c922c6f7be986ca683bc167fcdafae187ab93ff3852b144d4f7942b0c4b005       1154  0_Documents/README.md
 781740b4e5755148640d89507936a9fe24a3ffdb16e441b2d40321566f3c1dfe      11815  1_Test_Harness_Plan/Example_Netlists/HW-01_dsub_family_mated_pairs.xlsx
 f917319fc3d4ac7a776f9fae91ff423f61fff06bf51f328c8dd00b835620392d       8089  1_Test_Harness_Plan/Example_Netlists/HW-02_circular_connectors.xlsx

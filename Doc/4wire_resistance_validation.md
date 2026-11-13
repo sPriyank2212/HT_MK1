@@ -504,7 +504,7 @@ collision is fixed anyway.
 | HW-04 | ratiometric current reference — §7.6 |
 | BU-07 | common-mode headroom — §7.1 |
 | BU-08 | do not copy the bench formula — full-scale conventions differ |
-| HW-09 | four card slots, five cards |
+| HW-09 (superseded by HW-15) | four slots J1–J4 hold four HV cards; HV card 1 shares J1 with the Matrix Card |
 | BU-01 | compliance sweep, now with a real target (3 mA) |
 
 ### 7.9 What would most reduce risk, in order

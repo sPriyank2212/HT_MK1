@@ -22,6 +22,7 @@ and 500 V insulation testing across a Control Card, a Matrix Card and up to four
 |---|---|
 | `Doc/*.pdf` | The KiCad schematics. **These are the source of truth.** Where any document disagrees with them, they win |
 | `Datasheet/` | Component datasheets, with [DATASHEETS.md](Datasheet/DATASHEETS.md) as the tick-list |
+| [Doc/hardware_test_plan_2026-11-13.md](Doc/hardware_test_plan_2026-11-13.md) | Step-by-step hardware test plan: pre-flight, the shared-EN1 checks (BU-17), BU-16 with expected PASS/FAIL table, and the FW-19 plan |
 | [Doc/i2c_bus_sharing.md](Doc/i2c_bus_sharing.md) | Why the Matrix Card and every HV card share one I2C address range, and how `HV_Card_EN1-4` gates them apart |
 | [Doc/idac_current_source.md](Doc/idac_current_source.md) | Why the DAC8775 is gone and Kelvin excitation now comes from the ADS124S08's own IDAC, the 2 mA ceiling that comes with it, and what firmware still needs to change |
 

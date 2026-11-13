@@ -30,6 +30,15 @@
      "build=YYYY-MM-DDTHH:MM:SS" (build PC's clock via __DATE__/__TIME__, no RTC).
      .cproject touches build_info.c in a pre-build step (Debug and Release) so
      every build is re-stamped.
+   - HW-15 (decided by the hardware owner): HV card N -> Control slot J<N> / EN<N>;
+     J1 (= Matrix J101) is shared by the Matrix Card and HV card 1; up to 4 cards
+     (BOARD_HV_COUNT 1..4). board_init_hv() previously put HV 1 on EN2 and allowed 3.
+     SAFETY: both cards strap to 0x20-0x27 and the Matrix all-off word (0xFFFF) means
+     "close every relay" to an HV expander, so HvCardCfg_t.pre_enable runs
+     MatrixCard_Deselect() before EN1 goes high for HV 1. During a MATRIX access HV 1's
+     expanders are on the bus too - not fixable in software, verify with BU-17
+     (Doc/hardware_test_plan_2026-11-13.md section 2). HW-09 (5th connector) superseded.
+   - I2C3 stays at 100 kHz (Timing 0x10B17DB5 @ 64 MHz); hardware cannot change (CL-85).
    - FW-11: see the next block. Insulation limit is configurable.
    Compiled clean (-Wall -Wextra) with arm-none-eabi-gcc 14.3; NOT run on hardware.
 ================================================================================
@@ -153,7 +162,8 @@ BUS / PERIPHERAL MAP  (CURRENT as of FW-02 / CL-23, 2026-08-11)
                                  ADS124S08's I2C-expander io lines) all live
                                  here at the same hard-strapped 0x20-0x27
                                  range. Firmware gates it one card/segment at a
-                                 time via HV_Card_EN1..4 (Matrix Card = EN1) -
+                                 time via HV_Card_EN1..4 (Matrix Card = EN1,
+                                 HV Card 1 ALSO EN1 - HW-15) -
                                  see Doc/i2c_bus_sharing.md.
     I2C3  PC8(SCL)/PC9(SDA)   -> LOCAL to the Control Card, never shared: U20/
                                  U21 (mux address lines HI_S1-4/LO_S1-4).
@@ -177,7 +187,11 @@ BUS / PERIPHERAL MAP  (CURRENT as of FW-02 / CL-23, 2026-08-11)
     GPIO  OPT0_CNTR = PC12 (mode switch; the Op-Doc's "PA15" was WRONG = buzzer)
           HV_Card_x.0 / x.1  = the two ADC chip-selects per HV board (see below)
           HV_Card_EN1..4     = per-slot I2C2 bus-segment gate (PC5/PC6/PA10/
-                                 PA9); EN1 is the Matrix Card's own slot (J1)
+                                 PA9). HW-15 (2026-11-13): HV card N is on slot
+                                 J<N> / EN<N>; J1/EN1 is SHARED by the Matrix
+                                 Card and HV card 1 (the firmware switches the
+                                 Matrix segments off the bus before raising EN1
+                                 for HV 1 - MatrixCard_Deselect, pre_enable).
           PA0 = 1_Wire       -> NEW (HW-13, 2026-08-16, Control Card `uC` sheet):
                                  DS18B20U+T&R temperature sensor (U2), R2 4.7k
                                  pull-up on the 1-Wire bus, R3 47R series on DQ.
@@ -352,7 +366,8 @@ PER-BUS SPI SETTINGS NEEDED (change in CubeMX - generated default is 4-bit!)
    [x] SUPERSEDED - per-card I2C bus-select: implemented as HV_Card_EN1..4
        (FW/CL-24, CL-25, 2026-08-11), gating one card's segment of the shared
        I2C2 bus at a time - EN1 also covers the Matrix Card's own expanders,
-       confirmed on the same shared bus. See Doc/i2c_bus_sharing.md.
+       confirmed on the same shared bus; since HW-15 HV card 1 is on EN1 as well.
+       See Doc/i2c_bus_sharing.md.
    [ ] stepped HV ramp verification (10%/step, per-step HV_Sense check @0.00049
        => ~0.245 V @500 V; confirm the divider is 1:2000 - see HV_Sense note above)
    [ ] enable IWDG in CubeMX + refresh from tSafety (hook already in place)

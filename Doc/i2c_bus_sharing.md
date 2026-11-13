@@ -2,7 +2,7 @@
 
 Plain-English write-up of a hardware finding from 2026-08-11 and the firmware fix that went with
 it. See the diagram at the top of this session's artifact link for the picture version of the
-same thing. Related: `PROJECT_LOG.md` HW-09, HW-12.
+same thing. Related: `PROJECT_LOG.md` HW-12, HW-15 (HW-09 is superseded by it).
 
 ## 1. The problem, in one sentence
 
@@ -62,10 +62,9 @@ something, the two would have collided on the bus, with no code anywhere prevent
   opening every relay, and closing a single relay on either side. Every one of those returns
   through the same "turn it back off" step even if something went wrong partway through, so a
   card is never left switched onto the bus by accident.
-- **Board index now maps to the right physical connector.** J1 turned out to be the Matrix Card's
-  own connector (a separate finding, see HW-09), not a spare HV slot — so the firmware's first HV
-  card now defaults to J2/`EN2` instead of J1/`EN1`, with a guard that stops anyone from
-  accidentally trying to fit a fourth HV card in a way that overruns the available slots.
+- **Board index maps to the physical connector.** *(Superseded 2026-11-13 — see §7.)* This originally put the
+  first HV card on J2/`EN2`, treating J1 as the Matrix Card's alone. The hardware owner has since decided that
+  **J1 is shared by the Matrix Card and HV card 1**, so HV card N is on J*N*/`EN`*N* and up to four cards fit.
 
 ## 6. The Matrix Card turned out to be on the same bus too
 
@@ -98,3 +97,31 @@ chips; turn `HV_Card_EN1` back off before letting any HV card's line come on.
 | The Matrix Card's own version of the same claim/release | `Core/Inc/cards/matrix_card.h`, `Core/Src/cards/matrix_card.c` (`MatrixCard_BusClaim`/`BusRelease`) |
 | Which physical pin is which card's enable line, and the split I2C3 (U21 only) vs I2C2 (everything else) bus assignment | `Core/Src/bsp/board.c` |
 | The pins themselves, renamed and switched to outputs | `Core/Inc/main.h`, `Core/Src/gpio.c`, `HT_MK1.ioc` |
+
+## 7. HV card 1 shares EN1 with the Matrix Card (HW-15, decided 2026-11-13)
+
+**The mapping.** Control Card J1 (the Matrix Card's J101) carries both the Matrix Card and HV card 1. HV card 2
+is on J2, HV card 3 on J3, HV card 4 on J4. So `HV_Card_EN1` (PC5) gates the Matrix Card **and** HV card 1;
+`EN2`/`EN3`/`EN4` (PC6, PA10, PA9) gate HV cards 2, 3, 4.
+
+**Why that needs care.** Both cards strap their expanders to the same 0x20–0x27, so with EN1 high both answer.
+Worse, the two cards use the *same bits for opposite meanings*: the Matrix's mux enables are active-low, so its
+"all off" word is `0xFFFF`; to an HV relay expander `0xFFFF` means *close all 16 relays*.
+
+**What the firmware does about it.**
+- Before it raises EN1 for HV card 1, it switches **both Matrix I2C segments off the shared bus**
+  (`MatrixCard_Deselect()`, called through `HvCardCfg_t.pre_enable`, installed automatically for any slot whose
+  enable equals the Matrix's). If that fails, EN is not raised and the access fails — it never leaves two cards
+  answering the same address. The Matrix re-selects its segment on its next access (every Matrix path claims the
+  bus, selects a segment, releases).
+- This covers boot (`HvCard_Init`), the idle rail monitor, `BUS SCAN` and every insulation sequence.
+
+**What it cannot do.** While the Matrix is being accessed (EN1 high, one Matrix segment selected), **HV card 1's
+expanders are on the bus as well**, because they are gated by the same line. Matrix writes then also reach HV
+card 1. This is a property of the wiring, not something the firmware can change. It is checked on the real unit
+by BU-17 (`Doc/hardware_test_plan_2026-11-13.md` §2): a known loopback must read the same with and without HV
+card 1 fitted. If it does not, HV card 1 needs its own enable line (a harness change); in firmware that is the
+one-line slot map in `board_init_hv()`.
+
+**HW-09 (a fifth HV connector)** was only needed while J1 was reserved for the Matrix; with four slots holding
+four HV cards it is superseded.
