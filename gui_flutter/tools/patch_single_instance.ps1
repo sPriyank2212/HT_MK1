@@ -3,7 +3,7 @@
 #
 # windows\ is generated (and git-ignored), so this patches the generated
 # windows\runner\main.cpp; it is safe to run on every build (does nothing when
-# the guard is already there). Called from build_exe.cmd and build_client_exe.cmd.
+# the guard is already there). Called from build_exe.cmd.
 #
 # (A name with no "Local\" prefix is already per logon session.)
 # The mutex name contains the window title, and the build scripts rewrite the

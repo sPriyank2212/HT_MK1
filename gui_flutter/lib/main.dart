@@ -1,4 +1,4 @@
-/// HT_MK1 operator console — Flutter Windows desktop app.
+/// Integrated Harness Tester MKI — Flutter Windows desktop app.
 ///
 /// ```
 /// ht_mk1_gui.exe --serial COM7       talk to the instrument over the VCP
@@ -21,25 +21,16 @@ library;
 import 'dart:async';
 import 'dart:io';
 
-import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
 import 'app/app_state.dart';
-import 'app/build_tag.dart';
-import 'app/modals.dart';
 import 'app/run_history.dart';
-import 'app/shell.dart';
-import 'design/tokens.dart';
+import 'client/client_app.dart';
 import 'htproto/connection.dart';
 import 'htproto/netlist_picker_io.dart' as netlist_picker;
 import 'htproto/paths.dart';
 import 'htproto/serial_transport.dart';
 import 'htproto/simulator.dart';
-import 'views/auto_scan_view.dart';
-import 'views/cont_view.dart';
-import 'views/misc_views.dart';
-import 'views/res_hv_views.dart';
-import 'views/run_view.dart';
 
 // ---------------------------------------------------------------------------
 // command line
@@ -151,53 +142,17 @@ HT_MK1 operator console
 ''';
 
 // ---------------------------------------------------------------------------
-// theme persistence — the page used localStorage("ht-theme")
-// ---------------------------------------------------------------------------
-
-File _themeFile() {
-  final dir = defaultLogDir().parent; // %LOCALAPPDATA%\HT_MK1
-  return File('${dir.path}${Platform.pathSeparator}theme');
-}
-
-String? loadStoredTheme() {
-  try {
-    final f = _themeFile();
-    if (!f.existsSync()) return null;
-    final v = f.readAsStringSync().trim();
-    return (v == 'dark' || v == 'light') ? v : null;
-  } on FileSystemException {
-    return null;
-  }
-}
-
-void storeTheme(String value) {
-  try {
-    final f = _themeFile();
-    f.parent.createSync(recursive: true);
-    f.writeAsStringSync(value);
-  } on FileSystemException {
-    // A read-only profile must not take the app down over a theme preference.
-  }
-}
-
-// ---------------------------------------------------------------------------
 // entry point
 // ---------------------------------------------------------------------------
 
-Future<void> main(List<String> args) async {
-  await runConsole(
-    args,
-    (state) => HtApp(state: state, storedTheme: loadStoredTheme()),
-  );
-}
+Future<void> main(List<String> args) => runConsole(
+      args,
+      (state) => ClientApp(state: state, dataDir: defaultClientDataDir()),
+    );
 
 /// The shared bootstrap: parse the command line, bring up the serial / TCP /
 /// simulator link, build [AppState], then hand it to [buildApp] for the UI.
 ///
-/// The engineering console ([main]) and the client-styled app
-/// (`main_client.dart`) differ only in the widget tree they put on top of the
-/// same [AppState] — the protocol, simulator, safety gating and reports are
-/// shared, so a fix to one is a fix to both.
 Future<void> runConsole(
   List<String> args,
   Widget Function(AppState state) buildApp,
@@ -329,244 +284,4 @@ Future<void> runConsole(
   // (or --sim, or an explicit TCP target) the app starts disconnected and
   // the operator connects from the port selector instead.
   if (o.serial != null || o.sim || o.tcp) unawaited(state.connect());
-}
-
-// ---------------------------------------------------------------------------
-// root
-// ---------------------------------------------------------------------------
-
-class HtApp extends StatefulWidget {
-  final AppState state;
-  final String? storedTheme;
-
-  const HtApp({super.key, required this.state, this.storedTheme});
-
-  @override
-  State<HtApp> createState() => _HtAppState();
-}
-
-class _HtAppState extends State<HtApp> with WidgetsBindingObserver {
-  String? _theme; // null = follow the system
-
-  @override
-  void initState() {
-    super.initState();
-    _theme = widget.storedTheme;
-    WidgetsBinding.instance.addObserver(this);
-  }
-
-  @override
-  void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
-    super.dispose();
-  }
-
-  @override
-  void didChangePlatformBrightness() => setState(() {});
-
-  void _toggleTheme() {
-    // The page's toggle: whatever it looks like now, switch to the other.
-    final dark = _theme == 'dark' ||
-        (_theme == null &&
-            WidgetsBinding.instance.platformDispatcher.platformBrightness ==
-                Brightness.dark);
-    final next = dark ? 'light' : 'dark';
-    setState(() => _theme = next);
-    storeTheme(next);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final systemDark =
-        WidgetsBinding.instance.platformDispatcher.platformBrightness ==
-            Brightness.dark;
-    final isDark = _theme == null ? systemDark : _theme == 'dark';
-
-    return HtTheme(
-      isDark: isDark,
-      child: Builder(builder: (context) {
-        final c = context.colors;
-        return WidgetsApp(
-          title: 'HT_MK1 Console — Harness Test System',
-          color: c.bg,
-          // No Navigator: the app is a single screen with its own modals.
-          // WidgetsApp does not supply a Directionality or a default text
-          // style the way MaterialApp does, and this build deliberately has no
-          // Material dependency, so both are established here.
-          //   body{font-family:var(--ui);font-size:14px;line-height:1.45}
-          builder: (context, _) => Directionality(
-            textDirection: TextDirection.ltr,
-            child: DefaultTextStyle(
-              style: context.type.body,
-              child: HtHome(
-                state: widget.state,
-                onToggleTheme: _toggleTheme,
-              ),
-            ),
-          ),
-        );
-      }),
-    );
-  }
-}
-
-/// `<div class="app">`
-class HtHome extends StatefulWidget {
-  final AppState state;
-  final VoidCallback onToggleTheme;
-
-  const HtHome({
-    super.key,
-    required this.state,
-    required this.onToggleTheme,
-  });
-
-  @override
-  State<HtHome> createState() => _HtHomeState();
-}
-
-class _HtHomeState extends State<HtHome> {
-  final FocusNode _focus = FocusNode();
-
-  /// The app itself, as the one permanent entry of [build]'s [Overlay].
-  ///
-  /// Built once and held, not rebuilt per frame: `Overlay` reads
-  /// `initialEntries` only in its own initState, so a fresh list each build
-  /// would allocate entries nothing ever mounts.
-  late final OverlayEntry _base = OverlayEntry(builder: _buildApp);
-
-  @override
-  void dispose() {
-    _focus.dispose();
-    super.dispose();
-  }
-
-  /// `addEventListener("keydown", ...)`
-  KeyEventResult _onKey(FocusNode node, KeyEvent event) {
-    if (event is! KeyDownEvent) return KeyEventResult.ignored;
-    final s = widget.state;
-    if (event.logicalKey == LogicalKeyboardKey.f5) {
-      if (s.running == null) {
-        s.actButtonPressed();
-        return KeyEventResult.handled;
-      }
-    }
-    if (event.logicalKey == LogicalKeyboardKey.escape) {
-      s.escape();
-      return KeyEventResult.handled;
-    }
-    return KeyEventResult.ignored;
-  }
-
-  Widget _view(AppState s) => switch (s.view) {
-        'cont' => ContView(s: s),
-        'res' => ResView(s: s),
-        'hv' => HvView(s: s),
-        'auto' => AutoScanView(s: s),
-        'program' => ProgramView(s: s),
-        'results' => ResultsView(s: s),
-        // Customer builds have no Diag route at all - the Rail's button is
-        // already gone (see kCustomerBuild), this is the defensive fallback
-        // in case s.view somehow still holds 'diag' (e.g. restored from a
-        // stored preference in a future change).
-        'diag' when !kCustomerBuild => DiagView(s: s),
-        _ => RunView(s: s),
-      };
-
-  @override
-  Widget build(BuildContext context) {
-    return Focus(
-      focusNode: _focus,
-      autofocus: true,
-      onKeyEvent: _onKey,
-      // HtApp builds WidgetsApp with `builder:` and no home/routes, so it gets
-      // no Navigator — and therefore no Overlay. The status bar's port
-      // dropdown floats its menu in one, and `Overlay.of` threw "No Overlay
-      // widget found" on every click, which is why the selector looked dead.
-      // The app is the overlay's base entry; menus stack above it.
-      child: Overlay(initialEntries: [_base]),
-    );
-  }
-
-  Widget _buildApp(BuildContext context) {
-    final c = context.colors;
-
-    return AnimatedBuilder(
-      animation: widget.state,
-      builder: (context, _) {
-        final s = widget.state;
-        final narrow = MediaQuery.sizeOf(context).width <= kNarrow;
-
-        // body.hv-live swaps the status bar for the hazard banner.
-        final header = s.hvLive
-            ? HazardBar(s: s)
-            : StatusBar(s: s, onToggleTheme: widget.onToggleTheme);
-
-        final stage = SingleChildScrollView(
-          // .stage{overflow:auto;padding:18px}  12px under 860
-          padding: EdgeInsets.all(narrow ? 12 : 18),
-          child: AnimatedSwitcher(
-            // .view{animation:rise .22s ease-out}
-            duration: const Duration(milliseconds: 220),
-            switchInCurve: Curves.easeOut,
-            transitionBuilder: (child, anim) => FadeTransition(
-              opacity: anim,
-              child: SlideTransition(
-                position: Tween<Offset>(
-                  begin: const Offset(0, .012),
-                  end: Offset.zero,
-                ).animate(anim),
-                child: child,
-              ),
-            ),
-            child: KeyedSubtree(
-              key: ValueKey<String>(s.view),
-              child: _view(s),
-            ),
-          ),
-        );
-
-        final Widget body = narrow
-            ? Column(
-                children: [
-                  header,
-                  Rail(s: s, horizontal: true),
-                  Expanded(child: stage),
-                  LogBar(s: s),
-                  FooterBar(s: s),
-                ],
-              )
-            : Column(
-                children: [
-                  header,
-                  Expanded(
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        Rail(s: s),
-                        Expanded(child: stage),
-                      ],
-                    ),
-                  ),
-                  LogBar(s: s),
-                  FooterBar(s: s),
-                ],
-              );
-
-        return ColoredBox(
-          color: c.bg,
-          child: Stack(
-            children: [
-              Positioned.fill(child: body),
-              if (s.mdNlOpen) HvNetlistModal(s: s),
-              if (s.mdPreOpen) PreTestModal(s: s),
-              if (s.mdVerifyOpen) VerifyModal(s: s),
-              if (s.mdMtxOpen) MtxNetlistModal(s: s),
-              if (s.mdFixtureOpen) FixtureGuessModal(s: s),
-            ],
-          ),
-        );
-      },
-    );
-  }
 }

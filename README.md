@@ -30,8 +30,7 @@ and 500 V insulation testing across a Control Card, a Matrix Card and up to four
 
 | | |
 |---|---|
-| `gui_flutter/` | **Primary GUI build** (decided 2026-08-10) — Flutter/Dart, native Windows exe, no Python at runtime |
-| `gui/` | Python GUI (htweb + Tk) — **superseded** by `gui_flutter/`, kept for reference only, not tracked for new work |
+| `gui_flutter/` | **The GUI** — Flutter/Dart, native Windows exe, no Python at runtime (the *Integrated Harness Tester MKI* app). The old Python `gui/`, the Python `gui_client_required/` and the engineering-console Flutter UI were removed on branch `gui/final-client-only`; they remain in git history before that branch |
 | `Doc/HT_MK1_GUI_Proposal.html` | Visual mock-up of the operator GUI |
 | `Doc/GUI_development_brief.md` | Build brief for the GUI, including the firmware↔GUI protocol contract |
 | `Doc/GUI_protocol_command_coverage.md` | Audit of every `gui_flutter/` control against the protocol — what's wired, what isn't, what should happen |

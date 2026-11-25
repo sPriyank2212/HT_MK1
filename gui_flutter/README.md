@@ -1,29 +1,23 @@
-# HT_MK1 Operator GUI — Flutter (Windows)
+# Integrated Harness Tester MKI — Flutter GUI (Windows)
 
-A Flutter Windows desktop build of the HT_MK1 operator console. Same design,
-same protocol, same safety rules as `../gui`, with no Python at runtime: the
-protocol layer is ported to Dart and the UI is Flutter widgets rather than a
-browser page.
+The Flutter Windows desktop app for the HT_MK1 harness tester: the customer's own
+layout, terminology and PDF/CSV report format, running the MK1 tests (continuity,
+cross continuity, resistance, HV insulation, Multi-Test Run). The protocol layer is
+Dart, the UI is Flutter widgets, and there is no Python at runtime.
 
-> Builds, analyzes clean, and has been run against both `--sim` and real
-> hardware (a NUCLEO-G474RE on this repo's firmware) — connect, netlist
-> upload and netlist-mode continuity confirmed end to end. See **Status** at
-> the bottom, and **Known limitations** for the one thing that needs a
-> hardware fix, not a software one: resistance measurement.
+> This is the only GUI in the repository. The Python GUIs (`gui/`, `gui_client_required/`)
+> and the earlier engineering-console UI were removed on branch `gui/final-client-only`;
+> older sections of this file that describe the "engineering console" or `../gui`
+> are history and no longer match the code.
 
-## Client-styled app (`lib/main_client.dart`)
-
-A second window on the same instrument link: the customer's own Harness Tester layout and
-terminology (`gui_client_required/`), running the MK1 tests. The engineering console above is
-unchanged; both share `AppState`, the protocol, the simulator and the HV safety gating, so a fix
-to one is a fix to both.
+Entry point `lib/main.dart`:
 
 ```
-flutter run -d windows -t lib/main_client.dart --dart-entrypoint-args --sim
-build_client_exe.cmd              dist\Harness_Tester.exe + Harness_Tester_demo.exe
+flutter run -d windows --dart-entrypoint-args --sim
+build_exe.cmd                     dist\Harness_Tester.exe + Harness_Tester_demo.exe
 ```
 
-Every command-line option of the console works (`--serial`, `--sim`, `--scenario`, `--nets`, ...).
+Command-line options: `--serial <COMn|auto>`, `--sim`, `--scenario`, `--nets`, `--list-ports`, `--log-dir`, ...
 
 | Client screen | Notes |
 |---|---|

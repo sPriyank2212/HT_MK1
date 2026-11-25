@@ -1,7 +1,0 @@
-PyQt6>=6.4.0
-pyserial>=3.5
-reportlab>=3.6.0
-PyInstaller>=5.0
-pytest>=7.0
-pytest-qt>=4.0
-openpyxl>=3.1.0
