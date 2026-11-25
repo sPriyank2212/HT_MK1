@@ -13,8 +13,8 @@ Everything needed to set up and run the HT_MK1 test, in one place.
 ## Quick start
 
 1. **Flash the firmware** - `4_GUI_and_Firmware/Firmware/`, following `0_Documents/4_Flashing_Procedure.pdf`.
-2. **Start the GUI** - `4_GUI_and_Firmware/GUI/HT_MK1_GUI.exe`, pick the instrument's COM port, Connect.
-   (`HT_MK1_GUI_Demo.exe` runs without an instrument, for practice.)
+2. **Start the GUI** - `Harness_Tester.exe` (delivered separately), pick the instrument's COM port, Connect.
+   (`Harness_Tester_demo.exe` runs without an instrument, for practice.)
 3. **Load a netlist** - make one from `1_Test_Harness_Plan/Netlist_Template.xlsx`, or try an example.
 4. **Run Mode 1** (continuity, resistance), then move the harness to the HV connector for **Mode 2**
    (insulation). Read the Safety section of `0_Documents/2_User_Manual.pdf` before Mode 2.
