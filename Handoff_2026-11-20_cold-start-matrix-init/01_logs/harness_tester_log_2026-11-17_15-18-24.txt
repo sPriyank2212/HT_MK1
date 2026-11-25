@@ -1,0 +1,95 @@
+HARNESS TESTER - LOG FILE
+Generated  : 2026-11-17 15:18:24.320
+App build  : 2026-11-17T14:53:38
+Firmware   : v0.1.0   build 2026-11-16T19:45:30
+Link       : connected   port COM13 @ 115200 baud
+Device     : IDLE   fixture J-MTX
+
+===== APPLICATION LOG (22 lines) =====
+[2026-11-17 15:16:18.247] [INFO ] app   HT_MK1 console started — not yet connected
+[2026-11-17 15:16:18.247] [WARN ] link  port scan found no serial ports — is the board plugged in?
+[2026-11-17 15:16:18.248] [ERROR] link  no instrument serial port (MCP2221A USB-UART / ST-LINK VCP) found — is the board plugged in?
+[2026-11-17 15:17:10.152] [INFO ] link  port scan: COM13
+[2026-11-17 15:17:10.152] [WARN ] link  auto is gone — selection moved to COM13
+[2026-11-17 15:17:11.684] [ERROR] link  link lost — disconnected (state unknown)
+[2026-11-17 15:17:11.684] [ERROR] link  STATUS handshake got unexpected reply ErrReply(code: ESYNTAX, text: empty)
+[2026-11-17 15:17:13.386] [INFO ] link  connected — state idle, fixture none
+[2026-11-17 15:17:13.396] [INFO ] link  firmware 0.1.0 built 2026-11-16 19:45 · GUI built 2026-11-17 14:53
+[2026-11-17 15:17:13.428] [WARN ] nl    no netlist on the instrument — run cross continuity and save it before netlist-mode continuity or resistance will run
+[2026-11-17 15:17:58.566] [INFO ] fw    [boot] HT_MK1 console up @115200
+[2026-11-17 15:17:58.572] [INFO ] fix   fixture is now none
+[2026-11-17 15:17:58.575] [ERROR] fw    E[0] DIAG: mcp23017.c:39 i2c2 wr 0x23 r0x0A hal=1 e=0x04(NAK)
+[2026-11-17 15:17:58.576] [ERROR] fw    E[0] DIAG: matrix_card.c:322 matrix: force expander init hal=1
+[2026-11-17 15:17:58.577] [ERROR] fw    E[0] DIAG: board.c:430 Board_Init: matrix stage hal=1
+[2026-11-17 15:17:58.578] [INFO ] fw    I[0] SYS: tasks started (hv boards=1)
+[2026-11-17 15:17:58.580] [ERROR] fw    E[0] BOARD: init FAILED at matrix/force-exp@0x23 (hal=1) first: mcp23017.c:39 i2c2 NAK @tasks.c:1008
+[2026-11-17 15:17:58.582] [INFO ] fw    I[0] SAFE: task up
+[2026-11-17 15:17:58.583] [INFO ] fw    I[5] COM: proto ready (see GUI_development_brief.md)
+[2026-11-17 15:17:58.584] [INFO ] fw    I[8] SEQ: task up
+[2026-11-17 15:18:12.196] [ERROR] seq   Continuity · J-MTX refused - EHW board init failed at matrix/force-exp@0x23 (hal=1) mcp23017.c:39 i2c2 NAK
+[2026-11-17 15:18:12.198] [WARN ] fw    W[13654] BOARD: refused: init failed at matrix/force-exp@0x23 (hal=1) first: mcp23017.c:39 i2c2  @proto.c:422
+
+===== SERIAL TRAFFIC TX/RX (63 lines, newest 2000 kept) =====
+[2026-11-17 15:17:11.575] [TX] >STATUS
+[2026-11-17 15:17:11.578] [RX] <ERR ESYNTAX empty
+[2026-11-17 15:17:13.374] [TX] >STATUS
+[2026-11-17 15:17:13.377] [RX] !STATE idle
+[2026-11-17 15:17:13.386] [RX] <STATUS state=idle fixture=none hv_mv=0
+[2026-11-17 15:17:13.390] [TX] >ID
+[2026-11-17 15:17:13.396] [RX] <ID HT_MK1 fw=0.1.0 proto=1 build=2026-11-16T19:45:30
+[2026-11-17 15:17:13.399] [TX] >CAL GET
+[2026-11-17 15:17:13.408] [RX] <CAL current_ua=2000 method=ratiometric rref_mohm=100000 rref_tol_mohm=10 gain_max=128
+[2026-11-17 15:17:13.410] [TX] >LIMITS GET
+[2026-11-17 15:17:13.420] [RX] <LIMITS r_max_mohm=5000 ins_min_mohm=10000000000
+[2026-11-17 15:17:13.426] [TX] >NETLIST GET
+[2026-11-17 15:17:13.428] [RX] <NETLIST 0
+[2026-11-17 15:17:15.423] [RX] !STATE idle
+[2026-11-17 15:17:17.454] [RX] !STATE idle
+[2026-11-17 15:17:19.455] [RX] !STATE idle
+[2026-11-17 15:17:21.453] [RX] !STATE idle
+[2026-11-17 15:17:23.408] [RX] !STATE idle
+[2026-11-17 15:17:25.408] [RX] !STATE idle
+[2026-11-17 15:17:27.442] [RX] !STATE idle
+[2026-11-17 15:17:29.398] [RX] !STATE idle
+[2026-11-17 15:17:31.435] [RX] !STATE idle
+[2026-11-17 15:17:33.437] [RX] !STATE idle
+[2026-11-17 15:17:35.429] [RX] !STATE idle
+[2026-11-17 15:17:37.425] [RX] !STATE idle
+[2026-11-17 15:17:39.423] [RX] !STATE idle
+[2026-11-17 15:17:41.424] [RX] !STATE idle
+[2026-11-17 15:17:43.415] [RX] !STATE idle
+[2026-11-17 15:17:45.412] [RX] !STATE idle
+[2026-11-17 15:17:47.409] [RX] !STATE idle
+[2026-11-17 15:17:49.406] [RX] !STATE idle
+[2026-11-17 15:17:51.401] [RX] !STATE idle
+[2026-11-17 15:17:53.358] [RX] !STATE idle
+[2026-11-17 15:17:55.356] [RX] !STATE idle
+[2026-11-17 15:17:57.390] [RX] !STATE idle
+[2026-11-17 15:17:58.566] [RX] #[boot] HT_MK1 console up @115200
+[2026-11-17 15:17:58.572] [RX] !STATE idle
+[2026-11-17 15:17:58.572] [RX] !FIXTURE none
+[2026-11-17 15:17:58.575] [RX] #E[0] DIAG: mcp23017.c:39 i2c2 wr 0x23 r0x0A hal=1 e=0x04(NAK)
+[2026-11-17 15:17:58.576] [RX] #E[0] DIAG: matrix_card.c:322 matrix: force expander init hal=1
+[2026-11-17 15:17:58.577] [RX] #E[0] DIAG: board.c:430 Board_Init: matrix stage hal=1
+[2026-11-17 15:17:58.578] [RX] #I[0] SYS: tasks started (hv boards=1)
+[2026-11-17 15:17:58.580] [RX] #E[0] BOARD: init FAILED at matrix/force-exp@0x23 (hal=1) first: mcp23017.c:39 i2c2 NAK @tasks.c:1008
+[2026-11-17 15:17:58.582] [RX] #I[0] SAFE: task up
+[2026-11-17 15:17:58.583] [RX] #I[5] COM: proto ready (see GUI_development_brief.md)
+[2026-11-17 15:17:58.584] [RX] #I[8] SEQ: task up
+[2026-11-17 15:18:00.572] [RX] !STATE idle
+[2026-11-17 15:18:02.567] [RX] !STATE idle
+[2026-11-17 15:18:04.564] [RX] !STATE idle
+[2026-11-17 15:18:06.568] [RX] !STATE idle
+[2026-11-17 15:18:08.552] [RX] !STATE idle
+[2026-11-17 15:18:10.557] [RX] !STATE idle
+[2026-11-17 15:18:12.190] [TX] >CONT RUN discover
+[2026-11-17 15:18:12.196] [RX] <ERR EHW board init failed at matrix/force-exp@0x23 (hal=1) mcp23017.c:39 i2c2 NAK
+[2026-11-17 15:18:12.198] [RX] #W[13654] BOARD: refused: init failed at matrix/force-exp@0x23 (hal=1) first: mcp23017.c:39 i2c2  @proto.c:422
+[2026-11-17 15:18:14.154] [RX] !STATE idle
+[2026-11-17 15:18:16.192] [RX] !STATE idle
+[2026-11-17 15:18:18.187] [RX] !STATE idle
+[2026-11-17 15:18:20.184] [RX] !STATE idle
+[2026-11-17 15:18:22.186] [RX] !STATE idle
+[2026-11-17 15:18:24.137] [RX] !STATE idle
+[2026-11-17 15:18:26.155] [RX] !STATE idle
+[2026-11-17 15:18:28.175] [RX] !STATE idle

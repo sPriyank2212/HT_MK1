@@ -1,0 +1,2 @@
+HT_MK1 debug firmware - 2026-11-18 - matrix-retry
+bounded-scans image + (1) Board_Init retries a failed matrix stage up to 5 times, 250 ms apart (Matrix Card can power up after the Control Card); a log line says if it needed more than 1 attempt. (2) The I2C2 scan ends with a read-only IODIRA comparison sense-only vs force-only for 0x20/21/22/24/26 to tell one device from two. text 89364 B, 0 warnings. Not run on hardware.

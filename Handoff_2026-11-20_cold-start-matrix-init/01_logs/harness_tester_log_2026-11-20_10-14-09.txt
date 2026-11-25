@@ -1,0 +1,2064 @@
+HARNESS TESTER - LOG FILE
+Generated  : 2026-11-20 10:14:09.913
+App build  : 2026-11-17T14:53:38
+Firmware   : v0.1.0   build 2026-11-20T00:37:21
+Link       : connected   port COM14 @ 115200 baud
+Device     : IDLE   fixture J-MTX
+
+===== APPLICATION LOG (54 lines) =====
+[2026-11-20 09:02:05.351] [INFO ] app   HT_MK1 console started — not yet connected
+[2026-11-20 09:02:05.376] [INFO ] link  port scan: COM12, COM12
+[2026-11-20 09:02:05.378] [ERROR] link  no instrument serial port (MCP2221A USB-UART / ST-LINK VCP) found — is the board plugged in?
+[2026-11-20 09:02:54.267] [INFO ] link  port scan: COM12, COM14
+[2026-11-20 09:02:54.267] [WARN ] link  auto is gone — selection moved to COM12
+[2026-11-20 09:02:55.091] [INFO ] link  port scan: COM12, COM14
+[2026-11-20 09:02:57.860] [INFO ] link  port scan: COM12, COM14
+[2026-11-20 09:02:58.283] [INFO ] link  port scan: COM12, COM14
+[2026-11-20 09:03:00.786] [ERROR] link  link lost — disconnected (state unknown)
+[2026-11-20 09:03:00.786] [ERROR] link  STATUS handshake got unexpected reply ErrReply(code: ESYNTAX, text: empty)
+[2026-11-20 09:03:01.495] [INFO ] link  connected — state idle, fixture none
+[2026-11-20 09:03:01.504] [INFO ] link  firmware 0.1.0 built 2026-11-20 00:37 · GUI built 2026-11-17 14:53
+[2026-11-20 09:03:01.530] [WARN ] nl    no netlist on the instrument — run cross continuity and save it before netlist-mode continuity or resistance will run
+[2026-11-20 09:03:08.829] [ERROR] seq   Continuity · J-MTX refused - EHW board init failed at matrix/force-exp@0x20 (hal=1) mcp23017.c:39 i2c2 TIMEOUT
+[2026-11-20 09:03:08.829] [WARN ] fw    W[14895] BOARD: refused: init failed at matrix/force-exp@0x20 (hal=1) first: mcp23017.c:39 i2c2  @proto.c:422
+[2026-11-20 09:03:09.696] [ERROR] seq   Continuity · J-MTX refused - EHW board init failed at matrix/force-exp@0x20 (hal=1) mcp23017.c:39 i2c2 TIMEOUT
+[2026-11-20 09:03:09.706] [WARN ] fw    W[15799] BOARD: refused: init failed at matrix/force-exp@0x20 (hal=1) first: mcp23017.c:39 i2c2  @proto.c:422
+[2026-11-20 09:03:12.072] [ERROR] seq   Continuity · J-MTX refused - EHW board init failed at matrix/force-exp@0x20 (hal=1) mcp23017.c:39 i2c2 TIMEOUT
+[2026-11-20 09:03:12.074] [WARN ] fw    W[18147] BOARD: refused: init failed at matrix/force-exp@0x20 (hal=1) first: mcp23017.c:39 i2c2  @proto.c:422
+[2026-11-20 09:03:43.536] [INFO ] fw    [boot] main: peripherals up, Board_Init start
+[2026-11-20 09:03:44.595] [INFO ] fw    [boot] main: Board_Init done, starting scheduler
+[2026-11-20 09:03:44.642] [INFO ] fw    [boot] HT_MK1 console up @115200
+[2026-11-20 09:03:44.645] [INFO ] fw    [boot] tasks created
+[2026-11-20 09:03:44.647] [INFO ] fw    [boot] Tasks_Init done, starting scheduler
+[2026-11-20 09:03:44.648] [INFO ] fix   fixture is now none
+[2026-11-20 09:03:44.650] [ERROR] fw    E[0] DIAG: mcp23017.c:39 i2c2 wr 0x20 r0x0A hal=1 e=0x04(NAK)
+[2026-11-20 09:03:44.651] [ERROR] fw    E[0] DIAG: hv_card.c:202 hv: inject expander init hal=1
+[2026-11-20 09:03:44.653] [ERROR] fw    E[0] DIAG: board.c:455 Board_Init: HV card stage hal=1
+[2026-11-20 09:03:44.655] [INFO ] fw    I[0] BOOT: reset cause: BOR/POR PIN
+[2026-11-20 09:03:44.656] [INFO ] fw    I[0] SYS: tasks started (hv boards=1)
+[2026-11-20 09:03:44.658] [INFO ] fw    I[0] BOARD: init ok: matrix, ads124s08, frontend
+[2026-11-20 09:03:44.663] [WARN ] fw    W[0] BOARD: hv1 NOT fitted (hal=1) - continuity/resistance only @tasks.c:1080
+[2026-11-20 09:03:44.665] [INFO ] fw    I[0] SAFE: task up
+[2026-11-20 09:03:44.667] [INFO ] fw    I[5] COM: proto ready (see GUI_development_brief.md)
+[2026-11-20 09:03:44.668] [INFO ] fw    I[8] SEQ: task up
+[2026-11-20 09:04:42.260] [INFO ] fix   fixture is now mtx
+[2026-11-20 09:04:42.262] [INFO ] cont  Continuity · J-MTX started
+[2026-11-20 09:04:42.365] [ERROR] fw    E[57806] DIAG: ad7476.c:79 spi3 ad7476 rx hal=3 e=0x00
+[2026-11-20 09:04:42.590] [ERROR] fw    E[57868] DIAG: ad7476.c:79 spi3 ad7476#E[57992] DIAG: ad7476.c:79 spi3 ad7476 rx hal=3 e=0x00 x4
+[2026-11-20 09:04:42.838] [ERROR] fw    E[58240] DIAG: ad7476.c:79 spi3 ad7476 rx hal=3 e=0x00 x8
+[2026-11-20 09:04:43.295] [ERROR] fw    E[58736] DIAG: ad7476.c:79 spi3 ad7476 rx hal=3 e=0x00 x16
+[2026-11-20 09:04:44.281] [ERROR] fw    E[59728] DIAG: ad7476.c:79 spi3 ad7476 rx hal=3 e=0x00 x32
+[2026-11-20 09:04:46.270] [ERROR] fw    E[61712] DIAG: ad7476.c:79 spi3 ad7476 rx hal=3 e=0x00 x64
+[2026-11-20 09:04:50.264] [ERROR] fw    E[65680] DIAG: ad7476.c:79 spi3 ad7476 rx hal=3 e=0x00 x128
+[2026-11-20 09:04:58.147] [ERROR] fw    E[73618] DIAG: ad7476.c:79 spi3 ad7476 rx hal=3 e=0x00 x256
+[2026-11-20 09:05:13.991] [ERROR] fw    E[89495] DIAG: ad7476.c:79 spi3 ad7476 rx hal=3 e=0x00 x512
+[2026-11-20 09:05:45.681] [ERROR] fw    E[121246] DIAG: ad7476.c:79 spi3 ad7476 rx hal=3 e=0x00 x1024
+[2026-11-20 09:06:49.043] [ERROR] fw    E[184748] DIAG: ad7476.c:79 spi3 ad7476 rx hal=3 e=0x00 x2048
+[2026-11-20 09:08:55.795] [ERROR] fw    E[311751] DIAG: ad7476.c:79 spi3 ad7476 rx hal=3 e=0x00 x4096
+[2026-11-20 09:13:09.265] [ERROR] fw    E[565761] DIAG: ad7476.c:79 spi3 ad7476 rx hal=3 e=0x00 x8192
+[2026-11-20 09:21:36.228] [ERROR] fw    E[1073777] DIAG: ad7476.c:79 spi3 ad7476 rx hal=3 e=0x00 x16384
+[2026-11-20 09:38:29.914] [ERROR] fw    E[2089813] DIAG: ad7476.c:79 spi3 ad7476 rx hal=3 e=0x00 x32768
+[2026-11-20 10:12:17.270] [INFO ] cont  cont PASS — 0 passed, 0 failed
+[2026-11-20 10:12:17.272] [ERROR] fw    E[4121882] DIAG: ad7476.c:79 spi3 ad7476 rx hal=3 e=0x00 x65536
+
+===== SERIAL TRAFFIC TX/RX (2000 lines, newest 2000 kept) =====
+[2026-11-20 09:15:03.269] [RX] !STATE running
+[2026-11-20 09:15:05.268] [RX] !STATE running
+[2026-11-20 09:15:07.223] [RX] !STATE running
+[2026-11-20 09:15:09.259] [RX] !STATE running
+[2026-11-20 09:15:11.258] [RX] !STATE running
+[2026-11-20 09:15:13.255] [RX] !STATE running
+[2026-11-20 09:15:15.252] [RX] !STATE running
+[2026-11-20 09:15:15.950] [RX] !PROGRESS 40 256
+[2026-11-20 09:15:17.211] [RX] !STATE running
+[2026-11-20 09:15:19.258] [RX] !STATE running
+[2026-11-20 09:15:21.243] [RX] !STATE running
+[2026-11-20 09:15:23.241] [RX] !STATE running
+[2026-11-20 09:15:25.236] [RX] !STATE running
+[2026-11-20 09:15:27.236] [RX] !STATE running
+[2026-11-20 09:15:29.236] [RX] !STATE running
+[2026-11-20 09:15:31.236] [RX] !STATE running
+[2026-11-20 09:15:31.761] [RX] !PROGRESS 41 256
+[2026-11-20 09:15:33.190] [RX] !STATE running
+[2026-11-20 09:15:35.226] [RX] !STATE running
+[2026-11-20 09:15:37.185] [RX] !STATE running
+[2026-11-20 09:15:39.220] [RX] !STATE running
+[2026-11-20 09:15:41.222] [RX] !STATE running
+[2026-11-20 09:15:43.216] [RX] !STATE running
+[2026-11-20 09:15:45.216] [RX] !STATE running
+[2026-11-20 09:15:47.211] [RX] !STATE running
+[2026-11-20 09:15:47.647] [RX] !PROGRESS 42 256
+[2026-11-20 09:15:49.212] [RX] !STATE running
+[2026-11-20 09:15:51.206] [RX] !STATE running
+[2026-11-20 09:15:53.191] [RX] !STATE running
+[2026-11-20 09:15:55.203] [RX] !STATE running
+[2026-11-20 09:15:57.198] [RX] !STATE running
+[2026-11-20 09:15:59.197] [RX] !STATE running
+[2026-11-20 09:16:01.193] [RX] !STATE running
+[2026-11-20 09:16:03.152] [RX] !STATE running
+[2026-11-20 09:16:03.495] [RX] !PROGRESS 43 256
+[2026-11-20 09:16:05.190] [RX] !STATE running
+[2026-11-20 09:16:07.187] [RX] !STATE running
+[2026-11-20 09:16:09.182] [RX] !STATE running
+[2026-11-20 09:16:11.180] [RX] !STATE running
+[2026-11-20 09:16:13.176] [RX] !STATE running
+[2026-11-20 09:16:15.174] [RX] !STATE running
+[2026-11-20 09:16:17.173] [RX] !STATE running
+[2026-11-20 09:16:19.164] [RX] !STATE running
+[2026-11-20 09:16:19.300] [RX] !PROGRESS 44 256
+[2026-11-20 09:16:21.126] [RX] !STATE running
+[2026-11-20 09:16:23.125] [RX] !STATE running
+[2026-11-20 09:16:25.132] [RX] !STATE running
+[2026-11-20 09:16:27.117] [RX] !STATE running
+[2026-11-20 09:16:29.157] [RX] !STATE running
+[2026-11-20 09:16:31.159] [RX] !STATE running
+[2026-11-20 09:16:33.151] [RX] !STATE running
+[2026-11-20 09:16:35.148] [RX] !STATE running
+[2026-11-20 09:16:35.150] [RX] !PROGRESS 45 256
+[2026-11-20 09:16:37.145] [RX] !STATE running
+[2026-11-20 09:16:39.142] [RX] !STATE running
+[2026-11-20 09:16:41.139] [RX] !STATE running
+[2026-11-20 09:16:43.140] [RX] !STATE running
+[2026-11-20 09:16:45.133] [RX] !STATE running
+[2026-11-20 09:16:47.131] [RX] !STATE running
+[2026-11-20 09:16:49.115] [RX] !STATE running
+[2026-11-20 09:16:51.036] [RX] !PROGRESS 46 256
+[2026-11-20 09:16:51.084] [RX] !STATE running
+[2026-11-20 09:16:53.121] [RX] !STATE running
+[2026-11-20 09:16:55.117] [RX] !STATE running
+[2026-11-20 09:16:57.078] [RX] !STATE running
+[2026-11-20 09:16:59.111] [RX] !STATE running
+[2026-11-20 09:17:01.108] [RX] !STATE running
+[2026-11-20 09:17:03.067] [RX] !STATE running
+[2026-11-20 09:17:05.101] [RX] !STATE running
+[2026-11-20 09:17:06.852] [RX] !PROGRESS 47 256
+[2026-11-20 09:17:07.085] [RX] !STATE running
+[2026-11-20 09:17:09.054] [RX] !STATE running
+[2026-11-20 09:17:11.050] [RX] !STATE running
+[2026-11-20 09:17:13.086] [RX] !STATE running
+[2026-11-20 09:17:15.082] [RX] !STATE running
+[2026-11-20 09:17:17.077] [RX] !STATE running
+[2026-11-20 09:17:19.077] [RX] !STATE running
+[2026-11-20 09:17:21.073] [RX] !STATE running
+[2026-11-20 09:17:22.717] [RX] !PROGRESS 48 256
+[2026-11-20 09:17:23.071] [RX] !STATE running
+[2026-11-20 09:17:25.066] [RX] !STATE running
+[2026-11-20 09:17:27.062] [RX] !STATE running
+[2026-11-20 09:17:29.019] [RX] !STATE running
+[2026-11-20 09:17:31.058] [RX] !STATE running
+[2026-11-20 09:17:33.051] [RX] !STATE running
+[2026-11-20 09:17:35.048] [RX] !STATE running
+[2026-11-20 09:17:37.046] [RX] !STATE running
+[2026-11-20 09:17:38.512] [RX] !PROGRESS 49 256
+[2026-11-20 09:17:39.019] [RX] !STATE running
+[2026-11-20 09:17:41.038] [RX] !STATE running
+[2026-11-20 09:17:43.029] [RX] !STATE running
+[2026-11-20 09:17:45.031] [RX] !STATE running
+[2026-11-20 09:17:47.027] [RX] !STATE running
+[2026-11-20 09:17:49.023] [RX] !STATE running
+[2026-11-20 09:17:51.021] [RX] !STATE running
+[2026-11-20 09:17:53.028] [RX] !STATE running
+[2026-11-20 09:17:54.393] [RX] !PROGRESS 50 256
+[2026-11-20 09:17:55.015] [RX] !STATE running
+[2026-11-20 09:17:57.009] [RX] !STATE running
+[2026-11-20 09:17:58.965] [RX] !STATE running
+[2026-11-20 09:18:01.002] [RX] !STATE running
+[2026-11-20 09:18:02.998] [RX] !STATE running
+[2026-11-20 09:18:05.009] [RX] !STATE running
+[2026-11-20 09:18:06.992] [RX] !STATE running
+[2026-11-20 09:18:08.991] [RX] !STATE running
+[2026-11-20 09:18:10.232] [RX] !PROGRESS 51 256
+[2026-11-20 09:18:10.985] [RX] !STATE running
+[2026-11-20 09:18:12.981] [RX] !STATE running
+[2026-11-20 09:18:14.979] [RX] !STATE running
+[2026-11-20 09:18:16.978] [RX] !STATE running
+[2026-11-20 09:18:18.931] [RX] !STATE running
+[2026-11-20 09:18:20.937] [RX] !STATE running
+[2026-11-20 09:18:22.966] [RX] !STATE running
+[2026-11-20 09:18:24.926] [RX] !STATE running
+[2026-11-20 09:18:26.072] [RX] !PROGRESS 52 256
+[2026-11-20 09:18:26.917] [RX] !STATE running
+[2026-11-20 09:18:28.952] [RX] !STATE running
+[2026-11-20 09:18:30.944] [RX] !STATE running
+[2026-11-20 09:18:32.947] [RX] !STATE running
+[2026-11-20 09:18:34.944] [RX] !STATE running
+[2026-11-20 09:18:36.988] [RX] !STATE running
+[2026-11-20 09:18:38.937] [RX] !STATE running
+[2026-11-20 09:18:40.925] [RX] !STATE running
+[2026-11-20 09:18:41.872] [RX] !PROGRESS 53 256
+[2026-11-20 09:18:42.931] [RX] !STATE running
+[2026-11-20 09:18:44.927] [RX] !STATE running
+[2026-11-20 09:18:46.925] [RX] !STATE running
+[2026-11-20 09:18:48.921] [RX] !STATE running
+[2026-11-20 09:18:50.918] [RX] !STATE running
+[2026-11-20 09:18:52.913] [RX] !STATE running
+[2026-11-20 09:18:54.871] [RX] !STATE running
+[2026-11-20 09:18:56.907] [RX] !STATE running
+[2026-11-20 09:18:57.754] [RX] !PROGRESS 54 256
+[2026-11-20 09:18:58.903] [RX] !STATE running
+[2026-11-20 09:19:00.901] [RX] !STATE running
+[2026-11-20 09:19:02.896] [RX] !STATE running
+[2026-11-20 09:19:04.893] [RX] !STATE running
+[2026-11-20 09:19:06.892] [RX] !STATE running
+[2026-11-20 09:19:08.890] [RX] !STATE running
+[2026-11-20 09:19:10.881] [RX] !STATE running
+[2026-11-20 09:19:12.851] [RX] !STATE running
+[2026-11-20 09:19:13.565] [RX] !PROGRESS 55 256
+[2026-11-20 09:19:14.834] [RX] !STATE running
+[2026-11-20 09:19:16.874] [RX] !STATE running
+[2026-11-20 09:19:18.870] [RX] !STATE running
+[2026-11-20 09:19:20.826] [RX] !STATE running
+[2026-11-20 09:19:22.822] [RX] !STATE running
+[2026-11-20 09:19:24.819] [RX] !STATE running
+[2026-11-20 09:19:26.855] [RX] !STATE running
+[2026-11-20 09:19:28.852] [RX] !STATE running
+[2026-11-20 09:19:29.435] [RX] !PROGRESS 56 256
+[2026-11-20 09:19:30.810] [RX] !STATE running
+[2026-11-20 09:19:32.844] [RX] !STATE running
+[2026-11-20 09:19:34.841] [RX] !STATE running
+[2026-11-20 09:19:36.838] [RX] !STATE running
+[2026-11-20 09:19:38.835] [RX] !STATE running
+[2026-11-20 09:19:40.829] [RX] !STATE running
+[2026-11-20 09:19:42.785] [RX] !STATE running
+[2026-11-20 09:19:44.783] [RX] !STATE running
+[2026-11-20 09:19:45.231] [RX] !PROGRESS 57 256
+[2026-11-20 09:19:46.790] [RX] !STATE running
+[2026-11-20 09:19:48.816] [RX] !STATE running
+[2026-11-20 09:19:50.776] [RX] !STATE running
+[2026-11-20 09:19:52.805] [RX] !STATE running
+[2026-11-20 09:19:54.804] [RX] !STATE running
+[2026-11-20 09:19:56.798] [RX] !STATE running
+[2026-11-20 09:19:58.795] [RX] !STATE running
+[2026-11-20 09:20:00.791] [RX] !STATE running
+[2026-11-20 09:20:01.109] [RX] !PROGRESS 58 256
+[2026-11-20 09:20:02.788] [RX] !STATE running
+[2026-11-20 09:20:04.784] [RX] !STATE running
+[2026-11-20 09:20:06.780] [RX] !STATE running
+[2026-11-20 09:20:08.775] [RX] !STATE running
+[2026-11-20 09:20:10.772] [RX] !STATE running
+[2026-11-20 09:20:12.768] [RX] !STATE running
+[2026-11-20 09:20:14.767] [RX] !STATE running
+[2026-11-20 09:20:16.725] [RX] !STATE running
+[2026-11-20 09:20:16.947] [RX] !PROGRESS 59 256
+[2026-11-20 09:20:18.757] [RX] !STATE running
+[2026-11-20 09:20:20.755] [RX] !STATE running
+[2026-11-20 09:20:22.751] [RX] !STATE running
+[2026-11-20 09:20:24.752] [RX] !STATE running
+[2026-11-20 09:20:26.749] [RX] !STATE running
+[2026-11-20 09:20:28.740] [RX] !STATE running
+[2026-11-20 09:20:30.737] [RX] !STATE running
+[2026-11-20 09:20:32.733] [RX] !STATE running
+[2026-11-20 09:20:32.745] [RX] !PROGRESS 60 256
+[2026-11-20 09:20:34.686] [RX] !STATE running
+[2026-11-20 09:20:36.685] [RX] !STATE running
+[2026-11-20 09:20:38.719] [RX] !STATE running
+[2026-11-20 09:20:40.678] [RX] !STATE running
+[2026-11-20 09:20:42.722] [RX] !STATE running
+[2026-11-20 09:20:44.669] [RX] !STATE running
+[2026-11-20 09:20:46.703] [RX] !STATE running
+[2026-11-20 09:20:48.632] [RX] !PROGRESS 61 256
+[2026-11-20 09:20:48.663] [RX] !STATE running
+[2026-11-20 09:20:50.700] [RX] !STATE running
+[2026-11-20 09:20:52.712] [RX] !STATE running
+[2026-11-20 09:20:54.690] [RX] !STATE running
+[2026-11-20 09:20:56.688] [RX] !STATE running
+[2026-11-20 09:20:58.683] [RX] !STATE running
+[2026-11-20 09:21:00.682] [RX] !STATE running
+[2026-11-20 09:21:02.637] [RX] !STATE running
+[2026-11-20 09:21:04.425] [RX] !PROGRESS 62 256
+[2026-11-20 09:21:04.673] [RX] !STATE running
+[2026-11-20 09:21:06.670] [RX] !STATE running
+[2026-11-20 09:21:08.666] [RX] !STATE running
+[2026-11-20 09:21:10.660] [RX] !STATE running
+[2026-11-20 09:21:12.656] [RX] !STATE running
+[2026-11-20 09:21:14.654] [RX] !STATE running
+[2026-11-20 09:21:16.649] [RX] !STATE running
+[2026-11-20 09:21:18.652] [RX] !STATE running
+[2026-11-20 09:21:20.300] [RX] !PROGRESS 63 256
+[2026-11-20 09:21:20.648] [RX] !STATE running
+[2026-11-20 09:21:22.638] [RX] !STATE running
+[2026-11-20 09:21:24.640] [RX] !STATE running
+[2026-11-20 09:21:26.613] [RX] !STATE running
+[2026-11-20 09:21:28.629] [RX] !STATE running
+[2026-11-20 09:21:30.626] [RX] !STATE running
+[2026-11-20 09:21:32.583] [RX] !STATE running
+[2026-11-20 09:21:34.617] [RX] !STATE running
+[2026-11-20 09:21:36.137] [RX] !PROGRESS 64 256
+[2026-11-20 09:21:36.228] [RX] #E[1073777] DIAG: ad7476.c:79 spi3 ad7476 rx hal=3 e=0x00 x16384
+[2026-11-20 09:21:36.619] [RX] !STATE running
+[2026-11-20 09:21:38.624] [RX] !STATE running
+[2026-11-20 09:21:40.605] [RX] !STATE running
+[2026-11-20 09:21:42.612] [RX] !STATE running
+[2026-11-20 09:21:44.597] [RX] !STATE running
+[2026-11-20 09:21:46.595] [RX] !STATE running
+[2026-11-20 09:21:48.590] [RX] !STATE running
+[2026-11-20 09:21:50.586] [RX] !STATE running
+[2026-11-20 09:21:51.979] [RX] !PROGRESS 65 256
+[2026-11-20 09:21:52.590] [RX] !STATE running
+[2026-11-20 09:21:54.580] [RX] !STATE running
+[2026-11-20 09:21:56.537] [RX] !STATE running
+[2026-11-20 09:21:58.570] [RX] !STATE running
+[2026-11-20 09:22:00.568] [RX] !STATE running
+[2026-11-20 09:22:02.563] [RX] !STATE running
+[2026-11-20 09:22:04.562] [RX] !STATE running
+[2026-11-20 09:22:06.556] [RX] !STATE running
+[2026-11-20 09:22:07.771] [RX] !PROGRESS 66 256
+[2026-11-20 09:22:08.517] [RX] !STATE running
+[2026-11-20 09:22:10.555] [RX] !STATE running
+[2026-11-20 09:22:12.545] [RX] !STATE running
+[2026-11-20 09:22:14.541] [RX] !STATE running
+[2026-11-20 09:22:16.537] [RX] !STATE running
+[2026-11-20 09:22:18.493] [RX] !STATE running
+[2026-11-20 09:22:20.529] [RX] !STATE running
+[2026-11-20 09:22:22.485] [RX] !STATE running
+[2026-11-20 09:22:23.647] [RX] !PROGRESS 67 256
+[2026-11-20 09:22:24.480] [RX] !STATE running
+[2026-11-20 09:22:26.517] [RX] !STATE running
+[2026-11-20 09:22:28.497] [RX] !STATE running
+[2026-11-20 09:22:30.508] [RX] !STATE running
+[2026-11-20 09:22:32.510] [RX] !STATE running
+[2026-11-20 09:22:34.500] [RX] !STATE running
+[2026-11-20 09:22:36.496] [RX] !STATE running
+[2026-11-20 09:22:38.453] [RX] !STATE running
+[2026-11-20 09:22:39.486] [RX] !PROGRESS 68 256
+[2026-11-20 09:22:40.488] [RX] !STATE running
+[2026-11-20 09:22:42.485] [RX] !STATE running
+[2026-11-20 09:22:44.479] [RX] !STATE running
+[2026-11-20 09:22:46.476] [RX] !STATE running
+[2026-11-20 09:22:48.471] [RX] !STATE running
+[2026-11-20 09:22:50.469] [RX] !STATE running
+[2026-11-20 09:22:52.465] [RX] !STATE running
+[2026-11-20 09:22:54.462] [RX] !STATE running
+[2026-11-20 09:22:55.321] [RX] !PROGRESS 69 256
+[2026-11-20 09:22:56.458] [RX] !STATE running
+[2026-11-20 09:22:58.453] [RX] !STATE running
+[2026-11-20 09:23:00.451] [RX] !STATE running
+[2026-11-20 09:23:02.446] [RX] !STATE running
+[2026-11-20 09:23:04.402] [RX] !STATE running
+[2026-11-20 09:23:06.439] [RX] !STATE running
+[2026-11-20 09:23:08.418] [RX] !STATE running
+[2026-11-20 09:23:10.434] [RX] !STATE running
+[2026-11-20 09:23:11.149] [RX] !PROGRESS 70 256
+[2026-11-20 09:23:12.429] [RX] !STATE running
+[2026-11-20 09:23:14.427] [RX] !STATE running
+[2026-11-20 09:23:16.423] [RX] !STATE running
+[2026-11-20 09:23:18.417] [RX] !STATE running
+[2026-11-20 09:23:20.375] [RX] !STATE running
+[2026-11-20 09:23:22.370] [RX] !STATE running
+[2026-11-20 09:23:24.375] [RX] !STATE running
+[2026-11-20 09:23:26.378] [RX] !STATE running
+[2026-11-20 09:23:26.970] [RX] !PROGRESS 71 256
+[2026-11-20 09:23:28.368] [RX] !STATE running
+[2026-11-20 09:23:30.394] [RX] !STATE running
+[2026-11-20 09:23:32.356] [RX] !STATE running
+[2026-11-20 09:23:34.359] [RX] !STATE running
+[2026-11-20 09:23:36.345] [RX] !STATE running
+[2026-11-20 09:23:38.380] [RX] !STATE running
+[2026-11-20 09:23:40.375] [RX] !STATE running
+[2026-11-20 09:23:42.336] [RX] !STATE running
+[2026-11-20 09:23:42.838] [RX] !PROGRESS 72 256
+[2026-11-20 09:23:44.331] [RX] !STATE running
+[2026-11-20 09:23:46.364] [RX] !STATE running
+[2026-11-20 09:23:48.322] [RX] !STATE running
+[2026-11-20 09:23:50.315] [RX] !STATE running
+[2026-11-20 09:23:52.352] [RX] !STATE running
+[2026-11-20 09:23:54.347] [RX] !STATE running
+[2026-11-20 09:23:56.346] [RX] !STATE running
+[2026-11-20 09:23:58.302] [RX] !STATE running
+[2026-11-20 09:23:58.674] [RX] !PROGRESS 73 256
+[2026-11-20 09:24:00.316] [RX] !STATE running
+[2026-11-20 09:24:02.330] [RX] !STATE running
+[2026-11-20 09:24:04.309] [RX] !STATE running
+[2026-11-20 09:24:06.328] [RX] !STATE running
+[2026-11-20 09:24:08.284] [RX] !STATE running
+[2026-11-20 09:24:10.320] [RX] !STATE running
+[2026-11-20 09:24:12.318] [RX] !STATE running
+[2026-11-20 09:24:14.312] [RX] !STATE running
+[2026-11-20 09:24:14.511] [RX] !PROGRESS 74 256
+[2026-11-20 09:24:16.309] [RX] !STATE running
+[2026-11-20 09:24:18.307] [RX] !STATE running
+[2026-11-20 09:24:20.303] [RX] !STATE running
+[2026-11-20 09:24:22.297] [RX] !STATE running
+[2026-11-20 09:24:24.271] [RX] !STATE running
+[2026-11-20 09:24:26.291] [RX] !STATE running
+[2026-11-20 09:24:28.288] [RX] !STATE running
+[2026-11-20 09:24:30.244] [RX] !STATE running
+[2026-11-20 09:24:30.321] [RX] !PROGRESS 75 256
+[2026-11-20 09:24:32.287] [RX] !STATE running
+[2026-11-20 09:24:34.280] [RX] !STATE running
+[2026-11-20 09:24:36.272] [RX] !STATE running
+[2026-11-20 09:24:38.268] [RX] !STATE running
+[2026-11-20 09:24:40.265] [RX] !STATE running
+[2026-11-20 09:24:42.261] [RX] !STATE running
+[2026-11-20 09:24:44.257] [RX] !STATE running
+[2026-11-20 09:24:46.190] [RX] !PROGRESS 76 256
+[2026-11-20 09:24:46.219] [RX] !STATE running
+[2026-11-20 09:24:48.250] [RX] !STATE running
+[2026-11-20 09:24:50.207] [RX] !STATE running
+[2026-11-20 09:24:52.240] [RX] !STATE running
+[2026-11-20 09:24:54.199] [RX] !STATE running
+[2026-11-20 09:24:56.196] [RX] !STATE running
+[2026-11-20 09:24:58.228] [RX] !STATE running
+[2026-11-20 09:25:00.186] [RX] !STATE running
+[2026-11-20 09:25:02.025] [RX] !PROGRESS 77 256
+[2026-11-20 09:25:02.221] [RX] !STATE running
+[2026-11-20 09:25:04.218] [RX] !STATE running
+[2026-11-20 09:25:06.175] [RX] !STATE running
+[2026-11-20 09:25:08.211] [RX] !STATE running
+[2026-11-20 09:25:10.168] [RX] !STATE running
+[2026-11-20 09:25:12.205] [RX] !STATE running
+[2026-11-20 09:25:14.160] [RX] !STATE running
+[2026-11-20 09:25:16.197] [RX] !STATE running
+[2026-11-20 09:25:17.863] [RX] !PROGRESS 78 256
+[2026-11-20 09:25:18.194] [RX] !STATE running
+[2026-11-20 09:25:20.186] [RX] !STATE running
+[2026-11-20 09:25:22.165] [RX] !STATE running
+[2026-11-20 09:25:24.180] [RX] !STATE running
+[2026-11-20 09:25:26.176] [RX] !STATE running
+[2026-11-20 09:25:28.132] [RX] !STATE running
+[2026-11-20 09:25:30.168] [RX] !STATE running
+[2026-11-20 09:25:32.166] [RX] !STATE running
+[2026-11-20 09:25:33.697] [RX] !PROGRESS 79 256
+[2026-11-20 09:25:34.160] [RX] !STATE running
+[2026-11-20 09:25:36.118] [RX] !STATE running
+[2026-11-20 09:25:38.151] [RX] !STATE running
+[2026-11-20 09:25:40.106] [RX] !STATE running
+[2026-11-20 09:25:42.146] [RX] !STATE running
+[2026-11-20 09:25:44.139] [RX] !STATE running
+[2026-11-20 09:25:46.137] [RX] !STATE running
+[2026-11-20 09:25:48.131] [RX] !STATE running
+[2026-11-20 09:25:49.535] [RX] !PROGRESS 80 256
+[2026-11-20 09:25:50.126] [RX] !STATE running
+[2026-11-20 09:25:52.125] [RX] !STATE running
+[2026-11-20 09:25:54.119] [RX] !STATE running
+[2026-11-20 09:25:56.114] [RX] !STATE running
+[2026-11-20 09:25:58.110] [RX] !STATE running
+[2026-11-20 09:26:00.077] [RX] !STATE running
+[2026-11-20 09:26:02.103] [RX] !STATE running
+[2026-11-20 09:26:04.098] [RX] !STATE running
+[2026-11-20 09:26:05.368] [RX] !PROGRESS 81 256
+[2026-11-20 09:26:06.094] [RX] !STATE running
+[2026-11-20 09:26:08.057] [RX] !STATE running
+[2026-11-20 09:26:10.087] [RX] !STATE running
+[2026-11-20 09:26:12.042] [RX] !STATE running
+[2026-11-20 09:26:14.079] [RX] !STATE running
+[2026-11-20 09:26:16.075] [RX] !STATE running
+[2026-11-20 09:26:18.071] [RX] !STATE running
+[2026-11-20 09:26:20.067] [RX] !STATE running
+[2026-11-20 09:26:21.206] [RX] !PROGRESS 82 256
+[2026-11-20 09:26:22.088] [RX] !STATE running
+[2026-11-20 09:26:24.061] [RX] !STATE running
+[2026-11-20 09:26:26.054] [RX] !STATE running
+[2026-11-20 09:26:28.050] [RX] !STATE running
+[2026-11-20 09:26:30.046] [RX] !STATE running
+[2026-11-20 09:26:32.042] [RX] !STATE running
+[2026-11-20 09:26:34.039] [RX] !STATE running
+[2026-11-20 09:26:36.035] [RX] !STATE running
+[2026-11-20 09:26:37.007] [RX] !PROGRESS 83 256
+[2026-11-20 09:26:38.032] [RX] !STATE running
+[2026-11-20 09:26:40.029] [RX] !STATE running
+[2026-11-20 09:26:42.025] [RX] !STATE running
+[2026-11-20 09:26:43.981] [RX] !STATE running
+[2026-11-20 09:26:46.017] [RX] !STATE running
+[2026-11-20 09:26:47.976] [RX] !STATE running
+[2026-11-20 09:26:50.010] [RX] !STATE running
+[2026-11-20 09:26:52.006] [RX] !STATE running
+[2026-11-20 09:26:52.880] [RX] !PROGRESS 84 256
+[2026-11-20 09:26:54.003] [RX] !STATE running
+[2026-11-20 09:26:55.998] [RX] !STATE running
+[2026-11-20 09:26:57.955] [RX] !STATE running
+[2026-11-20 09:26:59.989] [RX] !STATE running
+[2026-11-20 09:27:01.987] [RX] !STATE running
+[2026-11-20 09:27:03.982] [RX] !STATE running
+[2026-11-20 09:27:05.980] [RX] !STATE running
+[2026-11-20 09:27:07.975] [RX] !STATE running
+[2026-11-20 09:27:08.716] [RX] !PROGRESS 85 256
+[2026-11-20 09:27:09.971] [RX] !STATE running
+[2026-11-20 09:27:11.973] [RX] !STATE running
+[2026-11-20 09:27:13.936] [RX] !STATE running
+[2026-11-20 09:27:15.963] [RX] !STATE running
+[2026-11-20 09:27:17.959] [RX] !STATE running
+[2026-11-20 09:27:19.957] [RX] !STATE running
+[2026-11-20 09:27:21.950] [RX] !STATE running
+[2026-11-20 09:27:23.951] [RX] !STATE running
+[2026-11-20 09:27:24.558] [RX] !PROGRESS 86 256
+[2026-11-20 09:27:25.944] [RX] !STATE running
+[2026-11-20 09:27:27.941] [RX] !STATE running
+[2026-11-20 09:27:29.937] [RX] !STATE running
+[2026-11-20 09:27:31.934] [RX] !STATE running
+[2026-11-20 09:27:33.930] [RX] !STATE running
+[2026-11-20 09:27:35.928] [RX] !STATE running
+[2026-11-20 09:27:37.923] [RX] !STATE running
+[2026-11-20 09:27:39.925] [RX] !STATE running
+[2026-11-20 09:27:40.408] [RX] !PROGRESS 87 256
+[2026-11-20 09:27:41.918] [RX] !STATE running
+[2026-11-20 09:27:43.914] [RX] !STATE running
+[2026-11-20 09:27:45.910] [RX] !STATE running
+[2026-11-20 09:27:47.899] [RX] !STATE running
+[2026-11-20 09:27:49.904] [RX] !STATE running
+[2026-11-20 09:27:51.903] [RX] !STATE running
+[2026-11-20 09:27:53.895] [RX] !STATE running
+[2026-11-20 09:27:55.891] [RX] !STATE running
+[2026-11-20 09:27:56.236] [RX] !PROGRESS 88 256
+[2026-11-20 09:27:57.906] [RX] !STATE running
+[2026-11-20 09:27:59.884] [RX] !STATE running
+[2026-11-20 09:28:01.880] [RX] !STATE running
+[2026-11-20 09:28:03.840] [RX] !STATE running
+[2026-11-20 09:28:05.832] [RX] !STATE running
+[2026-11-20 09:28:07.830] [RX] !STATE running
+[2026-11-20 09:28:09.825] [RX] !STATE running
+[2026-11-20 09:28:11.827] [RX] !STATE running
+[2026-11-20 09:28:12.037] [RX] !PROGRESS 89 256
+[2026-11-20 09:28:13.819] [RX] !STATE running
+[2026-11-20 09:28:15.834] [RX] !STATE running
+[2026-11-20 09:28:17.815] [RX] !STATE running
+[2026-11-20 09:28:19.810] [RX] !STATE running
+[2026-11-20 09:28:21.807] [RX] !STATE running
+[2026-11-20 09:28:23.800] [RX] !STATE running
+[2026-11-20 09:28:25.836] [RX] !STATE running
+[2026-11-20 09:28:27.833] [RX] !STATE running
+[2026-11-20 09:28:27.874] [RX] !PROGRESS 90 256
+[2026-11-20 09:28:29.792] [RX] !STATE running
+[2026-11-20 09:28:31.828] [RX] !STATE running
+[2026-11-20 09:28:33.823] [RX] !STATE running
+[2026-11-20 09:28:35.822] [RX] !STATE running
+[2026-11-20 09:28:37.817] [RX] !STATE running
+[2026-11-20 09:28:39.777] [RX] !STATE running
+[2026-11-20 09:28:41.792] [RX] !STATE running
+[2026-11-20 09:28:43.760] [RX] !PROGRESS 91 256
+[2026-11-20 09:28:43.767] [RX] !STATE running
+[2026-11-20 09:28:45.810] [RX] !STATE running
+[2026-11-20 09:28:47.801] [RX] !STATE running
+[2026-11-20 09:28:49.796] [RX] !STATE running
+[2026-11-20 09:28:51.792] [RX] !STATE running
+[2026-11-20 09:28:53.748] [RX] !STATE running
+[2026-11-20 09:28:55.785] [RX] !STATE running
+[2026-11-20 09:28:57.783] [RX] !STATE running
+[2026-11-20 09:28:59.595] [RX] !PROGRESS 92 256
+[2026-11-20 09:28:59.779] [RX] !STATE running
+[2026-11-20 09:29:01.736] [RX] !STATE running
+[2026-11-20 09:29:03.732] [RX] !STATE running
+[2026-11-20 09:29:05.727] [RX] !STATE running
+[2026-11-20 09:29:07.724] [RX] !STATE running
+[2026-11-20 09:29:09.720] [RX] !STATE running
+[2026-11-20 09:29:11.758] [RX] !STATE running
+[2026-11-20 09:29:13.756] [RX] !STATE running
+[2026-11-20 09:29:15.435] [RX] !PROGRESS 93 256
+[2026-11-20 09:29:15.750] [RX] !STATE running
+[2026-11-20 09:29:17.745] [RX] !STATE running
+[2026-11-20 09:29:19.747] [RX] !STATE running
+[2026-11-20 09:29:21.702] [RX] !STATE running
+[2026-11-20 09:29:23.697] [RX] !STATE running
+[2026-11-20 09:29:25.693] [RX] !STATE running
+[2026-11-20 09:29:27.727] [RX] !STATE running
+[2026-11-20 09:29:29.682] [RX] !STATE running
+[2026-11-20 09:29:31.272] [RX] !PROGRESS 94 256
+[2026-11-20 09:29:31.719] [RX] !STATE running
+[2026-11-20 09:29:33.718] [RX] !STATE running
+[2026-11-20 09:29:35.681] [RX] !STATE running
+[2026-11-20 09:29:37.706] [RX] !STATE running
+[2026-11-20 09:29:39.667] [RX] !STATE running
+[2026-11-20 09:29:41.700] [RX] !STATE running
+[2026-11-20 09:29:43.696] [RX] !STATE running
+[2026-11-20 09:29:45.696] [RX] !STATE running
+[2026-11-20 09:29:47.109] [RX] !PROGRESS 95 256
+[2026-11-20 09:29:47.690] [RX] !STATE running
+[2026-11-20 09:29:49.646] [RX] !STATE running
+[2026-11-20 09:29:51.643] [RX] !STATE running
+[2026-11-20 09:29:53.639] [RX] !STATE running
+[2026-11-20 09:29:55.635] [RX] !STATE running
+[2026-11-20 09:29:57.632] [RX] !STATE running
+[2026-11-20 09:29:59.685] [RX] !STATE running
+[2026-11-20 09:30:01.623] [RX] !STATE running
+[2026-11-20 09:30:02.940] [RX] !PROGRESS 96 256
+[2026-11-20 09:30:03.662] [RX] !STATE running
+[2026-11-20 09:30:05.628] [RX] !STATE running
+[2026-11-20 09:30:07.613] [RX] !STATE running
+[2026-11-20 09:30:09.610] [RX] !STATE running
+[2026-11-20 09:30:11.605] [RX] !STATE running
+[2026-11-20 09:30:13.604] [RX] !STATE running
+[2026-11-20 09:30:15.599] [RX] !STATE running
+[2026-11-20 09:30:17.640] [RX] !STATE running
+[2026-11-20 09:30:18.747] [RX] !PROGRESS 97 256
+[2026-11-20 09:30:19.631] [RX] !STATE running
+[2026-11-20 09:30:21.595] [RX] !STATE running
+[2026-11-20 09:30:23.623] [RX] !STATE running
+[2026-11-20 09:30:25.580] [RX] !STATE running
+[2026-11-20 09:30:27.577] [RX] !STATE running
+[2026-11-20 09:30:29.573] [RX] !STATE running
+[2026-11-20 09:30:31.568] [RX] !STATE running
+[2026-11-20 09:30:33.565] [RX] !STATE running
+[2026-11-20 09:30:34.585] [RX] !PROGRESS 98 256
+[2026-11-20 09:30:35.562] [RX] !STATE running
+[2026-11-20 09:30:37.556] [RX] !STATE running
+[2026-11-20 09:30:39.552] [RX] !STATE running
+[2026-11-20 09:30:41.549] [RX] !STATE running
+[2026-11-20 09:30:43.585] [RX] !STATE running
+[2026-11-20 09:30:45.579] [RX] !STATE running
+[2026-11-20 09:30:47.536] [RX] !STATE running
+[2026-11-20 09:30:49.531] [RX] !STATE running
+[2026-11-20 09:30:50.418] [RX] !PROGRESS 99 256
+[2026-11-20 09:30:51.527] [RX] !STATE running
+[2026-11-20 09:30:53.526] [RX] !STATE running
+[2026-11-20 09:30:55.532] [RX] !STATE running
+[2026-11-20 09:30:57.556] [RX] !STATE running
+[2026-11-20 09:31:00.436] [RX] !STATE running
+[2026-11-20 09:31:01.543] [RX] !STATE running
+[2026-11-20 09:31:03.578] [RX] !STATE running
+[2026-11-20 09:31:05.501] [RX] !STATE running
+[2026-11-20 09:31:06.298] [RX] !PROGRESS 100 256
+[2026-11-20 09:31:07.536] [RX] !STATE running
+[2026-11-20 09:31:09.535] [RX] !STATE running
+[2026-11-20 09:31:11.491] [RX] !STATE running
+[2026-11-20 09:31:13.527] [RX] !STATE running
+[2026-11-20 09:31:15.483] [RX] !STATE running
+[2026-11-20 09:31:17.520] [RX] !STATE running
+[2026-11-20 09:31:19.515] [RX] !STATE running
+[2026-11-20 09:31:21.516] [RX] !STATE running
+[2026-11-20 09:31:22.135] [RX] !PROGRESS 101 256
+[2026-11-20 09:31:23.511] [RX] !STATE running
+[2026-11-20 09:31:25.512] [RX] !STATE running
+[2026-11-20 09:31:27.501] [RX] !STATE running
+[2026-11-20 09:31:29.497] [RX] !STATE running
+[2026-11-20 09:31:31.493] [RX] !STATE running
+[2026-11-20 09:31:33.489] [RX] !STATE running
+[2026-11-20 09:31:35.487] [RX] !STATE running
+[2026-11-20 09:31:37.484] [RX] !STATE running
+[2026-11-20 09:31:37.973] [RX] !PROGRESS 102 256
+[2026-11-20 09:31:39.479] [RX] !STATE running
+[2026-11-20 09:31:41.476] [RX] !STATE running
+[2026-11-20 09:31:43.470] [RX] !STATE running
+[2026-11-20 09:31:45.430] [RX] !STATE running
+[2026-11-20 09:31:47.470] [RX] !STATE running
+[2026-11-20 09:31:49.460] [RX] !STATE running
+[2026-11-20 09:31:51.419] [RX] !STATE running
+[2026-11-20 09:31:53.456] [RX] !STATE running
+[2026-11-20 09:31:53.811] [RX] !PROGRESS 103 256
+[2026-11-20 09:31:55.449] [RX] !STATE running
+[2026-11-20 09:31:57.407] [RX] !STATE running
+[2026-11-20 09:31:59.446] [RX] !STATE running
+[2026-11-20 09:32:01.416] [RX] !STATE running
+[2026-11-20 09:32:03.393] [RX] !STATE running
+[2026-11-20 09:32:05.430] [RX] !STATE running
+[2026-11-20 09:32:07.388] [RX] !STATE running
+[2026-11-20 09:32:09.423] [RX] !STATE running
+[2026-11-20 09:32:09.617] [RX] !PROGRESS 104 256
+[2026-11-20 09:32:11.417] [RX] !STATE running
+[2026-11-20 09:32:13.414] [RX] !STATE running
+[2026-11-20 09:32:15.410] [RX] !STATE running
+[2026-11-20 09:32:17.406] [RX] !STATE running
+[2026-11-20 09:32:19.402] [RX] !STATE running
+[2026-11-20 09:32:21.399] [RX] !STATE running
+[2026-11-20 09:32:23.394] [RX] !STATE running
+[2026-11-20 09:32:25.391] [RX] !STATE running
+[2026-11-20 09:32:25.445] [RX] !PROGRESS 105 256
+[2026-11-20 09:32:27.350] [RX] !STATE running
+[2026-11-20 09:32:29.382] [RX] !STATE running
+[2026-11-20 09:32:31.339] [RX] !STATE running
+[2026-11-20 09:32:33.378] [RX] !STATE running
+[2026-11-20 09:32:35.370] [RX] !STATE running
+[2026-11-20 09:32:37.367] [RX] !STATE running
+[2026-11-20 09:32:39.363] [RX] !STATE running
+[2026-11-20 09:32:41.281] [RX] !PROGRESS 106 256
+[2026-11-20 09:32:41.317] [RX] !STATE running
+[2026-11-20 09:32:43.372] [RX] !STATE running
+[2026-11-20 09:32:45.349] [RX] !STATE running
+[2026-11-20 09:32:47.350] [RX] !STATE running
+[2026-11-20 09:32:49.310] [RX] !STATE running
+[2026-11-20 09:32:51.339] [RX] !STATE running
+[2026-11-20 09:32:53.292] [RX] !STATE running
+[2026-11-20 09:32:55.329] [RX] !STATE running
+[2026-11-20 09:32:57.155] [RX] !PROGRESS 107 256
+[2026-11-20 09:32:57.325] [RX] !STATE running
+[2026-11-20 09:32:59.320] [RX] !STATE running
+[2026-11-20 09:33:01.317] [RX] !STATE running
+[2026-11-20 09:33:03.320] [RX] !STATE running
+[2026-11-20 09:33:05.310] [RX] !STATE running
+[2026-11-20 09:33:07.266] [RX] !STATE running
+[2026-11-20 09:33:09.302] [RX] !STATE running
+[2026-11-20 09:33:11.299] [RX] !STATE running
+[2026-11-20 09:33:12.997] [RX] !PROGRESS 108 256
+[2026-11-20 09:33:13.255] [RX] !STATE running
+[2026-11-20 09:33:15.292] [RX] !STATE running
+[2026-11-20 09:33:17.288] [RX] !STATE running
+[2026-11-20 09:33:19.285] [RX] !STATE running
+[2026-11-20 09:33:21.281] [RX] !STATE running
+[2026-11-20 09:33:23.239] [RX] !STATE running
+[2026-11-20 09:33:25.274] [RX] !STATE running
+[2026-11-20 09:33:27.270] [RX] !STATE running
+[2026-11-20 09:33:28.793] [RX] !PROGRESS 109 256
+[2026-11-20 09:33:29.260] [RX] !STATE running
+[2026-11-20 09:33:31.264] [RX] !STATE running
+[2026-11-20 09:33:33.262] [RX] !STATE running
+[2026-11-20 09:33:35.256] [RX] !STATE running
+[2026-11-20 09:33:37.255] [RX] !STATE running
+[2026-11-20 09:33:39.251] [RX] !STATE running
+[2026-11-20 09:33:41.248] [RX] !STATE running
+[2026-11-20 09:33:43.245] [RX] !STATE running
+[2026-11-20 09:33:44.685] [RX] !PROGRESS 110 256
+[2026-11-20 09:33:45.241] [RX] !STATE running
+[2026-11-20 09:33:47.238] [RX] !STATE running
+[2026-11-20 09:33:49.199] [RX] !STATE running
+[2026-11-20 09:33:51.232] [RX] !STATE running
+[2026-11-20 09:33:53.229] [RX] !STATE running
+[2026-11-20 09:33:55.224] [RX] !STATE running
+[2026-11-20 09:33:57.226] [RX] !STATE running
+[2026-11-20 09:33:59.178] [RX] !STATE running
+[2026-11-20 09:34:00.517] [RX] !PROGRESS 111 256
+[2026-11-20 09:34:01.215] [RX] !STATE running
+[2026-11-20 09:34:03.212] [RX] !STATE running
+[2026-11-20 09:34:05.206] [RX] !STATE running
+[2026-11-20 09:34:07.203] [RX] !STATE running
+[2026-11-20 09:34:09.203] [RX] !STATE running
+[2026-11-20 09:34:11.195] [RX] !STATE running
+[2026-11-20 09:34:13.192] [RX] !STATE running
+[2026-11-20 09:34:15.192] [RX] !STATE running
+[2026-11-20 09:34:16.358] [RX] !PROGRESS 112 256
+[2026-11-20 09:34:17.186] [RX] !STATE running
+[2026-11-20 09:34:19.142] [RX] !STATE running
+[2026-11-20 09:34:21.178] [RX] !STATE running
+[2026-11-20 09:34:23.175] [RX] !STATE running
+[2026-11-20 09:34:25.132] [RX] !STATE running
+[2026-11-20 09:34:27.168] [RX] !STATE running
+[2026-11-20 09:34:29.165] [RX] !STATE running
+[2026-11-20 09:34:31.160] [RX] !STATE running
+[2026-11-20 09:34:32.195] [RX] !PROGRESS 113 256
+[2026-11-20 09:34:33.158] [RX] !STATE running
+[2026-11-20 09:34:35.115] [RX] !STATE running
+[2026-11-20 09:34:37.111] [RX] !STATE running
+[2026-11-20 09:34:39.151] [RX] !STATE running
+[2026-11-20 09:34:41.145] [RX] !STATE running
+[2026-11-20 09:34:43.139] [RX] !STATE running
+[2026-11-20 09:34:45.098] [RX] !STATE running
+[2026-11-20 09:34:47.175] [RX] !STATE running
+[2026-11-20 09:34:48.035] [RX] !PROGRESS 114 256
+[2026-11-20 09:34:49.131] [RX] !STATE running
+[2026-11-20 09:34:51.128] [RX] !STATE running
+[2026-11-20 09:34:53.126] [RX] !STATE running
+[2026-11-20 09:34:55.121] [RX] !STATE running
+[2026-11-20 09:34:57.118] [RX] !STATE running
+[2026-11-20 09:34:59.122] [RX] !STATE running
+[2026-11-20 09:35:01.071] [RX] !STATE running
+[2026-11-20 09:35:03.108] [RX] !STATE running
+[2026-11-20 09:35:03.878] [RX] !PROGRESS 115 256
+[2026-11-20 09:35:05.105] [RX] !STATE running
+[2026-11-20 09:35:07.102] [RX] !STATE running
+[2026-11-20 09:35:09.098] [RX] !STATE running
+[2026-11-20 09:35:11.058] [RX] !STATE running
+[2026-11-20 09:35:13.092] [RX] !STATE running
+[2026-11-20 09:35:15.049] [RX] !STATE running
+[2026-11-20 09:35:17.085] [RX] !STATE running
+[2026-11-20 09:35:19.082] [RX] !STATE running
+[2026-11-20 09:35:19.719] [RX] !PROGRESS 116 256
+[2026-11-20 09:35:21.081] [RX] !STATE running
+[2026-11-20 09:35:23.093] [RX] !STATE running
+[2026-11-20 09:35:25.073] [RX] !STATE running
+[2026-11-20 09:35:27.069] [RX] !STATE running
+[2026-11-20 09:35:29.067] [RX] !STATE running
+[2026-11-20 09:35:31.067] [RX] !STATE running
+[2026-11-20 09:35:33.060] [RX] !STATE running
+[2026-11-20 09:35:35.060] [RX] !STATE running
+[2026-11-20 09:35:35.521] [RX] !PROGRESS 117 256
+[2026-11-20 09:35:37.054] [RX] !STATE running
+[2026-11-20 09:35:39.050] [RX] !STATE running
+[2026-11-20 09:35:41.028] [RX] !STATE running
+[2026-11-20 09:35:43.044] [RX] !STATE running
+[2026-11-20 09:35:45.022] [RX] !STATE running
+[2026-11-20 09:35:47.010] [RX] !STATE running
+[2026-11-20 09:35:49.034] [RX] !STATE running
+[2026-11-20 09:35:51.031] [RX] !STATE running
+[2026-11-20 09:35:51.405] [RX] !PROGRESS 118 256
+[2026-11-20 09:35:53.027] [RX] !STATE running
+[2026-11-20 09:35:55.025] [RX] !STATE running
+[2026-11-20 09:35:57.022] [RX] !STATE running
+[2026-11-20 09:35:59.016] [RX] !STATE running
+[2026-11-20 09:36:01.014] [RX] !STATE running
+[2026-11-20 09:36:03.052] [RX] !STATE running
+[2026-11-20 09:36:05.006] [RX] !STATE running
+[2026-11-20 09:36:07.004] [RX] !STATE running
+[2026-11-20 09:36:07.247] [RX] !PROGRESS 119 256
+[2026-11-20 09:36:09.002] [RX] !STATE running
+[2026-11-20 09:36:10.958] [RX] !STATE running
+[2026-11-20 09:36:12.995] [RX] !STATE running
+[2026-11-20 09:36:14.992] [RX] !STATE running
+[2026-11-20 09:36:16.988] [RX] !STATE running
+[2026-11-20 09:36:18.985] [RX] !STATE running
+[2026-11-20 09:36:20.981] [RX] !STATE running
+[2026-11-20 09:36:22.939] [RX] !STATE running
+[2026-11-20 09:36:23.093] [RX] !PROGRESS 120 256
+[2026-11-20 09:36:24.976] [RX] !STATE running
+[2026-11-20 09:36:26.972] [RX] !STATE running
+[2026-11-20 09:36:28.937] [RX] !STATE running
+[2026-11-20 09:36:30.993] [RX] !STATE running
+[2026-11-20 09:36:32.961] [RX] !STATE running
+[2026-11-20 09:36:34.957] [RX] !STATE running
+[2026-11-20 09:36:36.917] [RX] !STATE running
+[2026-11-20 09:36:38.927] [RX] !PROGRESS 121 256
+[2026-11-20 09:36:38.930] [RX] !STATE running
+[2026-11-20 09:36:40.907] [RX] !STATE running
+[2026-11-20 09:36:42.945] [RX] !STATE running
+[2026-11-20 09:36:44.941] [RX] !STATE running
+[2026-11-20 09:36:46.937] [RX] !STATE running
+[2026-11-20 09:36:48.935] [RX] !STATE running
+[2026-11-20 09:36:50.931] [RX] !STATE running
+[2026-11-20 09:36:52.927] [RX] !STATE running
+[2026-11-20 09:36:54.769] [RX] !PROGRESS 122 256
+[2026-11-20 09:36:54.925] [RX] !STATE running
+[2026-11-20 09:36:56.883] [RX] !STATE running
+[2026-11-20 09:36:58.918] [RX] !STATE running
+[2026-11-20 09:37:00.935] [RX] !STATE running
+[2026-11-20 09:37:02.914] [RX] !STATE running
+[2026-11-20 09:37:04.908] [RX] !STATE running
+[2026-11-20 09:37:06.891] [RX] !STATE running
+[2026-11-20 09:37:08.902] [RX] !STATE running
+[2026-11-20 09:37:10.613] [RX] !PROGRESS 123 256
+[2026-11-20 09:37:10.897] [RX] !STATE running
+[2026-11-20 09:37:12.895] [RX] !STATE running
+[2026-11-20 09:37:14.893] [RX] !STATE running
+[2026-11-20 09:37:16.888] [RX] !STATE running
+[2026-11-20 09:37:18.887] [RX] !STATE running
+[2026-11-20 09:37:20.843] [RX] !STATE running
+[2026-11-20 09:37:22.879] [RX] !STATE running
+[2026-11-20 09:37:24.876] [RX] !STATE running
+[2026-11-20 09:37:26.454] [RX] !PROGRESS 124 256
+[2026-11-20 09:37:26.873] [RX] !STATE running
+[2026-11-20 09:37:28.870] [RX] !STATE running
+[2026-11-20 09:37:30.866] [RX] !STATE running
+[2026-11-20 09:37:32.827] [RX] !STATE running
+[2026-11-20 09:37:34.861] [RX] !STATE running
+[2026-11-20 09:37:36.859] [RX] !STATE running
+[2026-11-20 09:37:38.854] [RX] !STATE running
+[2026-11-20 09:37:40.850] [RX] !STATE running
+[2026-11-20 09:37:42.279] [RX] !PROGRESS 125 256
+[2026-11-20 09:37:42.807] [RX] !STATE running
+[2026-11-20 09:37:44.845] [RX] !STATE running
+[2026-11-20 09:37:46.841] [RX] !STATE running
+[2026-11-20 09:37:48.838] [RX] !STATE running
+[2026-11-20 09:37:50.836] [RX] !STATE running
+[2026-11-20 09:37:52.831] [RX] !STATE running
+[2026-11-20 09:37:54.828] [RX] !STATE running
+[2026-11-20 09:37:56.827] [RX] !STATE running
+[2026-11-20 09:37:58.139] [RX] !PROGRESS 126 256
+[2026-11-20 09:37:58.820] [RX] !STATE running
+[2026-11-20 09:38:00.819] [RX] !STATE running
+[2026-11-20 09:38:02.815] [RX] !STATE running
+[2026-11-20 09:38:04.811] [RX] !STATE running
+[2026-11-20 09:38:06.808] [RX] !STATE running
+[2026-11-20 09:38:08.806] [RX] !STATE running
+[2026-11-20 09:38:10.803] [RX] !STATE running
+[2026-11-20 09:38:12.800] [RX] !STATE running
+[2026-11-20 09:38:13.981] [RX] !PROGRESS 127 256
+[2026-11-20 09:38:14.759] [RX] !STATE running
+[2026-11-20 09:38:16.794] [RX] !STATE running
+[2026-11-20 09:38:18.754] [RX] !STATE running
+[2026-11-20 09:38:20.788] [RX] !STATE running
+[2026-11-20 09:38:22.744] [RX] !STATE running
+[2026-11-20 09:38:24.782] [RX] !STATE running
+[2026-11-20 09:38:26.777] [RX] !STATE running
+[2026-11-20 09:38:28.772] [RX] !STATE running
+[2026-11-20 09:38:29.822] [RX] !PROGRESS 128 256
+[2026-11-20 09:38:29.914] [RX] #E[2089813] DIAG: ad7476.c:79 spi3 ad7476 rx hal=3 e=0x00 x32768
+[2026-11-20 09:38:30.770] [RX] !STATE running
+[2026-11-20 09:38:32.766] [RX] !STATE running
+[2026-11-20 09:38:34.762] [RX] !STATE running
+[2026-11-20 09:38:36.758] [RX] !STATE running
+[2026-11-20 09:38:38.755] [RX] !STATE running
+[2026-11-20 09:38:40.751] [RX] !STATE running
+[2026-11-20 09:38:42.749] [RX] !STATE running
+[2026-11-20 09:38:44.705] [RX] !STATE running
+[2026-11-20 09:38:45.660] [RX] !PROGRESS 129 256
+[2026-11-20 09:38:46.745] [RX] !STATE running
+[2026-11-20 09:38:48.738] [RX] !STATE running
+[2026-11-20 09:38:50.734] [RX] !STATE running
+[2026-11-20 09:38:52.693] [RX] !STATE running
+[2026-11-20 09:38:54.727] [RX] !STATE running
+[2026-11-20 09:38:56.724] [RX] !STATE running
+[2026-11-20 09:38:58.721] [RX] !STATE running
+[2026-11-20 09:39:00.717] [RX] !STATE running
+[2026-11-20 09:39:01.501] [RX] !PROGRESS 130 256
+[2026-11-20 09:39:02.712] [RX] !STATE running
+[2026-11-20 09:39:04.711] [RX] !STATE running
+[2026-11-20 09:39:06.708] [RX] !STATE running
+[2026-11-20 09:39:08.664] [RX] !STATE running
+[2026-11-20 09:39:10.701] [RX] !STATE running
+[2026-11-20 09:39:12.697] [RX] !STATE running
+[2026-11-20 09:39:14.669] [RX] !STATE running
+[2026-11-20 09:39:16.690] [RX] !STATE running
+[2026-11-20 09:39:17.302] [RX] !PROGRESS 131 256
+[2026-11-20 09:39:18.688] [RX] !STATE running
+[2026-11-20 09:39:20.645] [RX] !STATE running
+[2026-11-20 09:39:22.682] [RX] !STATE running
+[2026-11-20 09:39:24.677] [RX] !STATE running
+[2026-11-20 09:39:26.676] [RX] !STATE running
+[2026-11-20 09:39:28.632] [RX] !STATE running
+[2026-11-20 09:39:30.672] [RX] !STATE running
+[2026-11-20 09:39:32.666] [RX] !STATE running
+[2026-11-20 09:39:33.185] [RX] !PROGRESS 132 256
+[2026-11-20 09:39:34.663] [RX] !STATE running
+[2026-11-20 09:39:36.658] [RX] !STATE running
+[2026-11-20 09:39:38.657] [RX] !STATE running
+[2026-11-20 09:39:40.652] [RX] !STATE running
+[2026-11-20 09:39:42.652] [RX] !STATE running
+[2026-11-20 09:39:44.646] [RX] !STATE running
+[2026-11-20 09:39:46.642] [RX] !STATE running
+[2026-11-20 09:39:48.638] [RX] !STATE running
+[2026-11-20 09:39:48.988] [RX] !PROGRESS 133 256
+[2026-11-20 09:39:50.636] [RX] !STATE running
+[2026-11-20 09:39:52.633] [RX] !STATE running
+[2026-11-20 09:39:54.628] [RX] !STATE running
+[2026-11-20 09:39:56.625] [RX] !STATE running
+[2026-11-20 09:39:58.621] [RX] !STATE running
+[2026-11-20 09:40:00.577] [RX] !STATE running
+[2026-11-20 09:40:02.614] [RX] !STATE running
+[2026-11-20 09:40:04.611] [RX] !STATE running
+[2026-11-20 09:40:04.867] [RX] !PROGRESS 134 256
+[2026-11-20 09:40:06.572] [RX] !STATE running
+[2026-11-20 09:40:08.604] [RX] !STATE running
+[2026-11-20 09:40:10.602] [RX] !STATE running
+[2026-11-20 09:40:12.597] [RX] !STATE running
+[2026-11-20 09:40:14.595] [RX] !STATE running
+[2026-11-20 09:40:16.591] [RX] !STATE running
+[2026-11-20 09:40:18.586] [RX] !STATE running
+[2026-11-20 09:40:20.582] [RX] !STATE running
+[2026-11-20 09:40:20.667] [RX] !PROGRESS 135 256
+[2026-11-20 09:40:22.581] [RX] !STATE running
+[2026-11-20 09:40:24.537] [RX] !STATE running
+[2026-11-20 09:40:26.575] [RX] !STATE running
+[2026-11-20 09:40:28.569] [RX] !STATE running
+[2026-11-20 09:40:30.567] [RX] !STATE running
+[2026-11-20 09:40:32.563] [RX] !STATE running
+[2026-11-20 09:40:34.563] [RX] !STATE running
+[2026-11-20 09:40:36.547] [RX] !PROGRESS 136 256
+[2026-11-20 09:40:36.550] [RX] !STATE running
+[2026-11-20 09:40:38.553] [RX] !STATE running
+[2026-11-20 09:40:40.548] [RX] !STATE running
+[2026-11-20 09:40:42.544] [RX] !STATE running
+[2026-11-20 09:40:44.503] [RX] !STATE running
+[2026-11-20 09:40:46.538] [RX] !STATE running
+[2026-11-20 09:40:48.533] [RX] !STATE running
+[2026-11-20 09:40:50.531] [RX] !STATE running
+[2026-11-20 09:40:52.385] [RX] !PROGRESS 137 256
+[2026-11-20 09:40:52.485] [RX] !STATE running
+[2026-11-20 09:40:54.492] [RX] !STATE running
+[2026-11-20 09:40:56.520] [RX] !STATE running
+[2026-11-20 09:40:58.515] [RX] !STATE running
+[2026-11-20 09:41:00.512] [RX] !STATE running
+[2026-11-20 09:41:02.513] [RX] !STATE running
+[2026-11-20 09:41:04.505] [RX] !STATE running
+[2026-11-20 09:41:06.503] [RX] !STATE running
+[2026-11-20 09:41:08.185] [RX] !PROGRESS 138 256
+[2026-11-20 09:41:08.500] [RX] !STATE running
+[2026-11-20 09:41:10.457] [RX] !STATE running
+[2026-11-20 09:41:12.497] [RX] !STATE running
+[2026-11-20 09:41:14.489] [RX] !STATE running
+[2026-11-20 09:41:16.485] [RX] !STATE running
+[2026-11-20 09:41:18.483] [RX] !STATE running
+[2026-11-20 09:41:20.479] [RX] !STATE running
+[2026-11-20 09:41:22.475] [RX] !STATE running
+[2026-11-20 09:41:24.068] [RX] !PROGRESS 139 256
+[2026-11-20 09:41:24.467] [RX] !STATE running
+[2026-11-20 09:41:26.453] [RX] !STATE running
+[2026-11-20 09:41:28.465] [RX] !STATE running
+[2026-11-20 09:41:30.462] [RX] !STATE running
+[2026-11-20 09:41:32.458] [RX] !STATE running
+[2026-11-20 09:41:34.455] [RX] !STATE running
+[2026-11-20 09:41:36.451] [RX] !STATE running
+[2026-11-20 09:41:38.410] [RX] !STATE running
+[2026-11-20 09:41:39.905] [RX] !PROGRESS 140 256
+[2026-11-20 09:41:40.446] [RX] !STATE running
+[2026-11-20 09:41:42.400] [RX] !STATE running
+[2026-11-20 09:41:44.436] [RX] !STATE running
+[2026-11-20 09:41:46.433] [RX] !STATE running
+[2026-11-20 09:41:48.415] [RX] !STATE running
+[2026-11-20 09:41:50.386] [RX] !STATE running
+[2026-11-20 09:41:52.423] [RX] !STATE running
+[2026-11-20 09:41:54.422] [RX] !STATE running
+[2026-11-20 09:41:55.746] [RX] !PROGRESS 141 256
+[2026-11-20 09:41:56.417] [RX] !STATE running
+[2026-11-20 09:41:58.414] [RX] !STATE running
+[2026-11-20 09:42:00.411] [RX] !STATE running
+[2026-11-20 09:42:02.407] [RX] !STATE running
+[2026-11-20 09:42:04.403] [RX] !STATE running
+[2026-11-20 09:42:06.400] [RX] !STATE running
+[2026-11-20 09:42:08.397] [RX] !STATE running
+[2026-11-20 09:42:10.395] [RX] !STATE running
+[2026-11-20 09:42:11.588] [RX] !PROGRESS 142 256
+[2026-11-20 09:42:12.390] [RX] !STATE running
+[2026-11-20 09:42:14.348] [RX] !STATE running
+[2026-11-20 09:42:16.343] [RX] !STATE running
+[2026-11-20 09:42:18.378] [RX] !STATE running
+[2026-11-20 09:42:20.376] [RX] !STATE running
+[2026-11-20 09:42:22.372] [RX] !STATE running
+[2026-11-20 09:42:24.328] [RX] !STATE running
+[2026-11-20 09:42:26.366] [RX] !STATE running
+[2026-11-20 09:42:27.426] [RX] !PROGRESS 143 256
+[2026-11-20 09:42:28.362] [RX] !STATE running
+[2026-11-20 09:42:30.357] [RX] !STATE running
+[2026-11-20 09:42:32.317] [RX] !STATE running
+[2026-11-20 09:42:34.351] [RX] !STATE running
+[2026-11-20 09:42:36.345] [RX] !STATE running
+[2026-11-20 09:42:38.342] [RX] !STATE running
+[2026-11-20 09:42:40.341] [RX] !STATE running
+[2026-11-20 09:42:42.341] [RX] !STATE running
+[2026-11-20 09:42:43.267] [RX] !PROGRESS 144 256
+[2026-11-20 09:42:44.334] [RX] !STATE running
+[2026-11-20 09:42:46.296] [RX] !STATE running
+[2026-11-20 09:42:48.332] [RX] !STATE running
+[2026-11-20 09:42:50.300] [RX] !STATE running
+[2026-11-20 09:42:52.292] [RX] !STATE running
+[2026-11-20 09:42:54.291] [RX] !STATE running
+[2026-11-20 09:42:56.290] [RX] !STATE running
+[2026-11-20 09:42:58.284] [RX] !STATE running
+[2026-11-20 09:42:59.072] [RX] !PROGRESS 145 256
+[2026-11-20 09:43:00.277] [RX] !STATE running
+[2026-11-20 09:43:02.260] [RX] !STATE running
+[2026-11-20 09:43:04.266] [RX] !STATE running
+[2026-11-20 09:43:06.267] [RX] !STATE running
+[2026-11-20 09:43:08.260] [RX] !STATE running
+[2026-11-20 09:43:10.285] [RX] !STATE running
+[2026-11-20 09:43:12.242] [RX] !STATE running
+[2026-11-20 09:43:14.277] [RX] !STATE running
+[2026-11-20 09:43:14.919] [RX] !PROGRESS 146 256
+[2026-11-20 09:43:16.274] [RX] !STATE running
+[2026-11-20 09:43:18.271] [RX] !STATE running
+[2026-11-20 09:43:20.269] [RX] !STATE running
+[2026-11-20 09:43:22.263] [RX] !STATE running
+[2026-11-20 09:43:24.260] [RX] !STATE running
+[2026-11-20 09:43:26.256] [RX] !STATE running
+[2026-11-20 09:43:28.253] [RX] !STATE running
+[2026-11-20 09:43:30.249] [RX] !STATE running
+[2026-11-20 09:43:30.783] [RX] !PROGRESS 147 256
+[2026-11-20 09:43:32.258] [RX] !STATE running
+[2026-11-20 09:43:34.242] [RX] !STATE running
+[2026-11-20 09:43:36.237] [RX] !STATE running
+[2026-11-20 09:43:38.198] [RX] !STATE running
+[2026-11-20 09:43:40.231] [RX] !STATE running
+[2026-11-20 09:43:42.188] [RX] !STATE running
+[2026-11-20 09:43:44.225] [RX] !STATE running
+[2026-11-20 09:43:46.223] [RX] !STATE running
+[2026-11-20 09:43:46.624] [RX] !PROGRESS 148 256
+[2026-11-20 09:43:48.180] [RX] !STATE running
+[2026-11-20 09:43:50.215] [RX] !STATE running
+[2026-11-20 09:43:52.211] [RX] !STATE running
+[2026-11-20 09:43:54.217] [RX] !STATE running
+[2026-11-20 09:43:56.205] [RX] !STATE running
+[2026-11-20 09:43:58.201] [RX] !STATE running
+[2026-11-20 09:44:00.197] [RX] !STATE running
+[2026-11-20 09:44:02.195] [RX] !STATE running
+[2026-11-20 09:44:02.425] [RX] !PROGRESS 149 256
+[2026-11-20 09:44:04.190] [RX] !STATE running
+[2026-11-20 09:44:06.186] [RX] !STATE running
+[2026-11-20 09:44:08.148] [RX] !STATE running
+[2026-11-20 09:44:10.146] [RX] !STATE running
+[2026-11-20 09:44:12.168] [RX] !STATE running
+[2026-11-20 09:44:14.142] [RX] !STATE running
+[2026-11-20 09:44:16.131] [RX] !STATE running
+[2026-11-20 09:44:18.165] [RX] !STATE running
+[2026-11-20 09:44:18.268] [RX] !PROGRESS 150 256
+[2026-11-20 09:44:20.126] [RX] !STATE running
+[2026-11-20 09:44:22.160] [RX] !STATE running
+[2026-11-20 09:44:24.126] [RX] !STATE running
+[2026-11-20 09:44:26.111] [RX] !STATE running
+[2026-11-20 09:44:28.111] [RX] !STATE running
+[2026-11-20 09:44:30.108] [RX] !STATE running
+[2026-11-20 09:44:32.143] [RX] !STATE running
+[2026-11-20 09:44:34.140] [RX] !STATE running
+[2026-11-20 09:44:34.143] [RX] !PROGRESS 151 256
+[2026-11-20 09:44:36.137] [RX] !STATE running
+[2026-11-20 09:44:38.094] [RX] !STATE running
+[2026-11-20 09:44:40.127] [RX] !STATE running
+[2026-11-20 09:44:42.125] [RX] !STATE running
+[2026-11-20 09:44:44.122] [RX] !STATE running
+[2026-11-20 09:44:46.120] [RX] !STATE running
+[2026-11-20 09:44:48.114] [RX] !STATE running
+[2026-11-20 09:44:49.990] [RX] !PROGRESS 152 256
+[2026-11-20 09:44:50.072] [RX] !STATE running
+[2026-11-20 09:44:52.107] [RX] !STATE running
+[2026-11-20 09:44:54.063] [RX] !STATE running
+[2026-11-20 09:44:56.061] [RX] !STATE running
+[2026-11-20 09:44:58.097] [RX] !STATE running
+[2026-11-20 09:45:00.054] [RX] !STATE running
+[2026-11-20 09:45:02.087] [RX] !STATE running
+[2026-11-20 09:45:04.047] [RX] !STATE running
+[2026-11-20 09:45:05.822] [RX] !PROGRESS 153 256
+[2026-11-20 09:45:06.056] [RX] !STATE running
+[2026-11-20 09:45:08.058] [RX] !STATE running
+[2026-11-20 09:45:10.075] [RX] !STATE running
+[2026-11-20 09:45:12.032] [RX] !STATE running
+[2026-11-20 09:45:14.068] [RX] !STATE running
+[2026-11-20 09:45:16.066] [RX] !STATE running
+[2026-11-20 09:45:18.062] [RX] !STATE running
+[2026-11-20 09:45:20.059] [RX] !STATE running
+[2026-11-20 09:45:21.666] [RX] !PROGRESS 154 256
+[2026-11-20 09:45:22.018] [RX] !STATE running
+[2026-11-20 09:45:24.053] [RX] !STATE running
+[2026-11-20 09:45:26.065] [RX] !STATE running
+[2026-11-20 09:45:28.045] [RX] !STATE running
+[2026-11-20 09:45:30.047] [RX] !STATE running
+[2026-11-20 09:45:32.057] [RX] !STATE running
+[2026-11-20 09:45:33.995] [RX] !STATE running
+[2026-11-20 09:45:35.995] [RX] !STATE running
+[2026-11-20 09:45:37.530] [RX] !PROGRESS 155 256
+[2026-11-20 09:45:38.029] [RX] !STATE running
+[2026-11-20 09:45:40.060] [RX] !STATE running
+[2026-11-20 09:45:42.023] [RX] !STATE running
+[2026-11-20 09:45:43.977] [RX] !STATE running
+[2026-11-20 09:45:46.014] [RX] !STATE running
+[2026-11-20 09:45:47.970] [RX] !STATE running
+[2026-11-20 09:45:50.045] [RX] !STATE running
+[2026-11-20 09:45:52.041] [RX] !STATE running
+[2026-11-20 09:45:53.307] [RX] !PROGRESS 156 256
+[2026-11-20 09:45:54.003] [RX] !STATE running
+[2026-11-20 09:45:56.000] [RX] !STATE running
+[2026-11-20 09:45:57.956] [RX] !STATE running
+[2026-11-20 09:45:59.955] [RX] !STATE running
+[2026-11-20 09:46:01.988] [RX] !STATE running
+[2026-11-20 09:46:03.946] [RX] !STATE running
+[2026-11-20 09:46:05.983] [RX] !STATE running
+[2026-11-20 09:46:07.979] [RX] !STATE running
+[2026-11-20 09:46:09.149] [RX] !PROGRESS 157 256
+[2026-11-20 09:46:09.976] [RX] !STATE running
+[2026-11-20 09:46:11.973] [RX] !STATE running
+[2026-11-20 09:46:13.970] [RX] !STATE running
+[2026-11-20 09:46:15.967] [RX] !STATE running
+[2026-11-20 09:46:17.924] [RX] !STATE running
+[2026-11-20 09:46:19.961] [RX] !STATE running
+[2026-11-20 09:46:21.957] [RX] !STATE running
+[2026-11-20 09:46:23.954] [RX] !STATE running
+[2026-11-20 09:46:25.033] [RX] !PROGRESS 158 256
+[2026-11-20 09:46:25.956] [RX] !STATE running
+[2026-11-20 09:46:27.946] [RX] !STATE running
+[2026-11-20 09:46:29.954] [RX] !STATE running
+[2026-11-20 09:46:31.940] [RX] !STATE running
+[2026-11-20 09:46:33.954] [RX] !STATE running
+[2026-11-20 09:46:35.930] [RX] !STATE running
+[2026-11-20 09:46:37.928] [RX] !STATE running
+[2026-11-20 09:46:39.925] [RX] !STATE running
+[2026-11-20 09:46:40.830] [RX] !PROGRESS 159 256
+[2026-11-20 09:46:41.925] [RX] !STATE running
+[2026-11-20 09:46:43.921] [RX] !STATE running
+[2026-11-20 09:46:45.911] [RX] !STATE running
+[2026-11-20 09:46:47.909] [RX] !STATE running
+[2026-11-20 09:46:49.907] [RX] !STATE running
+[2026-11-20 09:46:51.903] [RX] !STATE running
+[2026-11-20 09:46:53.900] [RX] !STATE running
+[2026-11-20 09:46:55.895] [RX] !STATE running
+[2026-11-20 09:46:56.712] [RX] !PROGRESS 160 256
+[2026-11-20 09:46:57.889] [RX] !STATE running
+[2026-11-20 09:46:59.849] [RX] !STATE running
+[2026-11-20 09:47:01.882] [RX] !STATE running
+[2026-11-20 09:47:03.880] [RX] !STATE running
+[2026-11-20 09:47:05.877] [RX] !STATE running
+[2026-11-20 09:47:07.871] [RX] !STATE running
+[2026-11-20 09:47:09.848] [RX] !STATE running
+[2026-11-20 09:47:11.864] [RX] !STATE running
+[2026-11-20 09:47:12.544] [RX] !PROGRESS 161 256
+[2026-11-20 09:47:13.860] [RX] !STATE running
+[2026-11-20 09:47:15.855] [RX] !STATE running
+[2026-11-20 09:47:17.850] [RX] !STATE running
+[2026-11-20 09:47:19.859] [RX] !STATE running
+[2026-11-20 09:47:21.844] [RX] !STATE running
+[2026-11-20 09:47:23.840] [RX] !STATE running
+[2026-11-20 09:47:25.837] [RX] !STATE running
+[2026-11-20 09:47:27.834] [RX] !STATE running
+[2026-11-20 09:47:28.383] [RX] !PROGRESS 162 256
+[2026-11-20 09:47:29.830] [RX] !STATE running
+[2026-11-20 09:47:31.863] [RX] !STATE running
+[2026-11-20 09:47:33.816] [RX] !STATE running
+[2026-11-20 09:47:35.779] [RX] !STATE running
+[2026-11-20 09:47:37.817] [RX] !STATE running
+[2026-11-20 09:47:39.813] [RX] !STATE running
+[2026-11-20 09:47:41.816] [RX] !STATE running
+[2026-11-20 09:47:43.806] [RX] !STATE running
+[2026-11-20 09:47:44.221] [RX] !PROGRESS 163 256
+[2026-11-20 09:47:45.804] [RX] !STATE running
+[2026-11-20 09:47:47.764] [RX] !STATE running
+[2026-11-20 09:47:49.796] [RX] !STATE running
+[2026-11-20 09:47:51.792] [RX] !STATE running
+[2026-11-20 09:47:53.793] [RX] !STATE running
+[2026-11-20 09:47:55.785] [RX] !STATE running
+[2026-11-20 09:47:57.745] [RX] !STATE running
+[2026-11-20 09:47:59.747] [RX] !STATE running
+[2026-11-20 09:48:00.068] [RX] !PROGRESS 164 256
+[2026-11-20 09:48:01.776] [RX] !STATE running
+[2026-11-20 09:48:03.772] [RX] !STATE running
+[2026-11-20 09:48:05.768] [RX] !STATE running
+[2026-11-20 09:48:07.765] [RX] !STATE running
+[2026-11-20 09:48:09.762] [RX] !STATE running
+[2026-11-20 09:48:11.758] [RX] !STATE running
+[2026-11-20 09:48:13.756] [RX] !STATE running
+[2026-11-20 09:48:15.753] [RX] !STATE running
+[2026-11-20 09:48:15.862] [RX] !PROGRESS 165 256
+[2026-11-20 09:48:17.747] [RX] !STATE running
+[2026-11-20 09:48:19.731] [RX] !STATE running
+[2026-11-20 09:48:21.701] [RX] !STATE running
+[2026-11-20 09:48:23.735] [RX] !STATE running
+[2026-11-20 09:48:25.732] [RX] !STATE running
+[2026-11-20 09:48:27.727] [RX] !STATE running
+[2026-11-20 09:48:29.724] [RX] !STATE running
+[2026-11-20 09:48:31.720] [RX] !STATE running
+[2026-11-20 09:48:31.722] [RX] !PROGRESS 166 256
+[2026-11-20 09:48:33.717] [RX] !STATE running
+[2026-11-20 09:48:35.714] [RX] !STATE running
+[2026-11-20 09:48:37.711] [RX] !STATE running
+[2026-11-20 09:48:39.711] [RX] !STATE running
+[2026-11-20 09:48:41.663] [RX] !STATE running
+[2026-11-20 09:48:43.726] [RX] !STATE running
+[2026-11-20 09:48:45.699] [RX] !STATE running
+[2026-11-20 09:48:47.585] [RX] !PROGRESS 167 256
+[2026-11-20 09:48:47.657] [RX] !STATE running
+[2026-11-20 09:48:49.691] [RX] !STATE running
+[2026-11-20 09:48:51.686] [RX] !STATE running
+[2026-11-20 09:48:53.684] [RX] !STATE running
+[2026-11-20 09:48:55.682] [RX] !STATE running
+[2026-11-20 09:48:57.680] [RX] !STATE running
+[2026-11-20 09:48:59.677] [RX] !STATE running
+[2026-11-20 09:49:01.673] [RX] !STATE running
+[2026-11-20 09:49:03.424] [RX] !PROGRESS 168 256
+[2026-11-20 09:49:03.669] [RX] !STATE running
+[2026-11-20 09:49:05.666] [RX] !STATE running
+[2026-11-20 09:49:07.663] [RX] !STATE running
+[2026-11-20 09:49:09.660] [RX] !STATE running
+[2026-11-20 09:49:11.617] [RX] !STATE running
+[2026-11-20 09:49:13.654] [RX] !STATE running
+[2026-11-20 09:49:15.649] [RX] !STATE running
+[2026-11-20 09:49:17.648] [RX] !STATE running
+[2026-11-20 09:49:19.265] [RX] !PROGRESS 169 256
+[2026-11-20 09:49:19.644] [RX] !STATE running
+[2026-11-20 09:49:21.684] [RX] !STATE running
+[2026-11-20 09:49:23.639] [RX] !STATE running
+[2026-11-20 09:49:25.637] [RX] !STATE running
+[2026-11-20 09:49:27.630] [RX] !STATE running
+[2026-11-20 09:49:29.629] [RX] !STATE running
+[2026-11-20 09:49:31.628] [RX] !STATE running
+[2026-11-20 09:49:33.620] [RX] !STATE running
+[2026-11-20 09:49:35.110] [RX] !PROGRESS 170 256
+[2026-11-20 09:49:35.619] [RX] !STATE running
+[2026-11-20 09:49:37.616] [RX] !STATE running
+[2026-11-20 09:49:39.613] [RX] !STATE running
+[2026-11-20 09:49:41.610] [RX] !STATE running
+[2026-11-20 09:49:43.575] [RX] !STATE running
+[2026-11-20 09:49:45.604] [RX] !STATE running
+[2026-11-20 09:49:47.601] [RX] !STATE running
+[2026-11-20 09:49:49.597] [RX] !STATE running
+[2026-11-20 09:49:50.953] [RX] !PROGRESS 171 256
+[2026-11-20 09:49:51.587] [RX] !STATE running
+[2026-11-20 09:49:53.590] [RX] !STATE running
+[2026-11-20 09:49:55.587] [RX] !STATE running
+[2026-11-20 09:49:57.545] [RX] !STATE running
+[2026-11-20 09:49:59.580] [RX] !STATE running
+[2026-11-20 09:50:01.537] [RX] !STATE running
+[2026-11-20 09:50:03.574] [RX] !STATE running
+[2026-11-20 09:50:05.568] [RX] !STATE running
+[2026-11-20 09:50:06.791] [RX] !PROGRESS 172 256
+[2026-11-20 09:50:07.526] [RX] !STATE running
+[2026-11-20 09:50:09.566] [RX] !STATE running
+[2026-11-20 09:50:11.570] [RX] !STATE running
+[2026-11-20 09:50:13.558] [RX] !STATE running
+[2026-11-20 09:50:15.552] [RX] !STATE running
+[2026-11-20 09:50:17.510] [RX] !STATE running
+[2026-11-20 09:50:19.543] [RX] !STATE running
+[2026-11-20 09:50:21.545] [RX] !STATE running
+[2026-11-20 09:50:22.633] [RX] !PROGRESS 173 256
+[2026-11-20 09:50:23.538] [RX] !STATE running
+[2026-11-20 09:50:25.535] [RX] !STATE running
+[2026-11-20 09:50:27.530] [RX] !STATE running
+[2026-11-20 09:50:29.527] [RX] !STATE running
+[2026-11-20 09:50:31.529] [RX] !STATE running
+[2026-11-20 09:50:33.519] [RX] !STATE running
+[2026-11-20 09:50:35.516] [RX] !STATE running
+[2026-11-20 09:50:37.510] [RX] !STATE running
+[2026-11-20 09:50:38.470] [RX] !PROGRESS 174 256
+[2026-11-20 09:50:39.508] [RX] !STATE running
+[2026-11-20 09:50:41.505] [RX] !STATE running
+[2026-11-20 09:50:43.465] [RX] !STATE running
+[2026-11-20 09:50:45.503] [RX] !STATE running
+[2026-11-20 09:50:47.455] [RX] !STATE running
+[2026-11-20 09:50:49.493] [RX] !STATE running
+[2026-11-20 09:50:51.488] [RX] !STATE running
+[2026-11-20 09:50:53.485] [RX] !STATE running
+[2026-11-20 09:50:54.315] [RX] !PROGRESS 175 256
+[2026-11-20 09:50:55.481] [RX] !STATE running
+[2026-11-20 09:50:57.435] [RX] !STATE running
+[2026-11-20 09:50:59.473] [RX] !STATE running
+[2026-11-20 09:51:01.472] [RX] !STATE running
+[2026-11-20 09:51:03.466] [RX] !STATE running
+[2026-11-20 09:51:05.464] [RX] !STATE running
+[2026-11-20 09:51:07.426] [RX] !STATE running
+[2026-11-20 09:51:09.418] [RX] !STATE running
+[2026-11-20 09:51:10.154] [RX] !PROGRESS 176 256
+[2026-11-20 09:51:11.452] [RX] !STATE running
+[2026-11-20 09:51:13.408] [RX] !STATE running
+[2026-11-20 09:51:15.450] [RX] !STATE running
+[2026-11-20 09:51:17.411] [RX] !STATE running
+[2026-11-20 09:51:19.437] [RX] !STATE running
+[2026-11-20 09:51:21.455] [RX] !STATE running
+[2026-11-20 09:51:23.432] [RX] !STATE running
+[2026-11-20 09:51:25.425] [RX] !STATE running
+[2026-11-20 09:51:25.987] [RX] !PROGRESS 177 256
+[2026-11-20 09:51:27.421] [RX] !STATE running
+[2026-11-20 09:51:29.418] [RX] !STATE running
+[2026-11-20 09:51:31.415] [RX] !STATE running
+[2026-11-20 09:51:33.412] [RX] !STATE running
+[2026-11-20 09:51:35.406] [RX] !STATE running
+[2026-11-20 09:51:37.425] [RX] !STATE running
+[2026-11-20 09:51:39.366] [RX] !STATE running
+[2026-11-20 09:51:41.397] [RX] !STATE running
+[2026-11-20 09:51:41.827] [RX] !PROGRESS 178 256
+[2026-11-20 09:51:43.391] [RX] !STATE running
+[2026-11-20 09:51:45.389] [RX] !STATE running
+[2026-11-20 09:51:47.384] [RX] !STATE running
+[2026-11-20 09:51:49.382] [RX] !STATE running
+[2026-11-20 09:51:51.338] [RX] !STATE running
+[2026-11-20 09:51:53.375] [RX] !STATE running
+[2026-11-20 09:51:55.371] [RX] !STATE running
+[2026-11-20 09:51:57.389] [RX] !STATE running
+[2026-11-20 09:51:57.663] [RX] !PROGRESS 179 256
+[2026-11-20 09:51:59.365] [RX] !STATE running
+[2026-11-20 09:52:01.359] [RX] !STATE running
+[2026-11-20 09:52:03.356] [RX] !STATE running
+[2026-11-20 09:52:05.354] [RX] !STATE running
+[2026-11-20 09:52:07.355] [RX] !STATE running
+[2026-11-20 09:52:09.345] [RX] !STATE running
+[2026-11-20 09:52:11.347] [RX] !STATE running
+[2026-11-20 09:52:13.340] [RX] !STATE running
+[2026-11-20 09:52:13.510] [RX] !PROGRESS 180 256
+[2026-11-20 09:52:15.335] [RX] !STATE running
+[2026-11-20 09:52:17.331] [RX] !STATE running
+[2026-11-20 09:52:19.328] [RX] !STATE running
+[2026-11-20 09:52:21.325] [RX] !STATE running
+[2026-11-20 09:52:23.285] [RX] !STATE running
+[2026-11-20 09:52:25.317] [RX] !STATE running
+[2026-11-20 09:52:27.315] [RX] !STATE running
+[2026-11-20 09:52:29.310] [RX] !STATE running
+[2026-11-20 09:52:29.315] [RX] !PROGRESS 181 256
+[2026-11-20 09:52:31.307] [RX] !STATE running
+[2026-11-20 09:52:33.262] [RX] !STATE running
+[2026-11-20 09:52:35.262] [RX] !STATE running
+[2026-11-20 09:52:37.295] [RX] !STATE running
+[2026-11-20 09:52:39.300] [RX] !STATE running
+[2026-11-20 09:52:41.289] [RX] !STATE running
+[2026-11-20 09:52:43.283] [RX] !STATE running
+[2026-11-20 09:52:45.182] [RX] !PROGRESS 182 256
+[2026-11-20 09:52:45.242] [RX] !STATE running
+[2026-11-20 09:52:47.277] [RX] !STATE running
+[2026-11-20 09:52:49.275] [RX] !STATE running
+[2026-11-20 09:52:51.268] [RX] !STATE running
+[2026-11-20 09:52:53.265] [RX] !STATE running
+[2026-11-20 09:52:55.261] [RX] !STATE running
+[2026-11-20 09:52:57.222] [RX] !STATE running
+[2026-11-20 09:52:59.225] [RX] !STATE running
+[2026-11-20 09:53:00.981] [RX] !PROGRESS 183 256
+[2026-11-20 09:53:01.210] [RX] !STATE running
+[2026-11-20 09:53:03.209] [RX] !STATE running
+[2026-11-20 09:53:05.202] [RX] !STATE running
+[2026-11-20 09:53:07.237] [RX] !STATE running
+[2026-11-20 09:53:09.238] [RX] !STATE running
+[2026-11-20 09:53:11.230] [RX] !STATE running
+[2026-11-20 09:53:13.187] [RX] !STATE running
+[2026-11-20 09:53:15.185] [RX] !STATE running
+[2026-11-20 09:53:16.856] [RX] !PROGRESS 184 256
+[2026-11-20 09:53:17.225] [RX] !STATE running
+[2026-11-20 09:53:19.174] [RX] !STATE running
+[2026-11-20 09:53:21.250] [RX] !STATE running
+[2026-11-20 09:53:23.170] [RX] !STATE running
+[2026-11-20 09:53:25.166] [RX] !STATE running
+[2026-11-20 09:53:27.160] [RX] !STATE running
+[2026-11-20 09:53:29.169] [RX] !STATE running
+[2026-11-20 09:53:31.195] [RX] !STATE running
+[2026-11-20 09:53:32.693] [RX] !PROGRESS 185 256
+[2026-11-20 09:53:33.189] [RX] !STATE running
+[2026-11-20 09:53:35.155] [RX] !STATE running
+[2026-11-20 09:53:37.185] [RX] !STATE running
+[2026-11-20 09:53:39.175] [RX] !STATE running
+[2026-11-20 09:53:41.158] [RX] !STATE running
+[2026-11-20 09:53:43.158] [RX] !STATE running
+[2026-11-20 09:53:45.166] [RX] !STATE running
+[2026-11-20 09:53:47.163] [RX] !STATE running
+[2026-11-20 09:53:48.532] [RX] !PROGRESS 186 256
+[2026-11-20 09:53:49.159] [RX] !STATE running
+[2026-11-20 09:53:51.156] [RX] !STATE running
+[2026-11-20 09:53:53.153] [RX] !STATE running
+[2026-11-20 09:53:55.148] [RX] !STATE running
+[2026-11-20 09:53:57.106] [RX] !STATE running
+[2026-11-20 09:53:59.103] [RX] !STATE running
+[2026-11-20 09:54:01.099] [RX] !STATE running
+[2026-11-20 09:54:03.095] [RX] !STATE running
+[2026-11-20 09:54:04.372] [RX] !PROGRESS 187 256
+[2026-11-20 09:54:05.132] [RX] !STATE running
+[2026-11-20 09:54:07.088] [RX] !STATE running
+[2026-11-20 09:54:09.126] [RX] !STATE running
+[2026-11-20 09:54:11.081] [RX] !STATE running
+[2026-11-20 09:54:13.120] [RX] !STATE running
+[2026-11-20 09:54:15.115] [RX] !STATE running
+[2026-11-20 09:54:17.111] [RX] !STATE running
+[2026-11-20 09:54:19.112] [RX] !STATE running
+[2026-11-20 09:54:20.173] [RX] !PROGRESS 188 256
+[2026-11-20 09:54:21.104] [RX] !STATE running
+[2026-11-20 09:54:23.062] [RX] !STATE running
+[2026-11-20 09:54:25.096] [RX] !STATE running
+[2026-11-20 09:54:27.057] [RX] !STATE running
+[2026-11-20 09:54:29.079] [RX] !STATE running
+[2026-11-20 09:54:31.048] [RX] !STATE running
+[2026-11-20 09:54:33.085] [RX] !STATE running
+[2026-11-20 09:54:35.083] [RX] !STATE running
+[2026-11-20 09:54:36.056] [RX] !PROGRESS 189 256
+[2026-11-20 09:54:37.037] [RX] !STATE running
+[2026-11-20 09:54:39.033] [RX] !STATE running
+[2026-11-20 09:54:41.050] [RX] !STATE running
+[2026-11-20 09:54:43.026] [RX] !STATE running
+[2026-11-20 09:54:45.033] [RX] !STATE running
+[2026-11-20 09:54:47.060] [RX] !STATE running
+[2026-11-20 09:54:49.057] [RX] !STATE running
+[2026-11-20 09:54:51.052] [RX] !STATE running
+[2026-11-20 09:54:51.893] [RX] !PROGRESS 190 256
+[2026-11-20 09:54:53.037] [RX] !STATE running
+[2026-11-20 09:54:55.048] [RX] !STATE running
+[2026-11-20 09:54:57.003] [RX] !STATE running
+[2026-11-20 09:54:59.039] [RX] !STATE running
+[2026-11-20 09:55:00.998] [RX] !STATE running
+[2026-11-20 09:55:02.995] [RX] !STATE running
+[2026-11-20 09:55:05.000] [RX] !STATE running
+[2026-11-20 09:55:06.989] [RX] !STATE running
+[2026-11-20 09:55:07.735] [RX] !PROGRESS 191 256
+[2026-11-20 09:55:09.025] [RX] !STATE running
+[2026-11-20 09:55:11.024] [RX] !STATE running
+[2026-11-20 09:55:12.977] [RX] !STATE running
+[2026-11-20 09:55:15.015] [RX] !STATE running
+[2026-11-20 09:55:17.011] [RX] !STATE running
+[2026-11-20 09:55:19.008] [RX] !STATE running
+[2026-11-20 09:55:21.004] [RX] !STATE running
+[2026-11-20 09:55:23.002] [RX] !STATE running
+[2026-11-20 09:55:23.575] [RX] !PROGRESS 192 256
+[2026-11-20 09:55:24.997] [RX] !STATE running
+[2026-11-20 09:55:26.995] [RX] !STATE running
+[2026-11-20 09:55:28.952] [RX] !STATE running
+[2026-11-20 09:55:30.988] [RX] !STATE running
+[2026-11-20 09:55:32.988] [RX] !STATE running
+[2026-11-20 09:55:34.980] [RX] !STATE running
+[2026-11-20 09:55:36.977] [RX] !STATE running
+[2026-11-20 09:55:38.933] [RX] !STATE running
+[2026-11-20 09:55:39.419] [RX] !PROGRESS 193 256
+[2026-11-20 09:55:40.972] [RX] !STATE running
+[2026-11-20 09:55:42.972] [RX] !STATE running
+[2026-11-20 09:55:44.966] [RX] !STATE running
+[2026-11-20 09:55:46.961] [RX] !STATE running
+[2026-11-20 09:55:48.957] [RX] !STATE running
+[2026-11-20 09:55:50.954] [RX] !STATE running
+[2026-11-20 09:55:52.912] [RX] !STATE running
+[2026-11-20 09:55:54.947] [RX] !STATE running
+[2026-11-20 09:55:55.219] [RX] !PROGRESS 194 256
+[2026-11-20 09:55:56.903] [RX] !STATE running
+[2026-11-20 09:55:58.912] [RX] !STATE running
+[2026-11-20 09:56:00.935] [RX] !STATE running
+[2026-11-20 09:56:02.934] [RX] !STATE running
+[2026-11-20 09:56:04.930] [RX] !STATE running
+[2026-11-20 09:56:06.925] [RX] !STATE running
+[2026-11-20 09:56:08.922] [RX] !STATE running
+[2026-11-20 09:56:10.917] [RX] !STATE running
+[2026-11-20 09:56:11.097] [RX] !PROGRESS 195 256
+[2026-11-20 09:56:12.915] [RX] !STATE running
+[2026-11-20 09:56:14.911] [RX] !STATE running
+[2026-11-20 09:56:16.911] [RX] !STATE running
+[2026-11-20 09:56:18.906] [RX] !STATE running
+[2026-11-20 09:56:20.860] [RX] !STATE running
+[2026-11-20 09:56:22.856] [RX] !STATE running
+[2026-11-20 09:56:24.896] [RX] !STATE running
+[2026-11-20 09:56:26.888] [RX] !STATE running
+[2026-11-20 09:56:26.895] [RX] !PROGRESS 196 256
+[2026-11-20 09:56:28.845] [RX] !STATE running
+[2026-11-20 09:56:30.881] [RX] !STATE running
+[2026-11-20 09:56:32.881] [RX] !STATE running
+[2026-11-20 09:56:34.875] [RX] !STATE running
+[2026-11-20 09:56:36.869] [RX] !STATE running
+[2026-11-20 09:56:38.863] [RX] !STATE running
+[2026-11-20 09:56:40.862] [RX] !STATE running
+[2026-11-20 09:56:42.773] [RX] !PROGRESS 197 256
+[2026-11-20 09:56:42.818] [RX] !STATE running
+[2026-11-20 09:56:44.815] [RX] !STATE running
+[2026-11-20 09:56:46.809] [RX] !STATE running
+[2026-11-20 09:56:48.808] [RX] !STATE running
+[2026-11-20 09:56:50.807] [RX] !STATE running
+[2026-11-20 09:56:52.810] [RX] !STATE running
+[2026-11-20 09:56:54.835] [RX] !STATE running
+[2026-11-20 09:56:56.833] [RX] !STATE running
+[2026-11-20 09:56:58.612] [RX] !PROGRESS 198 256
+[2026-11-20 09:56:58.829] [RX] !STATE running
+[2026-11-20 09:57:00.826] [RX] !STATE running
+[2026-11-20 09:57:02.827] [RX] !STATE running
+[2026-11-20 09:57:04.817] [RX] !STATE running
+[2026-11-20 09:57:06.815] [RX] !STATE running
+[2026-11-20 09:57:08.811] [RX] !STATE running
+[2026-11-20 09:57:10.807] [RX] !STATE running
+[2026-11-20 09:57:12.805] [RX] !STATE running
+[2026-11-20 09:57:14.450] [RX] !PROGRESS 199 256
+[2026-11-20 09:57:14.805] [RX] !STATE running
+[2026-11-20 09:57:16.796] [RX] !STATE running
+[2026-11-20 09:57:18.756] [RX] !STATE running
+[2026-11-20 09:57:20.790] [RX] !STATE running
+[2026-11-20 09:57:22.785] [RX] !STATE running
+[2026-11-20 09:57:24.782] [RX] !STATE running
+[2026-11-20 09:57:26.778] [RX] !STATE running
+[2026-11-20 09:57:28.776] [RX] !STATE running
+[2026-11-20 09:57:30.252] [RX] !PROGRESS 200 256
+[2026-11-20 09:57:30.772] [RX] !STATE running
+[2026-11-20 09:57:32.769] [RX] !STATE running
+[2026-11-20 09:57:34.764] [RX] !STATE running
+[2026-11-20 09:57:36.760] [RX] !STATE running
+[2026-11-20 09:57:38.756] [RX] !STATE running
+[2026-11-20 09:57:40.751] [RX] !STATE running
+[2026-11-20 09:57:42.748] [RX] !STATE running
+[2026-11-20 09:57:44.719] [RX] !STATE running
+[2026-11-20 09:57:46.128] [RX] !PROGRESS 201 256
+[2026-11-20 09:57:46.742] [RX] !STATE running
+[2026-11-20 09:57:48.696] [RX] !STATE running
+[2026-11-20 09:57:50.755] [RX] !STATE running
+[2026-11-20 09:57:52.730] [RX] !STATE running
+[2026-11-20 09:57:54.688] [RX] !STATE running
+[2026-11-20 09:57:56.722] [RX] !STATE running
+[2026-11-20 09:57:58.718] [RX] !STATE running
+[2026-11-20 09:58:00.716] [RX] !STATE running
+[2026-11-20 09:58:01.967] [RX] !PROGRESS 202 256
+[2026-11-20 09:58:02.711] [RX] !STATE running
+[2026-11-20 09:58:04.709] [RX] !STATE running
+[2026-11-20 09:58:06.705] [RX] !STATE running
+[2026-11-20 09:58:08.701] [RX] !STATE running
+[2026-11-20 09:58:10.657] [RX] !STATE running
+[2026-11-20 09:58:12.693] [RX] !STATE running
+[2026-11-20 09:58:14.658] [RX] !STATE running
+[2026-11-20 09:58:16.687] [RX] !STATE running
+[2026-11-20 09:58:17.804] [RX] !PROGRESS 203 256
+[2026-11-20 09:58:18.662] [RX] !STATE running
+[2026-11-20 09:58:20.677] [RX] !STATE running
+[2026-11-20 09:58:22.675] [RX] !STATE running
+[2026-11-20 09:58:24.670] [RX] !STATE running
+[2026-11-20 09:58:26.665] [RX] !STATE running
+[2026-11-20 09:58:28.662] [RX] !STATE running
+[2026-11-20 09:58:30.660] [RX] !STATE running
+[2026-11-20 09:58:32.654] [RX] !STATE running
+[2026-11-20 09:58:33.642] [RX] !PROGRESS 204 256
+[2026-11-20 09:58:34.651] [RX] !STATE running
+[2026-11-20 09:58:36.647] [RX] !STATE running
+[2026-11-20 09:58:38.643] [RX] !STATE running
+[2026-11-20 09:58:40.640] [RX] !STATE running
+[2026-11-20 09:58:42.635] [RX] !STATE running
+[2026-11-20 09:58:44.590] [RX] !STATE running
+[2026-11-20 09:58:46.626] [RX] !STATE running
+[2026-11-20 09:58:48.627] [RX] !STATE running
+[2026-11-20 09:58:49.477] [RX] !PROGRESS 205 256
+[2026-11-20 09:58:50.622] [RX] !STATE running
+[2026-11-20 09:58:52.617] [RX] !STATE running
+[2026-11-20 09:58:54.613] [RX] !STATE running
+[2026-11-20 09:58:56.570] [RX] !STATE running
+[2026-11-20 09:58:58.609] [RX] !STATE running
+[2026-11-20 09:59:00.602] [RX] !STATE running
+[2026-11-20 09:59:02.598] [RX] !STATE running
+[2026-11-20 09:59:04.557] [RX] !STATE running
+[2026-11-20 09:59:05.320] [RX] !PROGRESS 206 256
+[2026-11-20 09:59:06.593] [RX] !STATE running
+[2026-11-20 09:59:08.550] [RX] !STATE running
+[2026-11-20 09:59:10.608] [RX] !STATE running
+[2026-11-20 09:59:12.558] [RX] !STATE running
+[2026-11-20 09:59:14.573] [RX] !STATE running
+[2026-11-20 09:59:16.578] [RX] !STATE running
+[2026-11-20 09:59:18.575] [RX] !STATE running
+[2026-11-20 09:59:20.574] [RX] !STATE running
+[2026-11-20 09:59:21.162] [RX] !PROGRESS 207 256
+[2026-11-20 09:59:22.543] [RX] !STATE running
+[2026-11-20 09:59:24.566] [RX] !STATE running
+[2026-11-20 09:59:26.525] [RX] !STATE running
+[2026-11-20 09:59:28.522] [RX] !STATE running
+[2026-11-20 09:59:30.558] [RX] !STATE running
+[2026-11-20 09:59:32.553] [RX] !STATE running
+[2026-11-20 09:59:34.549] [RX] !STATE running
+[2026-11-20 09:59:36.507] [RX] !STATE running
+[2026-11-20 09:59:36.965] [RX] !PROGRESS 208 256
+[2026-11-20 09:59:38.503] [RX] !STATE running
+[2026-11-20 09:59:40.508] [RX] !STATE running
+[2026-11-20 09:59:42.497] [RX] !STATE running
+[2026-11-20 09:59:44.495] [RX] !STATE running
+[2026-11-20 09:59:46.528] [RX] !STATE running
+[2026-11-20 09:59:48.517] [RX] !STATE running
+[2026-11-20 09:59:50.485] [RX] !STATE running
+[2026-11-20 09:59:52.521] [RX] !STATE running
+[2026-11-20 09:59:52.811] [RX] !PROGRESS 209 256
+[2026-11-20 09:59:54.517] [RX] !STATE running
+[2026-11-20 09:59:56.501] [RX] !STATE running
+[2026-11-20 09:59:58.514] [RX] !STATE running
+[2026-11-20 10:00:00.507] [RX] !STATE running
+[2026-11-20 10:00:02.462] [RX] !STATE running
+[2026-11-20 10:00:04.458] [RX] !STATE running
+[2026-11-20 10:00:06.456] [RX] !STATE running
+[2026-11-20 10:00:08.460] [RX] !STATE running
+[2026-11-20 10:00:08.690] [RX] !PROGRESS 210 256
+[2026-11-20 10:00:10.461] [RX] !STATE running
+[2026-11-20 10:00:12.488] [RX] !STATE running
+[2026-11-20 10:00:14.481] [RX] !STATE running
+[2026-11-20 10:00:16.437] [RX] !STATE running
+[2026-11-20 10:00:18.446] [RX] !STATE running
+[2026-11-20 10:00:20.468] [RX] !STATE running
+[2026-11-20 10:00:22.467] [RX] !STATE running
+[2026-11-20 10:00:24.462] [RX] !STATE running
+[2026-11-20 10:00:24.484] [RX] !PROGRESS 211 256
+[2026-11-20 10:00:26.424] [RX] !STATE running
+[2026-11-20 10:00:28.454] [RX] !STATE running
+[2026-11-20 10:00:30.444] [RX] !STATE running
+[2026-11-20 10:00:32.420] [RX] !STATE running
+[2026-11-20 10:00:34.445] [RX] !STATE running
+[2026-11-20 10:00:36.401] [RX] !STATE running
+[2026-11-20 10:00:38.406] [RX] !STATE running
+[2026-11-20 10:00:40.325] [RX] !PROGRESS 212 256
+[2026-11-20 10:00:40.394] [RX] !STATE running
+[2026-11-20 10:00:42.409] [RX] !STATE running
+[2026-11-20 10:00:44.387] [RX] !STATE running
+[2026-11-20 10:00:46.385] [RX] !STATE running
+[2026-11-20 10:00:48.392] [RX] !STATE running
+[2026-11-20 10:00:50.388] [RX] !STATE running
+[2026-11-20 10:00:52.375] [RX] !STATE running
+[2026-11-20 10:00:54.370] [RX] !STATE running
+[2026-11-20 10:00:56.166] [RX] !PROGRESS 213 256
+[2026-11-20 10:00:56.378] [RX] !STATE running
+[2026-11-20 10:00:58.362] [RX] !STATE running
+[2026-11-20 10:01:00.362] [RX] !STATE running
+[2026-11-20 10:01:02.365] [RX] !STATE running
+[2026-11-20 10:01:04.377] [RX] !STATE running
+[2026-11-20 10:01:06.349] [RX] !STATE running
+[2026-11-20 10:01:08.345] [RX] !STATE running
+[2026-11-20 10:01:10.342] [RX] !STATE running
+[2026-11-20 10:01:12.002] [RX] !PROGRESS 214 256
+[2026-11-20 10:01:12.357] [RX] !STATE running
+[2026-11-20 10:01:14.335] [RX] !STATE running
+[2026-11-20 10:01:16.332] [RX] !STATE running
+[2026-11-20 10:01:18.329] [RX] !STATE running
+[2026-11-20 10:01:20.324] [RX] !STATE running
+[2026-11-20 10:01:22.336] [RX] !STATE running
+[2026-11-20 10:01:24.321] [RX] !STATE running
+[2026-11-20 10:01:26.325] [RX] !STATE running
+[2026-11-20 10:01:27.855] [RX] !PROGRESS 215 256
+[2026-11-20 10:01:28.311] [RX] !STATE running
+[2026-11-20 10:01:30.322] [RX] !STATE running
+[2026-11-20 10:01:32.306] [RX] !STATE running
+[2026-11-20 10:01:34.301] [RX] !STATE running
+[2026-11-20 10:01:36.339] [RX] !STATE running
+[2026-11-20 10:01:38.335] [RX] !STATE running
+[2026-11-20 10:01:40.331] [RX] !STATE running
+[2026-11-20 10:01:42.329] [RX] !STATE running
+[2026-11-20 10:01:43.724] [RX] !PROGRESS 216 256
+[2026-11-20 10:01:44.324] [RX] !STATE running
+[2026-11-20 10:01:46.280] [RX] !STATE running
+[2026-11-20 10:01:48.320] [RX] !STATE running
+[2026-11-20 10:01:50.311] [RX] !STATE running
+[2026-11-20 10:01:52.270] [RX] !STATE running
+[2026-11-20 10:01:54.305] [RX] !STATE running
+[2026-11-20 10:01:56.301] [RX] !STATE running
+[2026-11-20 10:01:58.262] [RX] !STATE running
+[2026-11-20 10:01:59.570] [RX] !PROGRESS 217 256
+[2026-11-20 10:02:00.300] [RX] !STATE running
+[2026-11-20 10:02:02.251] [RX] !STATE running
+[2026-11-20 10:02:04.247] [RX] !STATE running
+[2026-11-20 10:02:06.289] [RX] !STATE running
+[2026-11-20 10:02:08.284] [RX] !STATE running
+[2026-11-20 10:02:10.275] [RX] !STATE running
+[2026-11-20 10:02:12.237] [RX] !STATE running
+[2026-11-20 10:02:14.270] [RX] !STATE running
+[2026-11-20 10:02:15.409] [RX] !PROGRESS 218 256
+[2026-11-20 10:02:16.227] [RX] !STATE running
+[2026-11-20 10:02:18.226] [RX] !STATE running
+[2026-11-20 10:02:20.222] [RX] !STATE running
+[2026-11-20 10:02:22.257] [RX] !STATE running
+[2026-11-20 10:02:24.211] [RX] !STATE running
+[2026-11-20 10:02:26.250] [RX] !STATE running
+[2026-11-20 10:02:28.247] [RX] !STATE running
+[2026-11-20 10:02:30.201] [RX] !STATE running
+[2026-11-20 10:02:31.242] [RX] !PROGRESS 219 256
+[2026-11-20 10:02:32.245] [RX] !STATE running
+[2026-11-20 10:02:34.235] [RX] !STATE running
+[2026-11-20 10:02:36.232] [RX] !STATE running
+[2026-11-20 10:02:38.228] [RX] !STATE running
+[2026-11-20 10:02:40.183] [RX] !STATE running
+[2026-11-20 10:02:42.221] [RX] !STATE running
+[2026-11-20 10:02:44.223] [RX] !STATE running
+[2026-11-20 10:02:46.213] [RX] !STATE running
+[2026-11-20 10:02:47.082] [RX] !PROGRESS 220 256
+[2026-11-20 10:02:48.209] [RX] !STATE running
+[2026-11-20 10:02:50.166] [RX] !STATE running
+[2026-11-20 10:02:52.162] [RX] !STATE running
+[2026-11-20 10:02:54.168] [RX] !STATE running
+[2026-11-20 10:02:56.156] [RX] !STATE running
+[2026-11-20 10:02:58.190] [RX] !STATE running
+[2026-11-20 10:03:00.149] [RX] !STATE running
+[2026-11-20 10:03:02.184] [RX] !STATE running
+[2026-11-20 10:03:02.878] [RX] !PROGRESS 221 256
+[2026-11-20 10:03:04.182] [RX] !STATE running
+[2026-11-20 10:03:06.138] [RX] !STATE running
+[2026-11-20 10:03:08.173] [RX] !STATE running
+[2026-11-20 10:03:10.127] [RX] !STATE running
+[2026-11-20 10:03:12.124] [RX] !STATE running
+[2026-11-20 10:03:14.162] [RX] !STATE running
+[2026-11-20 10:03:16.159] [RX] !STATE running
+[2026-11-20 10:03:18.153] [RX] !STATE running
+[2026-11-20 10:03:18.718] [RX] !PROGRESS 222 256
+[2026-11-20 10:03:20.113] [RX] !STATE running
+[2026-11-20 10:03:22.147] [RX] !STATE running
+[2026-11-20 10:03:24.145] [RX] !STATE running
+[2026-11-20 10:03:26.142] [RX] !STATE running
+[2026-11-20 10:03:28.139] [RX] !STATE running
+[2026-11-20 10:03:30.096] [RX] !STATE running
+[2026-11-20 10:03:32.132] [RX] !STATE running
+[2026-11-20 10:03:34.091] [RX] !STATE running
+[2026-11-20 10:03:34.601] [RX] !PROGRESS 223 256
+[2026-11-20 10:03:36.085] [RX] !STATE running
+[2026-11-20 10:03:38.121] [RX] !STATE running
+[2026-11-20 10:03:40.077] [RX] !STATE running
+[2026-11-20 10:03:42.114] [RX] !STATE running
+[2026-11-20 10:03:44.110] [RX] !STATE running
+[2026-11-20 10:03:46.107] [RX] !STATE running
+[2026-11-20 10:03:48.104] [RX] !STATE running
+[2026-11-20 10:03:50.100] [RX] !STATE running
+[2026-11-20 10:03:50.441] [RX] !PROGRESS 224 256
+[2026-11-20 10:03:52.111] [RX] !STATE running
+[2026-11-20 10:03:54.089] [RX] !STATE running
+[2026-11-20 10:03:56.057] [RX] !STATE running
+[2026-11-20 10:03:58.088] [RX] !STATE running
+[2026-11-20 10:04:00.053] [RX] !STATE running
+[2026-11-20 10:04:02.040] [RX] !STATE running
+[2026-11-20 10:04:04.077] [RX] !STATE running
+[2026-11-20 10:04:06.073] [RX] !STATE running
+[2026-11-20 10:04:06.280] [RX] !PROGRESS 225 256
+[2026-11-20 10:04:08.074] [RX] !STATE running
+[2026-11-20 10:04:10.067] [RX] !STATE running
+[2026-11-20 10:04:12.067] [RX] !STATE running
+[2026-11-20 10:04:14.020] [RX] !STATE running
+[2026-11-20 10:04:16.016] [RX] !STATE running
+[2026-11-20 10:04:18.012] [RX] !STATE running
+[2026-11-20 10:04:20.049] [RX] !STATE running
+[2026-11-20 10:04:22.047] [RX] !STATE running
+[2026-11-20 10:04:22.080] [RX] !PROGRESS 226 256
+[2026-11-20 10:04:24.002] [RX] !STATE running
+[2026-11-20 10:04:26.000] [RX] !STATE running
+[2026-11-20 10:04:28.032] [RX] !STATE running
+[2026-11-20 10:04:29.990] [RX] !STATE running
+[2026-11-20 10:04:31.988] [RX] !STATE running
+[2026-11-20 10:04:33.983] [RX] !STATE running
+[2026-11-20 10:04:35.990] [RX] !STATE running
+[2026-11-20 10:04:37.958] [RX] !PROGRESS 227 256
+[2026-11-20 10:04:37.976] [RX] !STATE running
+[2026-11-20 10:04:39.972] [RX] !STATE running
+[2026-11-20 10:04:41.969] [RX] !STATE running
+[2026-11-20 10:04:43.966] [RX] !STATE running
+[2026-11-20 10:04:45.968] [RX] !STATE running
+[2026-11-20 10:04:47.959] [RX] !STATE running
+[2026-11-20 10:04:49.956] [RX] !STATE running
+[2026-11-20 10:04:51.994] [RX] !STATE running
+[2026-11-20 10:04:53.798] [RX] !PROGRESS 228 256
+[2026-11-20 10:04:53.950] [RX] !STATE running
+[2026-11-20 10:04:55.946] [RX] !STATE running
+[2026-11-20 10:04:57.985] [RX] !STATE running
+[2026-11-20 10:04:59.952] [RX] !STATE running
+[2026-11-20 10:05:02.005] [RX] !STATE running
+[2026-11-20 10:05:03.973] [RX] !STATE running
+[2026-11-20 10:05:05.972] [RX] !STATE running
+[2026-11-20 10:05:07.928] [RX] !STATE running
+[2026-11-20 10:05:09.601] [RX] !PROGRESS 229 256
+[2026-11-20 10:05:09.963] [RX] !STATE running
+[2026-11-20 10:05:11.959] [RX] !STATE running
+[2026-11-20 10:05:13.956] [RX] !STATE running
+[2026-11-20 10:05:15.952] [RX] !STATE running
+[2026-11-20 10:05:17.945] [RX] !STATE running
+[2026-11-20 10:05:19.909] [RX] !STATE running
+[2026-11-20 10:05:21.903] [RX] !STATE running
+[2026-11-20 10:05:23.918] [RX] !STATE running
+[2026-11-20 10:05:25.447] [RX] !PROGRESS 230 256
+[2026-11-20 10:05:25.896] [RX] !STATE running
+[2026-11-20 10:05:27.910] [RX] !STATE running
+[2026-11-20 10:05:29.935] [RX] !STATE running
+[2026-11-20 10:05:31.887] [RX] !STATE running
+[2026-11-20 10:05:33.922] [RX] !STATE running
+[2026-11-20 10:05:35.919] [RX] !STATE running
+[2026-11-20 10:05:37.910] [RX] !STATE running
+[2026-11-20 10:05:39.871] [RX] !STATE running
+[2026-11-20 10:05:41.322] [RX] !PROGRESS 231 256
+[2026-11-20 10:05:41.872] [RX] !STATE running
+[2026-11-20 10:05:43.865] [RX] !STATE running
+[2026-11-20 10:05:45.861] [RX] !STATE running
+[2026-11-20 10:05:47.898] [RX] !STATE running
+[2026-11-20 10:05:49.898] [RX] !STATE running
+[2026-11-20 10:05:51.895] [RX] !STATE running
+[2026-11-20 10:05:53.849] [RX] !STATE running
+[2026-11-20 10:05:55.883] [RX] !STATE running
+[2026-11-20 10:05:57.171] [RX] !PROGRESS 232 256
+[2026-11-20 10:05:57.840] [RX] !STATE running
+[2026-11-20 10:05:59.877] [RX] !STATE running
+[2026-11-20 10:06:01.834] [RX] !STATE running
+[2026-11-20 10:06:03.869] [RX] !STATE running
+[2026-11-20 10:06:05.866] [RX] !STATE running
+[2026-11-20 10:06:07.875] [RX] !STATE running
+[2026-11-20 10:06:09.860] [RX] !STATE running
+[2026-11-20 10:06:11.815] [RX] !STATE running
+[2026-11-20 10:06:12.976] [RX] !PROGRESS 233 256
+[2026-11-20 10:06:13.866] [RX] !STATE running
+[2026-11-20 10:06:15.811] [RX] !STATE running
+[2026-11-20 10:06:17.846] [RX] !STATE running
+[2026-11-20 10:06:19.862] [RX] !STATE running
+[2026-11-20 10:06:21.807] [RX] !STATE running
+[2026-11-20 10:06:23.795] [RX] !STATE running
+[2026-11-20 10:06:25.792] [RX] !STATE running
+[2026-11-20 10:06:27.789] [RX] !STATE running
+[2026-11-20 10:06:28.807] [RX] !PROGRESS 234 256
+[2026-11-20 10:06:29.785] [RX] !STATE running
+[2026-11-20 10:06:31.781] [RX] !STATE running
+[2026-11-20 10:06:33.778] [RX] !STATE running
+[2026-11-20 10:06:35.776] [RX] !STATE running
+[2026-11-20 10:06:37.778] [RX] !STATE running
+[2026-11-20 10:06:39.792] [RX] !STATE running
+[2026-11-20 10:06:41.764] [RX] !STATE running
+[2026-11-20 10:06:43.763] [RX] !STATE running
+[2026-11-20 10:06:44.642] [RX] !PROGRESS 235 256
+[2026-11-20 10:06:45.757] [RX] !STATE running
+[2026-11-20 10:06:47.757] [RX] !STATE running
+[2026-11-20 10:06:49.747] [RX] !STATE running
+[2026-11-20 10:06:51.752] [RX] !STATE running
+[2026-11-20 10:06:53.741] [RX] !STATE running
+[2026-11-20 10:06:55.770] [RX] !STATE running
+[2026-11-20 10:06:57.815] [RX] !STATE running
+[2026-11-20 10:06:59.863] [RX] !STATE running
+[2026-11-20 10:07:00.481] [RX] !PROGRESS 236 256
+[2026-11-20 10:07:01.742] [RX] !STATE running
+[2026-11-20 10:07:03.742] [RX] !STATE running
+[2026-11-20 10:07:05.717] [RX] !STATE running
+[2026-11-20 10:07:07.713] [RX] !STATE running
+[2026-11-20 10:07:09.718] [RX] !STATE running
+[2026-11-20 10:07:11.715] [RX] !STATE running
+[2026-11-20 10:07:13.741] [RX] !STATE running
+[2026-11-20 10:07:15.738] [RX] !STATE running
+[2026-11-20 10:07:16.318] [RX] !PROGRESS 237 256
+[2026-11-20 10:07:17.695] [RX] !STATE running
+[2026-11-20 10:07:19.689] [RX] !STATE running
+[2026-11-20 10:07:21.725] [RX] !STATE running
+[2026-11-20 10:07:23.684] [RX] !STATE running
+[2026-11-20 10:07:25.681] [RX] !STATE running
+[2026-11-20 10:07:27.675] [RX] !STATE running
+[2026-11-20 10:07:29.710] [RX] !STATE running
+[2026-11-20 10:07:31.706] [RX] !STATE running
+[2026-11-20 10:07:32.151] [RX] !PROGRESS 238 256
+[2026-11-20 10:07:33.663] [RX] !STATE running
+[2026-11-20 10:07:35.659] [RX] !STATE running
+[2026-11-20 10:07:37.657] [RX] !STATE running
+[2026-11-20 10:07:39.693] [RX] !STATE running
+[2026-11-20 10:07:41.689] [RX] !STATE running
+[2026-11-20 10:07:43.648] [RX] !STATE running
+[2026-11-20 10:07:45.644] [RX] !STATE running
+[2026-11-20 10:07:47.641] [RX] !STATE running
+[2026-11-20 10:07:47.992] [RX] !PROGRESS 239 256
+[2026-11-20 10:07:49.675] [RX] !STATE running
+[2026-11-20 10:07:51.634] [RX] !STATE running
+[2026-11-20 10:07:53.627] [RX] !STATE running
+[2026-11-20 10:07:55.629] [RX] !STATE running
+[2026-11-20 10:07:57.624] [RX] !STATE running
+[2026-11-20 10:07:59.620] [RX] !STATE running
+[2026-11-20 10:08:01.616] [RX] !STATE running
+[2026-11-20 10:08:03.649] [RX] !STATE running
+[2026-11-20 10:08:03.835] [RX] !PROGRESS 240 256
+[2026-11-20 10:08:05.608] [RX] !STATE running
+[2026-11-20 10:08:07.609] [RX] !STATE running
+[2026-11-20 10:08:09.641] [RX] !STATE running
+[2026-11-20 10:08:11.635] [RX] !STATE running
+[2026-11-20 10:08:13.590] [RX] !STATE running
+[2026-11-20 10:08:15.627] [RX] !STATE running
+[2026-11-20 10:08:17.632] [RX] !STATE running
+[2026-11-20 10:08:19.622] [RX] !STATE running
+[2026-11-20 10:08:19.671] [RX] !PROGRESS 241 256
+[2026-11-20 10:08:21.615] [RX] !STATE running
+[2026-11-20 10:08:23.613] [RX] !STATE running
+[2026-11-20 10:08:25.608] [RX] !STATE running
+[2026-11-20 10:08:27.606] [RX] !STATE running
+[2026-11-20 10:08:29.603] [RX] !STATE running
+[2026-11-20 10:08:31.597] [RX] !STATE running
+[2026-11-20 10:08:33.554] [RX] !STATE running
+[2026-11-20 10:08:35.547] [RX] !PROGRESS 242 256
+[2026-11-20 10:08:35.554] [RX] !STATE running
+[2026-11-20 10:08:37.555] [RX] !STATE running
+[2026-11-20 10:08:39.553] [RX] !STATE running
+[2026-11-20 10:08:41.578] [RX] !STATE running
+[2026-11-20 10:08:43.577] [RX] !STATE running
+[2026-11-20 10:08:45.531] [RX] !STATE running
+[2026-11-20 10:08:47.527] [RX] !STATE running
+[2026-11-20 10:08:49.564] [RX] !STATE running
+[2026-11-20 10:08:51.383] [RX] !PROGRESS 243 256
+[2026-11-20 10:08:51.559] [RX] !STATE running
+[2026-11-20 10:08:53.516] [RX] !STATE running
+[2026-11-20 10:08:55.553] [RX] !STATE running
+[2026-11-20 10:08:57.552] [RX] !STATE running
+[2026-11-20 10:08:59.545] [RX] !STATE running
+[2026-11-20 10:09:01.503] [RX] !STATE running
+[2026-11-20 10:09:03.536] [RX] !STATE running
+[2026-11-20 10:09:05.492] [RX] !STATE running
+[2026-11-20 10:09:07.224] [RX] !PROGRESS 244 256
+[2026-11-20 10:09:07.528] [RX] !STATE running
+[2026-11-20 10:09:09.489] [RX] !STATE running
+[2026-11-20 10:09:11.480] [RX] !STATE running
+[2026-11-20 10:09:13.482] [RX] !STATE running
+[2026-11-20 10:09:15.473] [RX] !STATE running
+[2026-11-20 10:09:17.479] [RX] !STATE running
+[2026-11-20 10:09:19.465] [RX] !STATE running
+[2026-11-20 10:09:21.507] [RX] !STATE running
+[2026-11-20 10:09:23.017] [RX] !PROGRESS 245 256
+[2026-11-20 10:09:23.501] [RX] !STATE running
+[2026-11-20 10:09:25.457] [RX] !STATE running
+[2026-11-20 10:09:27.451] [RX] !STATE running
+[2026-11-20 10:09:29.450] [RX] !STATE running
+[2026-11-20 10:09:31.444] [RX] !STATE running
+[2026-11-20 10:09:33.441] [RX] !STATE running
+[2026-11-20 10:09:35.439] [RX] !STATE running
+[2026-11-20 10:09:37.436] [RX] !STATE running
+[2026-11-20 10:09:38.860] [RX] !PROGRESS 246 256
+[2026-11-20 10:09:39.434] [RX] !STATE running
+[2026-11-20 10:09:41.428] [RX] !STATE running
+[2026-11-20 10:09:43.423] [RX] !STATE running
+[2026-11-20 10:09:45.424] [RX] !STATE running
+[2026-11-20 10:09:47.415] [RX] !STATE running
+[2026-11-20 10:09:49.409] [RX] !STATE running
+[2026-11-20 10:09:51.445] [RX] !STATE running
+[2026-11-20 10:09:53.405] [RX] !STATE running
+[2026-11-20 10:09:54.697] [RX] !PROGRESS 247 256
+[2026-11-20 10:09:55.399] [RX] !STATE running
+[2026-11-20 10:09:57.431] [RX] !STATE running
+[2026-11-20 10:09:59.432] [RX] !STATE running
+[2026-11-20 10:10:01.429] [RX] !STATE running
+[2026-11-20 10:10:03.422] [RX] !STATE running
+[2026-11-20 10:10:05.378] [RX] !STATE running
+[2026-11-20 10:10:07.376] [RX] !STATE running
+[2026-11-20 10:10:09.416] [RX] !STATE running
+[2026-11-20 10:10:10.533] [RX] !PROGRESS 248 256
+[2026-11-20 10:10:11.368] [RX] !STATE running
+[2026-11-20 10:10:13.363] [RX] !STATE running
+[2026-11-20 10:10:15.371] [RX] !STATE running
+[2026-11-20 10:10:17.355] [RX] !STATE running
+[2026-11-20 10:10:19.352] [RX] !STATE running
+[2026-11-20 10:10:21.359] [RX] !STATE running
+[2026-11-20 10:10:23.344] [RX] !STATE running
+[2026-11-20 10:10:25.382] [RX] !STATE running
+[2026-11-20 10:10:26.409] [RX] !PROGRESS 249 256
+[2026-11-20 10:10:27.336] [RX] !STATE running
+[2026-11-20 10:10:29.375] [RX] !STATE running
+[2026-11-20 10:10:31.370] [RX] !STATE running
+[2026-11-20 10:10:33.366] [RX] !STATE running
+[2026-11-20 10:10:35.322] [RX] !STATE running
+[2026-11-20 10:10:37.330] [RX] !STATE running
+[2026-11-20 10:10:39.355] [RX] !STATE running
+[2026-11-20 10:10:41.352] [RX] !STATE running
+[2026-11-20 10:10:42.248] [RX] !PROGRESS 250 256
+[2026-11-20 10:10:43.362] [RX] !STATE running
+[2026-11-20 10:10:45.350] [RX] !STATE running
+[2026-11-20 10:10:47.303] [RX] !STATE running
+[2026-11-20 10:10:49.336] [RX] !STATE running
+[2026-11-20 10:10:51.333] [RX] !STATE running
+[2026-11-20 10:10:53.289] [RX] !STATE running
+[2026-11-20 10:10:55.285] [RX] !STATE running
+[2026-11-20 10:10:57.327] [RX] !STATE running
+[2026-11-20 10:10:58.044] [RX] !PROGRESS 251 256
+[2026-11-20 10:10:59.322] [RX] !STATE running
+[2026-11-20 10:11:01.313] [RX] !STATE running
+[2026-11-20 10:11:03.309] [RX] !STATE running
+[2026-11-20 10:11:05.311] [RX] !STATE running
+[2026-11-20 10:11:07.300] [RX] !STATE running
+[2026-11-20 10:11:09.263] [RX] !STATE running
+[2026-11-20 10:11:11.299] [RX] !STATE running
+[2026-11-20 10:11:13.290] [RX] !STATE running
+[2026-11-20 10:11:13.928] [RX] !PROGRESS 252 256
+[2026-11-20 10:11:15.287] [RX] !STATE running
+[2026-11-20 10:11:17.366] [RX] !STATE running
+[2026-11-20 10:11:19.280] [RX] !STATE running
+[2026-11-20 10:11:21.276] [RX] !STATE running
+[2026-11-20 10:11:23.272] [RX] !STATE running
+[2026-11-20 10:11:25.231] [RX] !STATE running
+[2026-11-20 10:11:27.232] [RX] !STATE running
+[2026-11-20 10:11:29.262] [RX] !STATE running
+[2026-11-20 10:11:29.762] [RX] !PROGRESS 253 256
+[2026-11-20 10:11:31.259] [RX] !STATE running
+[2026-11-20 10:11:33.215] [RX] !STATE running
+[2026-11-20 10:11:35.252] [RX] !STATE running
+[2026-11-20 10:11:37.239] [RX] !STATE running
+[2026-11-20 10:11:39.243] [RX] !STATE running
+[2026-11-20 10:11:41.239] [RX] !STATE running
+[2026-11-20 10:11:43.198] [RX] !STATE running
+[2026-11-20 10:11:45.231] [RX] !STATE running
+[2026-11-20 10:11:45.601] [RX] !PROGRESS 254 256
+[2026-11-20 10:11:47.228] [RX] !STATE running
+[2026-11-20 10:11:49.224] [RX] !STATE running
+[2026-11-20 10:11:51.223] [RX] !STATE running
+[2026-11-20 10:11:53.223] [RX] !STATE running
+[2026-11-20 10:11:55.215] [RX] !STATE running
+[2026-11-20 10:11:57.170] [RX] !STATE running
+[2026-11-20 10:11:59.207] [RX] !STATE running
+[2026-11-20 10:12:01.204] [RX] !STATE running
+[2026-11-20 10:12:01.398] [RX] !PROGRESS 255 256
+[2026-11-20 10:12:03.158] [RX] !STATE running
+[2026-11-20 10:12:05.195] [RX] !STATE running
+[2026-11-20 10:12:07.191] [RX] !STATE running
+[2026-11-20 10:12:09.150] [RX] !STATE running
+[2026-11-20 10:12:11.183] [RX] !STATE running
+[2026-11-20 10:12:13.140] [RX] !STATE running
+[2026-11-20 10:12:15.177] [RX] !STATE running
+[2026-11-20 10:12:17.133] [RX] !STATE running
+[2026-11-20 10:12:17.245] [RX] !PROGRESS 256 256
+[2026-11-20 10:12:17.252] [RX] !STATE idle
+[2026-11-20 10:12:17.255] [RX] !DONE cont 0 0
+[2026-11-20 10:12:17.272] [RX] #E[4121882] DIAG: ad7476.c:79 spi3 ad7476 rx hal=3 e=0x00 x65536
+[2026-11-20 10:12:19.169] [RX] !STATE idle
+[2026-11-20 10:12:21.164] [RX] !STATE idle
+[2026-11-20 10:12:23.168] [RX] !STATE idle
+[2026-11-20 10:12:25.160] [RX] !STATE idle
+[2026-11-20 10:12:27.153] [RX] !STATE idle
+[2026-11-20 10:12:29.147] [RX] !STATE idle
+[2026-11-20 10:12:31.144] [RX] !STATE idle
+[2026-11-20 10:12:33.103] [RX] !STATE idle
+[2026-11-20 10:12:35.137] [RX] !STATE idle
+[2026-11-20 10:12:37.133] [RX] !STATE idle
+[2026-11-20 10:12:39.130] [RX] !STATE idle
+[2026-11-20 10:12:41.125] [RX] !STATE idle
+[2026-11-20 10:12:43.081] [RX] !STATE idle
+[2026-11-20 10:12:45.124] [RX] !STATE idle
+[2026-11-20 10:12:47.114] [RX] !STATE idle
+[2026-11-20 10:12:49.072] [RX] !STATE idle
+[2026-11-20 10:12:51.105] [RX] !STATE idle
+[2026-11-20 10:12:53.103] [RX] !STATE idle
+[2026-11-20 10:12:55.061] [RX] !STATE idle
+[2026-11-20 10:12:57.063] [RX] !STATE idle
+[2026-11-20 10:12:59.052] [RX] !STATE idle
+[2026-11-20 10:13:01.087] [RX] !STATE idle
+[2026-11-20 10:13:03.044] [RX] !STATE idle
+[2026-11-20 10:13:05.080] [RX] !STATE idle
+[2026-11-20 10:13:07.071] [RX] !STATE idle
+[2026-11-20 10:13:09.032] [RX] !STATE idle
+[2026-11-20 10:13:11.068] [RX] !STATE idle
+[2026-11-20 10:13:13.072] [RX] !STATE idle
+[2026-11-20 10:13:15.060] [RX] !STATE idle
+[2026-11-20 10:13:17.057] [RX] !STATE idle
+[2026-11-20 10:13:19.013] [RX] !STATE idle
+[2026-11-20 10:13:21.051] [RX] !STATE idle
+[2026-11-20 10:13:23.048] [RX] !STATE idle
+[2026-11-20 10:13:25.097] [RX] !STATE idle
+[2026-11-20 10:13:27.093] [RX] !STATE idle
+[2026-11-20 10:13:29.037] [RX] !STATE idle
+[2026-11-20 10:13:30.993] [RX] !STATE idle
+[2026-11-20 10:13:33.030] [RX] !STATE idle
+[2026-11-20 10:13:35.025] [RX] !STATE idle
+[2026-11-20 10:13:37.025] [RX] !STATE idle
+[2026-11-20 10:13:38.979] [RX] !STATE idle
+[2026-11-20 10:13:41.014] [RX] !STATE idle
+[2026-11-20 10:13:43.009] [RX] !STATE idle
+[2026-11-20 10:13:45.005] [RX] !STATE idle
+[2026-11-20 10:13:46.996] [RX] !STATE idle
+[2026-11-20 10:13:48.999] [RX] !STATE idle
+[2026-11-20 10:13:50.995] [RX] !STATE idle
+[2026-11-20 10:13:52.992] [RX] !STATE idle
+[2026-11-20 10:13:54.987] [RX] !STATE idle
+[2026-11-20 10:13:56.984] [RX] !STATE idle
+[2026-11-20 10:13:58.988] [RX] !STATE idle
+[2026-11-20 10:14:00.975] [RX] !STATE idle
+[2026-11-20 10:14:02.933] [RX] !STATE idle
+[2026-11-20 10:14:05.026] [RX] !STATE idle
+[2026-11-20 10:14:06.965] [RX] !STATE idle
+[2026-11-20 10:14:08.934] [RX] !STATE idle
+[2026-11-20 10:14:10.917] [RX] !STATE idle

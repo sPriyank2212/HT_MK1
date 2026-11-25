@@ -1,0 +1,155 @@
+HARNESS TESTER - LOG FILE
+Generated  : 2026-11-20 14:57:51.508
+App build  : 2026-11-17T14:53:38
+Firmware   : v0.1.0   build 2026-11-20T11:34:40
+Link       : connected   port COM14 @ 115200 baud
+Device     : RUNNING   fixture J-MTX
+
+===== APPLICATION LOG (33 lines) =====
+[2026-11-20 14:55:47.103] [INFO ] app   HT_MK1 console started — not yet connected
+[2026-11-20 14:55:47.109] [INFO ] link  port scan: COM12
+[2026-11-20 14:55:47.109] [ERROR] link  no instrument serial port (MCP2221A USB-UART / ST-LINK VCP) found — is the board plugged in?
+[2026-11-20 14:55:49.171] [INFO ] link  port scan: COM12
+[2026-11-20 14:55:49.171] [WARN ] link  auto is gone — selection moved to COM12
+[2026-11-20 14:55:59.237] [INFO ] link  port scan: COM12, COM14
+[2026-11-20 14:56:02.147] [ERROR] link  link lost — disconnected (state unknown)
+[2026-11-20 14:56:02.147] [ERROR] link  STATUS handshake got unexpected reply ErrReply(code: ESYNTAX, text: empty)
+[2026-11-20 14:56:03.016] [INFO ] link  connected — state idle, fixture none
+[2026-11-20 14:56:03.024] [INFO ] link  firmware 0.1.0 built 2026-11-20 11:34 · GUI built 2026-11-17 14:53
+[2026-11-20 14:56:03.055] [WARN ] nl    no netlist on the instrument — run cross continuity and save it before netlist-mode continuity or resistance will run
+[2026-11-20 14:56:09.058] [ERROR] seq   Continuity · J-MTX refused - EHW board init failed at matrix/force-exp@0x20 (hal=1) mcp23017.c:39 i2c2 TIMEOUT
+[2026-11-20 14:56:09.061] [WARN ] fw    W[14322] BOARD: refused: init failed at matrix/force-exp@0x20 (hal=1) first: mcp23017.c:39 i2c2  @proto.c:422
+[2026-11-20 14:56:35.118] [ERROR] seq   Continuity · J-MTX refused - EHW board init failed at matrix/force-exp@0x20 (hal=1) mcp23017.c:39 i2c2 TIMEOUT
+[2026-11-20 14:56:35.124] [WARN ] fw    W[40471] BOARD: refused: init failed at matrix/force-exp@0x20 (hal=1) first: mcp23017.c:39 i2c2  @proto.c:422
+[2026-11-20 14:56:47.715] [INFO ] fw    [boot] main: peripherals up, Board_Init start
+[2026-11-20 14:56:48.857] [INFO ] fw    [boot] main: Board_Init done, starting scheduler
+[2026-11-20 14:56:48.860] [INFO ] fw    [boot] HT_MK1 console up @115200
+[2026-11-20 14:56:48.863] [INFO ] fw    [boot] tasks created
+[2026-11-20 14:56:48.867] [INFO ] fw    [boot] Tasks_Init done, starting scheduler
+[2026-11-20 14:56:48.872] [INFO ] fix   fixture is now none
+[2026-11-20 14:56:48.875] [ERROR] fw    E[0] DIAG: mcp23017.c:39 i2c2 wr 0x20 r0x0A hal=1 e=0x04(NAK)
+[2026-11-20 14:56:48.878] [ERROR] fw    E[0] DIAG: hv_card.c:202 hv: inject expander init hal=1
+[2026-11-20 14:56:48.881] [ERROR] fw    E[0] DIAG: board.c:475 Board_Init: HV card stage hal=1
+[2026-11-20 14:56:48.884] [INFO ] fw    I[0] BOOT: reset cause: BOR/POR PIN
+[2026-11-20 14:56:48.887] [INFO ] fw    I[0] SYS: tasks started (hv boards=1)
+[2026-11-20 14:56:48.889] [INFO ] fw    I[0] BOARD: init ok: matrix, ads124s08, frontend
+[2026-11-20 14:56:48.894] [WARN ] fw    W[0] BOARD: hv1 NOT fitted (hal=1) - continuity/resistance only @tasks.c:1119
+[2026-11-20 14:56:48.896] [INFO ] fw    I[0] SAFE: task up
+[2026-11-20 14:56:48.899] [INFO ] fw    I[5] COM: proto ready (see GUI_development_brief.md)
+[2026-11-20 14:56:48.902] [INFO ] fw    I[8] SEQ: task up
+[2026-11-20 14:56:55.511] [INFO ] fix   fixture is now mtx
+[2026-11-20 14:56:55.513] [INFO ] cont  Continuity · J-MTX started
+
+===== SERIAL TRAFFIC TX/RX (112 lines, newest 2000 kept) =====
+[2026-11-20 14:56:02.026] [TX] >STATUS
+[2026-11-20 14:56:02.032] [RX] <ERR ESYNTAX empty
+[2026-11-20 14:56:03.007] [TX] >STATUS
+[2026-11-20 14:56:03.009] [RX] !STATE idle
+[2026-11-20 14:56:03.016] [RX] <STATUS state=idle fixture=none hv_mv=0
+[2026-11-20 14:56:03.020] [TX] >ID
+[2026-11-20 14:56:03.024] [RX] <ID HT_MK1 fw=0.1.0 proto=1 build=2026-11-20T11:34:40
+[2026-11-20 14:56:03.026] [TX] >CAL GET
+[2026-11-20 14:56:03.035] [RX] <CAL current_ua=2000 method=ratiometric rref_mohm=100000 rref_tol_mohm=10 gain_max=128
+[2026-11-20 14:56:03.038] [TX] >LIMITS GET
+[2026-11-20 14:56:03.047] [RX] <LIMITS r_max_mohm=5000 ins_min_mohm=10000000000
+[2026-11-20 14:56:03.051] [TX] >NETLIST GET
+[2026-11-20 14:56:03.055] [RX] <NETLIST 0
+[2026-11-20 14:56:05.089] [RX] !STATE idle
+[2026-11-20 14:56:07.050] [RX] !STATE idle
+[2026-11-20 14:56:09.053] [TX] >CONT RUN discover
+[2026-11-20 14:56:09.058] [RX] <ERR EHW board init failed at matrix/force-exp@0x20 (hal=1) mcp23017.c:39 i2c2 TIMEOUT
+[2026-11-20 14:56:09.061] [RX] #W[14322] BOARD: refused: init failed at matrix/force-exp@0x20 (hal=1) first: mcp23017.c:39 i2c2  @proto.c:422
+[2026-11-20 14:56:11.058] [RX] !STATE idle
+[2026-11-20 14:56:13.057] [RX] !STATE idle
+[2026-11-20 14:56:15.052] [RX] !STATE idle
+[2026-11-20 14:56:17.050] [RX] !STATE idle
+[2026-11-20 14:56:19.046] [RX] !STATE idle
+[2026-11-20 14:56:21.002] [RX] !STATE idle
+[2026-11-20 14:56:23.041] [RX] !STATE idle
+[2026-11-20 14:56:24.995] [RX] !STATE idle
+[2026-11-20 14:56:26.996] [RX] !STATE idle
+[2026-11-20 14:56:29.028] [RX] !STATE idle
+[2026-11-20 14:56:31.024] [RX] !STATE idle
+[2026-11-20 14:56:32.995] [RX] !STATE idle
+[2026-11-20 14:56:35.017] [RX] !STATE idle
+[2026-11-20 14:56:35.106] [TX] >CONT RUN discover
+[2026-11-20 14:56:35.118] [RX] <ERR EHW board init failed at matrix/force-exp@0x20 (hal=1) mcp23017.c:39 i2c2 TIMEOUT
+[2026-11-20 14:56:35.124] [RX] #W[40471] BOARD: refused: init failed at matrix/force-exp@0x20 (hal=1) first: mcp23017.c:39 i2c2  @proto.c:422
+[2026-11-20 14:56:37.149] [RX] !STATE idle
+[2026-11-20 14:56:39.146] [RX] !STATE idle
+[2026-11-20 14:56:41.142] [RX] !STATE idle
+[2026-11-20 14:56:43.139] [RX] !STATE idle
+[2026-11-20 14:56:45.134] [RX] !STATE idle
+[2026-11-20 14:56:47.095] [RX] !STATE idle
+[2026-11-20 14:56:47.715] [RX] #[boot] main: peripherals up, Board_Init start
+[2026-11-20 14:56:48.857] [RX] #[boot] main: Board_Init done, starting scheduler
+[2026-11-20 14:56:48.860] [RX] #[boot] HT_MK1 console up @115200
+[2026-11-20 14:56:48.863] [RX] #[boot] tasks created
+[2026-11-20 14:56:48.867] [RX] #[boot] Tasks_Init done, starting scheduler
+[2026-11-20 14:56:48.870] [RX] !STATE idle
+[2026-11-20 14:56:48.872] [RX] !FIXTURE none
+[2026-11-20 14:56:48.875] [RX] #E[0] DIAG: mcp23017.c:39 i2c2 wr 0x20 r0x0A hal=1 e=0x04(NAK)
+[2026-11-20 14:56:48.878] [RX] #E[0] DIAG: hv_card.c:202 hv: inject expander init hal=1
+[2026-11-20 14:56:48.881] [RX] #E[0] DIAG: board.c:475 Board_Init: HV card stage hal=1
+[2026-11-20 14:56:48.884] [RX] #I[0] BOOT: reset cause: BOR/POR PIN
+[2026-11-20 14:56:48.887] [RX] #I[0] SYS: tasks started (hv boards=1)
+[2026-11-20 14:56:48.889] [RX] #I[0] BOARD: init ok: matrix, ads124s08, frontend
+[2026-11-20 14:56:48.894] [RX] #W[0] BOARD: hv1 NOT fitted (hal=1) - continuity/resistance only @tasks.c:1119
+[2026-11-20 14:56:48.896] [RX] #I[0] SAFE: task up
+[2026-11-20 14:56:48.899] [RX] #I[5] COM: proto ready (see GUI_development_brief.md)
+[2026-11-20 14:56:48.902] [RX] #I[8] SEQ: task up
+[2026-11-20 14:56:50.834] [RX] !STATE idle
+[2026-11-20 14:56:52.830] [RX] !STATE idle
+[2026-11-20 14:56:54.826] [RX] !STATE idle
+[2026-11-20 14:56:55.508] [TX] >CONT RUN discover
+[2026-11-20 14:56:55.511] [RX] !FIXTURE mtx
+[2026-11-20 14:56:55.513] [RX] <OK started
+[2026-11-20 14:56:55.516] [RX] !STATE running
+[2026-11-20 14:56:57.510] [RX] !STATE running
+[2026-11-20 14:56:58.584] [RX] !PROGRESS 1 256
+[2026-11-20 14:56:59.511] [RX] !STATE running
+[2026-11-20 14:57:01.504] [RX] !STATE running
+[2026-11-20 14:57:01.655] [RX] !PROGRESS 2 256
+[2026-11-20 14:57:03.462] [RX] !STATE running
+[2026-11-20 14:57:04.720] [RX] !PROGRESS 3 256
+[2026-11-20 14:57:05.456] [RX] !STATE running
+[2026-11-20 14:57:07.493] [RX] !STATE running
+[2026-11-20 14:57:07.789] [RX] !PROGRESS 4 256
+[2026-11-20 14:57:09.494] [RX] !STATE running
+[2026-11-20 14:57:10.857] [RX] !PROGRESS 5 256
+[2026-11-20 14:57:11.486] [RX] !STATE running
+[2026-11-20 14:57:13.443] [RX] !STATE running
+[2026-11-20 14:57:13.888] [RX] !PROGRESS 6 256
+[2026-11-20 14:57:15.480] [RX] !STATE running
+[2026-11-20 14:57:16.996] [RX] !PROGRESS 7 256
+[2026-11-20 14:57:17.475] [RX] !STATE running
+[2026-11-20 14:57:19.473] [RX] !STATE running
+[2026-11-20 14:57:20.064] [RX] !PROGRESS 8 256
+[2026-11-20 14:57:21.470] [RX] !STATE running
+[2026-11-20 14:57:23.096] [RX] !PROGRESS 9 256
+[2026-11-20 14:57:23.426] [RX] !STATE running
+[2026-11-20 14:57:25.466] [RX] !STATE running
+[2026-11-20 14:57:26.202] [RX] !PROGRESS 10 256
+[2026-11-20 14:57:27.426] [RX] !STATE running
+[2026-11-20 14:57:29.278] [RX] !PROGRESS 11 256
+[2026-11-20 14:57:29.456] [RX] !STATE running
+[2026-11-20 14:57:31.411] [RX] !STATE running
+[2026-11-20 14:57:32.340] [RX] !PROGRESS 12 256
+[2026-11-20 14:57:33.411] [RX] !STATE running
+[2026-11-20 14:57:35.407] [RX] !PROGRESS 13 256
+[2026-11-20 14:57:35.410] [RX] !STATE running
+[2026-11-20 14:57:37.441] [RX] !STATE running
+[2026-11-20 14:57:38.476] [RX] !PROGRESS 14 256
+[2026-11-20 14:57:39.438] [RX] !STATE running
+[2026-11-20 14:57:41.435] [RX] !STATE running
+[2026-11-20 14:57:41.507] [RX] !PROGRESS 15 256
+[2026-11-20 14:57:43.414] [RX] !STATE running
+[2026-11-20 14:57:44.613] [RX] !PROGRESS 16 256
+[2026-11-20 14:57:45.389] [RX] !STATE running
+[2026-11-20 14:57:47.385] [RX] !STATE running
+[2026-11-20 14:57:47.687] [RX] !PROGRESS 17 256
+[2026-11-20 14:57:49.420] [RX] !STATE running
+[2026-11-20 14:57:50.750] [RX] !PROGRESS 18 256
+[2026-11-20 14:57:51.417] [RX] !STATE running
+[2026-11-20 14:57:53.373] [RX] !STATE running
+[2026-11-20 14:57:53.818] [RX] !PROGRESS 19 256

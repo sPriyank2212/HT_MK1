@@ -1,0 +1,11 @@
+venv/
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+reports/
+profiles/
+netlists/
+build/
+build_info.py
+

@@ -1,0 +1,125 @@
+HARNESS TESTER - LOG FILE
+Generated  : 2026-11-19 17:52:45.375
+App build  : 2026-11-17T14:53:38
+Firmware   : v0.1.0   build 2026-11-18T16:53:59
+Link       : connected   port COM13 @ 115200 baud
+Device     : IDLE   fixture J-MTX
+
+===== APPLICATION LOG (33 lines) =====
+[2026-11-19 17:51:23.630] [INFO ] app   HT_MK1 console started — not yet connected
+[2026-11-19 17:51:23.643] [INFO ] link  port scan: COM12, COM13
+[2026-11-19 17:51:23.675] [INFO ] link  connected — state idle, fixture none
+[2026-11-19 17:51:23.692] [INFO ] link  firmware 0.1.0 built 2026-11-18 16:53 · GUI built 2026-11-17 14:53
+[2026-11-19 17:51:23.717] [WARN ] nl    no netlist on the instrument — run cross continuity and save it before netlist-mode continuity or resistance will run
+[2026-11-19 17:51:54.522] [ERROR] seq   Continuity · J-MTX refused - EHW board init failed at matrix/force-exp@0x20 (hal=1) mcp23017.c:39 i2c2 TIMEOUT
+[2026-11-19 17:51:54.535] [WARN ] fw    W[149626] BOARD: refused: init failed at matrix/force-exp@0x20 (hal=1) first: mcp23017.c:39 i2c2 @proto.c:422
+[2026-11-19 17:51:56.665] [ERROR] seq   Continuity · J-MTX refused - EHW board init failed at matrix/force-exp@0x20 (hal=1) mcp23017.c:39 i2c2 TIMEOUT
+[2026-11-19 17:51:56.675] [WARN ] fw    W[151775] BOARD: refused: init failed at matrix/force-exp@0x20 (hal=1) first: mcp23017.c:39 i2c2 @proto.c:422
+[2026-11-19 17:52:24.630] [INFO ] fw    [boot] main: peripherals up, Board_Init start
+[2026-11-19 17:52:24.653] [INFO ] fw    [boot] main: Board_Init done, starting scheduler
+[2026-11-19 17:52:24.658] [INFO ] fw    [boot] HT_MK1 console up @115200
+[2026-11-19 17:52:24.659] [INFO ] fw    [boot] tasks created
+[2026-11-19 17:52:24.666] [INFO ] fw    [boot] Tasks_Init done, starting scheduler
+[2026-11-19 17:52:24.672] [INFO ] fix   fixture is now none
+[2026-11-19 17:52:24.678] [ERROR] fw    E[0] DIAG: mcp23017.c:39 i2c2 wr 0x21 r0x0A hal=1 e=0x04(NAK)
+[2026-11-19 17:52:24.683] [ERROR] fw    E[0] DIAG: board.c:433 Board_Init: ads124s08 stage hal=1
+[2026-11-19 17:52:24.687] [INFO ] fw    I[0] BOOT: reset cause: BOR/POR PIN
+[2026-11-19 17:52:24.694] [INFO ] fw    I[0] SYS: tasks started (hv boards=1)
+[2026-11-19 17:52:24.697] [ERROR] fw    E[0] BOARD: init FAILED at ads124s08 (hal=1) first: mcp23017.c:39 i2c2 NAK @tasks.c:1086
+[2026-11-19 17:52:24.700] [INFO ] fw    I[0] SAFE: task up
+[2026-11-19 17:52:24.705] [INFO ] fw    I[5] COM: proto ready (see GUI_development_brief.md)
+[2026-11-19 17:52:24.710] [INFO ] fw    I[8] SEQ: task up
+[2026-11-19 17:52:26.217] [INFO ] fw    I[1509] SCAN: start (init failed at ads124s08; each scan limited to 1500 ms)
+[2026-11-19 17:52:26.219] [WARN ] fw    W[1546] SCAN: i2c2 U20=0x0000 (both off): nothing answers (112 probes, 14 ms) @board.c:587
+[2026-11-19 17:52:26.247] [WARN ] fw    W[1578] SCAN: i2c2 U20=0x0008 (sense/BUFF2): 4 ack: 0x20 0x22 0x24 0x26 (13 ms) @board.c:591
+[2026-11-19 17:52:26.279] [WARN ] fw    W[1610] SCAN: i2c2 U20=0x0080 (force/BUFF1): 5 ack: 0x20 0x21 0x22 0x24 0x26 (14 ms) @board.c:591
+[2026-11-19 17:52:26.312] [WARN ] fw    W[1642] SCAN: i2c2 U20=0x0088 (both on): 5 ack: 0x20 0x21 0x22 0x24 0x26 (14 ms) @board.c:591
+[2026-11-19 17:52:26.321] [INFO ] fw    I[1658] SCAN: done in 149 ms
+[2026-11-19 17:52:33.379] [ERROR] seq   Continuity · J-MTX refused - EHW board init failed at ads124s08 (hal=1) mcp23017.c:39 i2c2 NAK
+[2026-11-19 17:52:33.381] [WARN ] fw    W[8696] BOARD: refused: init failed at ads124s08 (hal=1) first: mcp23017.c:39 i2c2 NAK @proto.c:422
+[2026-11-19 17:52:36.567] [ERROR] seq   Continuity · J-MTX refused - EHW board init failed at ads124s08 (hal=1) mcp23017.c:39 i2c2 NAK
+[2026-11-19 17:52:36.577] [WARN ] fw    W[11926] BOARD: refused: init failed at ads124s08 (hal=1) first: mcp23017.c:39 i2c2 NAK @proto.c:422
+
+===== SERIAL TRAFFIC TX/RX (82 lines, newest 2000 kept) =====
+[2026-11-19 17:51:23.660] [TX] >STATUS
+[2026-11-19 17:51:23.675] [RX] <STATUS state=idle fixture=none hv_mv=0
+[2026-11-19 17:51:23.677] [TX] >ID
+[2026-11-19 17:51:23.692] [RX] <ID HT_MK1 fw=0.1.0 proto=1 build=2026-11-18T16:53:59
+[2026-11-19 17:51:23.696] [TX] >CAL GET
+[2026-11-19 17:51:23.704] [RX] <CAL current_ua=2000 method=ratiometric rref_mohm=100000 rref_tol_mohm=10 gain_max=128
+[2026-11-19 17:51:23.707] [TX] >LIMITS GET
+[2026-11-19 17:51:23.712] [RX] <LIMITS r_max_mohm=5000 ins_min_mohm=10000000000
+[2026-11-19 17:51:23.714] [TX] >NETLIST GET
+[2026-11-19 17:51:23.717] [RX] <NETLIST 0
+[2026-11-19 17:51:25.715] [RX] !STATE idle
+[2026-11-19 17:51:27.746] [RX] !STATE idle
+[2026-11-19 17:51:29.708] [RX] !STATE idle
+[2026-11-19 17:51:31.744] [RX] !STATE idle
+[2026-11-19 17:51:33.736] [RX] !STATE idle
+[2026-11-19 17:51:35.731] [RX] !STATE idle
+[2026-11-19 17:51:37.688] [RX] !STATE idle
+[2026-11-19 17:51:39.723] [RX] !STATE idle
+[2026-11-19 17:51:41.679] [RX] !STATE idle
+[2026-11-19 17:51:43.675] [RX] !STATE idle
+[2026-11-19 17:51:45.672] [RX] !STATE idle
+[2026-11-19 17:51:47.668] [RX] !STATE idle
+[2026-11-19 17:51:49.665] [RX] !STATE idle
+[2026-11-19 17:51:51.660] [RX] !STATE idle
+[2026-11-19 17:51:53.656] [RX] !STATE idle
+[2026-11-19 17:51:54.512] [TX] >CONT RUN discover
+[2026-11-19 17:51:54.522] [RX] <ERR EHW board init failed at matrix/force-exp@0x20 (hal=1) mcp23017.c:39 i2c2 TIMEOUT
+[2026-11-19 17:51:54.535] [RX] #W[149626] BOARD: refused: init failed at matrix/force-exp@0x20 (hal=1) first: mcp23017.c:39 i2c2 @proto.c:422
+[2026-11-19 17:51:56.519] [RX] !STATE idle
+[2026-11-19 17:51:56.655] [TX] >CONT RUN discover
+[2026-11-19 17:51:56.665] [RX] <ERR EHW board init failed at matrix/force-exp@0x20 (hal=1) mcp23017.c:39 i2c2 TIMEOUT
+[2026-11-19 17:51:56.675] [RX] #W[151775] BOARD: refused: init failed at matrix/force-exp@0x20 (hal=1) first: mcp23017.c:39 i2c2 @proto.c:422
+[2026-11-19 17:51:58.676] [RX] !STATE idle
+[2026-11-19 17:52:00.657] [RX] !STATE idle
+[2026-11-19 17:52:02.657] [RX] !STATE idle
+[2026-11-19 17:52:04.649] [RX] !STATE idle
+[2026-11-19 17:52:06.646] [RX] !STATE idle
+[2026-11-19 17:52:08.642] [RX] !STATE idle
+[2026-11-19 17:52:10.678] [RX] !STATE idle
+[2026-11-19 17:52:12.635] [RX] !STATE idle
+[2026-11-19 17:52:14.669] [RX] !STATE idle
+[2026-11-19 17:52:16.664] [RX] !STATE idle
+[2026-11-19 17:52:18.662] [RX] !STATE idle
+[2026-11-19 17:52:20.657] [RX] !STATE idle
+[2026-11-19 17:52:22.653] [RX] !STATE idle
+[2026-11-19 17:52:24.630] [RX] #[boot] main: peripherals up, Board_Init start
+[2026-11-19 17:52:24.653] [RX] #[boot] main: Board_Init done, starting scheduler
+[2026-11-19 17:52:24.658] [RX] #[boot] HT_MK1 console up @115200
+[2026-11-19 17:52:24.659] [RX] #[boot] tasks created
+[2026-11-19 17:52:24.666] [RX] #[boot] Tasks_Init done, starting scheduler
+[2026-11-19 17:52:24.671] [RX] !STATE idle
+[2026-11-19 17:52:24.672] [RX] !FIXTURE none
+[2026-11-19 17:52:24.678] [RX] #E[0] DIAG: mcp23017.c:39 i2c2 wr 0x21 r0x0A hal=1 e=0x04(NAK)
+[2026-11-19 17:52:24.683] [RX] #E[0] DIAG: board.c:433 Board_Init: ads124s08 stage hal=1
+[2026-11-19 17:52:24.687] [RX] #I[0] BOOT: reset cause: BOR/POR PIN
+[2026-11-19 17:52:24.694] [RX] #I[0] SYS: tasks started (hv boards=1)
+[2026-11-19 17:52:24.697] [RX] #E[0] BOARD: init FAILED at ads124s08 (hal=1) first: mcp23017.c:39 i2c2 NAK @tasks.c:1086
+[2026-11-19 17:52:24.700] [RX] #I[0] SAFE: task up
+[2026-11-19 17:52:24.705] [RX] #I[5] COM: proto ready (see GUI_development_brief.md)
+[2026-11-19 17:52:24.710] [RX] #I[8] SEQ: task up
+[2026-11-19 17:52:26.217] [RX] #I[1509] SCAN: start (init failed at ads124s08; each scan limited to 1500 ms)
+[2026-11-19 17:52:26.219] [RX] #W[1546] SCAN: i2c2 U20=0x0000 (both off): nothing answers (112 probes, 14 ms) @board.c:587
+[2026-11-19 17:52:26.247] [RX] #W[1578] SCAN: i2c2 U20=0x0008 (sense/BUFF2): 4 ack: 0x20 0x22 0x24 0x26 (13 ms) @board.c:591
+[2026-11-19 17:52:26.279] [RX] #W[1610] SCAN: i2c2 U20=0x0080 (force/BUFF1): 5 ack: 0x20 0x21 0x22 0x24 0x26 (14 ms) @board.c:591
+[2026-11-19 17:52:26.312] [RX] #W[1642] SCAN: i2c2 U20=0x0088 (both on): 5 ack: 0x20 0x21 0x22 0x24 0x26 (14 ms) @board.c:591
+[2026-11-19 17:52:26.321] [RX] #I[1658] SCAN: done in 149 ms
+[2026-11-19 17:52:26.708] [RX] !STATE idle
+[2026-11-19 17:52:28.667] [RX] !STATE idle
+[2026-11-19 17:52:30.700] [RX] !STATE idle
+[2026-11-19 17:52:32.655] [RX] !STATE idle
+[2026-11-19 17:52:33.376] [TX] >CONT RUN discover
+[2026-11-19 17:52:33.379] [RX] <ERR EHW board init failed at ads124s08 (hal=1) mcp23017.c:39 i2c2 NAK
+[2026-11-19 17:52:33.381] [RX] #W[8696] BOARD: refused: init failed at ads124s08 (hal=1) first: mcp23017.c:39 i2c2 NAK @proto.c:422
+[2026-11-19 17:52:35.343] [RX] !STATE idle
+[2026-11-19 17:52:36.559] [TX] >CONT RUN discover
+[2026-11-19 17:52:36.567] [RX] <ERR EHW board init failed at ads124s08 (hal=1) mcp23017.c:39 i2c2 NAK
+[2026-11-19 17:52:36.577] [RX] #W[11926] BOARD: refused: init failed at ads124s08 (hal=1) first: mcp23017.c:39 i2c2 NAK @proto.c:422
+[2026-11-19 17:52:38.602] [RX] !STATE idle
+[2026-11-19 17:52:40.598] [RX] !STATE idle
+[2026-11-19 17:52:42.594] [RX] !STATE idle
+[2026-11-19 17:52:44.591] [RX] !STATE idle
+[2026-11-19 17:52:46.545] [RX] !STATE idle

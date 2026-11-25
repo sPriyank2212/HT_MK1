@@ -1,0 +1,47 @@
+HARNESS TESTER - LOG FILE
+Generated  : 2026-11-17 17:01:15.002
+App build  : 2026-11-17T14:53:38
+Firmware   : —   build —
+Link       : not connected   port COM13 @ 115200 baud
+Device     : not connected   fixture —
+
+===== APPLICATION LOG (29 lines) =====
+[2026-11-17 16:59:55.685] [INFO ] app   HT_MK1 console started — not yet connected
+[2026-11-17 16:59:55.701] [INFO ] link  port scan: COM12, COM13
+[2026-11-17 16:59:57.774] [ERROR] link  link lost — command timeout after 2.0s: b'>STATUS\n' (state unknown)
+[2026-11-17 16:59:57.779] [ERROR] link  link lost — disconnected (state unknown)
+[2026-11-17 16:59:57.779] [ERROR] link  no reply within 2.0s: b'>STATUS\n'
+[2026-11-17 16:59:59.805] [INFO ] link  port scan: COM12, COM13
+[2026-11-17 17:00:02.870] [ERROR] link  link lost — command timeout after 2.0s: b'>STATUS\n' (state unknown)
+[2026-11-17 17:00:02.877] [ERROR] link  link lost — disconnected (state unknown)
+[2026-11-17 17:00:02.877] [ERROR] link  no reply within 2.0s: b'>STATUS\n'
+[2026-11-17 17:00:06.320] [ERROR] link  link lost — command timeout after 2.0s: b'>STATUS\n' (state unknown)
+[2026-11-17 17:00:06.323] [ERROR] link  link lost — disconnected (state unknown)
+[2026-11-17 17:00:06.324] [ERROR] link  no reply within 2.0s: b'>STATUS\n'
+[2026-11-17 17:00:10.116] [ERROR] link  link lost — command timeout after 2.0s: b'>STATUS\n' (state unknown)
+[2026-11-17 17:00:10.121] [ERROR] link  link lost — disconnected (state unknown)
+[2026-11-17 17:00:10.121] [ERROR] link  no reply within 2.0s: b'>STATUS\n'
+[2026-11-17 17:00:13.114] [INFO ] link  port scan: COM12, COM13
+[2026-11-17 17:00:22.863] [ERROR] link  link lost — command timeout after 2.0s: b'>STATUS\n' (state unknown)
+[2026-11-17 17:00:22.868] [ERROR] link  link lost — disconnected (state unknown)
+[2026-11-17 17:00:22.868] [ERROR] link  no reply within 2.0s: b'>STATUS\n'
+[2026-11-17 17:00:41.003] [ERROR] link  link lost — command timeout after 2.0s: b'>STATUS\n' (state unknown)
+[2026-11-17 17:00:41.008] [ERROR] link  link lost — disconnected (state unknown)
+[2026-11-17 17:00:41.008] [ERROR] link  no reply within 2.0s: b'>STATUS\n'
+[2026-11-17 17:00:51.104] [INFO ] link  port scan: COM12, COM13
+[2026-11-17 17:00:56.342] [ERROR] link  link lost — command timeout after 2.0s: b'>STATUS\n' (state unknown)
+[2026-11-17 17:00:56.346] [ERROR] link  link lost — disconnected (state unknown)
+[2026-11-17 17:00:56.346] [ERROR] link  no reply within 2.0s: b'>STATUS\n'
+[2026-11-17 17:01:00.427] [ERROR] link  link lost — command timeout after 2.0s: b'>STATUS\n' (state unknown)
+[2026-11-17 17:01:00.435] [ERROR] link  link lost — disconnected (state unknown)
+[2026-11-17 17:01:00.436] [ERROR] link  no reply within 2.0s: b'>STATUS\n'
+
+===== SERIAL TRAFFIC TX/RX (8 lines, newest 2000 kept) =====
+[2026-11-17 16:59:55.726] [TX] >STATUS
+[2026-11-17 17:00:00.861] [TX] >STATUS
+[2026-11-17 17:00:04.306] [TX] >STATUS
+[2026-11-17 17:00:08.069] [TX] >STATUS
+[2026-11-17 17:00:20.856] [TX] >STATUS
+[2026-11-17 17:00:38.995] [TX] >STATUS
+[2026-11-17 17:00:54.294] [TX] >STATUS
+[2026-11-17 17:00:58.381] [TX] >STATUS

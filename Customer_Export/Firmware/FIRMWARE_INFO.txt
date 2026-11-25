@@ -1,0 +1,55 @@
+HT_MK1 firmware
+
+Target          STM32G474RE (Control Card), flash base 0x08000000
+Version         fw 0.1.0, protocol 1   (reported by the ID command, with build=<compile time>)
+Source          the project source as of 2026-11-14, i.e. commit f7479f8 (identical to the 959de5a
+                sources) plus one fix in Core/Src/app/tasks.c (watchdog start order, see below)
+Built           2026-11-14 about 19:01 with GNU Tools for STM32 14.3.rel1, "Debug" configuration
+                (-O0 -g3, the configuration the Flashing Procedure flashes)
+                by STM32CubeIDE 1.19.0 (headless build, clean build, 0 errors, 0 warnings)
+Build stamp     the ID reply ends "build=2026-11-14T19:01:5x"-style (the compile time of
+                build_info.c on the build PC; no real-time clock is involved)
+
+Change in this build (since the 2026-11-13 image)
+  - FIX: the independent watchdog (IWDG) start-up hung. The safety task waited for the watchdog's
+    prescaler/reload update flags before starting the watchdog, but the watchdog's own clock (LSI)
+    only runs once the watchdog is started, so the wait never ended. That task has the highest
+    priority, so it starved the communication and logger tasks and the unit never answered PING.
+    The start key is now written first and the wait is limited to 50 ms.
+    Confirmed on the bench by the user: the unit starts and answers.
+  The 2026-11-13 image (and anything built from it) has this hang and must not be used.
+
+Earlier changes still in this build (PROJECT_LOG.md CL-77 to CL-86)
+  - console on USART2 (PA2/PA3): the MCP2221A USB-UART on the Control Card (USB Type-C J8)
+  - HV card N is on Control Card slot J<N> / enable EN<N>; HV card 1 shares J1/EN1 with the Matrix
+    Card, so the Matrix segments are switched off the I2C bus before EN1 is raised for HV card 1.
+    Up to 4 HV cards (BOARD_HV_COUNT, default 1)
+  - BUS SCAN also probes each HV card's 8 relay expanders (HVn_HS1..4, HVn_LS1..4)
+  - the minimum insulation resistance is configurable: LIMITS SET ins_min_mohm=<mohm>,
+    100 kohm to 40 Mohm, default 10 Mohm; !INSUL and LIMITS GET carry 64-bit milliohms (FW-11)
+  - the ID reply carries the firmware build stamp (FW-20)
+
+Files
+  HT_MK1.elf    programming image with debug symbols (use with STM32CubeProgrammer / CubeIDE)
+  HT_MK1.hex    Intel HEX
+  HT_MK1.bin    raw binary - flash at 0x08000000
+
+SHA-256
+  HT_MK1.elf    4ac520c8c29340953b5debb00cf8073987cd507cb01cbe4b8e00a9253259aa72
+  HT_MK1.hex    3b5e6222501868cb38048cdc64b7b4e9d4b495423b633fe7acd7cfcdba8b7642
+  HT_MK1.bin    3caf2a4643c25ba8d14e8aecfb8d8e3f98988c259c57a509d061ba1c5b9fbfc8
+
+Size (arm-none-eabi-size on the .elf)
+  text 78912, data 108, bss 40748
+
+Flashing
+  Follow 0_Documents/4_Flashing_Procedure.pdf, then run its PING / PONG check before testing.
+  Afterwards the GUI should connect and show "fw 0.1.0" in the status bar.
+  The console is the USB Type-C connector (J8); it appears as "USB Serial Device".
+
+Verified so far
+  Compiled with 0 errors and 0 warnings; the PC logic tests pass (124 checks); the unit starts and
+  answers on the console after the watchdog fix (checked by the user on the Control Card alone).
+  Not yet tested: the Matrix and HV cards with this image, the shared-EN1 and insulation-limit tests
+  (Doc/hardware_test_plan_2026-11-13.md; PROJECT_LOG.md BU-16, BU-17). Do not arm HV before BU-17
+  passes. There is also no hardware interlock signal.

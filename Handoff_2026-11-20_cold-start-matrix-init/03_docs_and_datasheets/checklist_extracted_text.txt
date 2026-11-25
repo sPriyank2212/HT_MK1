@@ -1,0 +1,1135 @@
+
+Harness Tester
+Power Jumper, Resistance and Strap Checklist
+14 Nov 2026
+Table of Contents
+ TOC \o "1-2" \h \z \u 1. Control Card (IHT-MKI-CC)2
+1.1 Power input and power jumper checklist2
+1.2 Connector power pin map2
+1.3 Power-off resistance checks on the connector pins3
+1.4 Other jumpers, straps and option parts4
+1.5 Powered rail checkpoints4
+2. Matrix Card (IHT-MKI-MC)4
+2.1 Power input and ground jumper checklist4
+2.2 Connector J101 pin map for power measurements5
+2.3 Power-off resistance checks across the power lines5
+2.4 Other jumpers, straps and address resistors6
+2.5 Powered rail checkpoints6
+3. HV Card (IHT-MKI-HVC)6
+3.1 Power and ground arrangement checklist6
+3.2 Connector J1001 pin map for power measurements7
+3.3 Power-off resistance checks on the connector pins7
+3.4 Other jumpers, straps and address resistors8
+3.5 Powered rail checkpoints8
+4. Sign-off8
+
+1. Control Card (IHT-MKI-CC)
+The Control Card makes +5 V, +3.3 V and two isolated +5 V rails. It is powered through J7 only, not from USB or JTAG, with no power jumper soldered. Prove the rails before connecting any other card.
+Reading rules for every resistance table: power off and cards unmated; red lead on the Red (+) pin, black lead on the Black (−) pin; for rail-to-ground rows swap the leads and record the lower reading. Let decoupling capacitors charge before reading. A steady reading below about 10 Ω between different nets is a short; open means above about 1 MΩ. These limits are guide values, not from the schematics.
+1.1 Power input and power jumper checklist
+Table 1 – Control Card power jumper checklist
+ID
+	|Jumper or item
+	|Required state
+	|How to verify
+	|OK
+	|
+CC-J01
+	|Power input connector J7 (drawn as J5 on the schematic)
+	|The only power source. Not powered from USB-C (J8) or from the JTAG header (J1). No power jumper is required.
+	|Connect the bench supply to J7 only. No USB cable or debugger supplying power.
+	|☐
+	|
+CC-J02
+	|JP3 (USB_+5V_Jumper)
+	|Not soldered (open), so USB-C VBUS can never feed +5V. The board is not powered from USB.
+	|Visual. Also CC-R03: J7 +5V to J8 VBUS reads open.
+	|☐
+	|
+CC-J03
+	|JP1 (PWR_Jumper)
+	|Not soldered (open), so the board does not power or get powered through the JTAG header J1.
+	|Visual. CC-R05: J1 VCC to GND reads high. Check the debugger is not set to supply target power.
+	|☐
+	|
+CC-J04
+	|J7 polarity
+	|Pin 1 = +5V, pin 2 = GND.
+	|Check the supply plug polarity with the DMM before plugging in. Then CC-R01 and CC-R02.
+	|☐
+	|
+CC-J05
+	|Bench supply
+	|5 V, current limit about 300 mA, output off before connecting.
+	|Read the set values on the supply display.
+	|☐
+	|
+CC-J06
+	|U7 (R05C05TE05S-R) and U8 (R05CT05S-R)
+	|Soldered, pin 1 orientation correct. Isolated rails 1 and 2.
+	|Visual, against the silkscreen pin 1 mark.
+	|☐
+	|
+CC-J07
+	|U13 (TLV70033)
+	|Soldered, orientation correct. Makes +3V3 from +5V.
+	|Visual.
+	|☐
+	|
+CC-J08
+	|Connectors J101 to J104
+	|No harness connected yet.
+	|Visual. Mate harnesses only in the order Control, Matrix, then HV Cards.
+	|☐
+	|
+
+1.2 Connector power pin map
+Every Control Card connector used for power measurement is listed here. Probe on the connector pin, not on a test point. J101 to J104 are 2 × 25 headers (Wurth 61205022021); pin 1 is top-left and odd pins are in the left column on the schematic. The power pins are the same on J101, J102, J103 and J104, except that +3V3 is on J101 only.
+Table 2 – Control Card connector power pins
+Connector
+	|Net
+	|Pins
+	|
+J101 to J104
+	|+5V_ISO
+	|1, 2, 3, 4
+	|
+J101 to J104
+	|ISO_GND
+	|5, 6, 7, 8
+	|
+J101 to J104
+	|+5V_ISO_1
+	|9, 10, 11, 12
+	|
+J101 to J104
+	|ISO_GND_1
+	|13, 14, 15, 16
+	|
+J101 to J104
+	|GND (Control ground)
+	|17, 18, 31, 32, 47, 48
+	|
+J101 only
+	|+3V3
+	|49, 50
+	|
+J7 (power input, drawn J5)
+	|+5V / GND
+	|Pin 1 = +5V, pin 2 = GND
+	|
+J8 (USB-C)
+	|VBUS / GND
+	|VBUS A4 and B9; GND A1, A12, B1, B12 (standard USB-C pin-out)
+	|
+J1 (JTAG, drawn J6)
+	|VCC_JTAG / GND
+	|VCC_JTAG pins 1 and 2; GND pin 20
+	|
+
+1.3 Power-off resistance checks on the connector pins
+Part A: power input and the other connectors (J7, J8, J1, and +3V3 on J101).
+Table 3 – Control Card resistance checks, part A
+ID
+	|Measure
+	|Red (+) pin
+	|Black (−) pin
+	|Expected (power off)
+	|Reading
+	|OK
+	|
+CC-R01
+	|+5V to GND at J7
+	|J7 pin 1
+	|J7 pin 2
+	|Not a short (no steady reading below about 10 Ω). Record.
+	|
+	|☐
+	|
+CC-R02
+	|J7 GND to Control GND
+	|J7 pin 2
+	|J101 pin 17
+	|Continuity.
+	|
+	|☐
+	|
+CC-R03
+	|J7 +5V to J8 VBUS
+	|J7 pin 1
+	|J8 A4 (then B9)
+	|Open (JP3 not soldered).
+	|
+	|☐
+	|
+CC-R04
+	|J8 VBUS to GND
+	|J8 A4 (then B9)
+	|J8 A1 (then B12)
+	|Not a short. Record.
+	|
+	|☐
+	|
+CC-R05
+	|JTAG VCC to GND
+	|J1 pin 1 (then pin 2)
+	|J1 pin 20
+	|High resistance (JP1 not soldered). Not a short.
+	|
+	|☐
+	|
+CC-R06
+	|JTAG GND to Control GND
+	|J1 pin 20
+	|J7 pin 2
+	|Continuity.
+	|
+	|☐
+	|
+CC-R07
+	|+3V3 to GND at J101
+	|J101 pin 49 (then 50)
+	|J101 pin 17
+	|Not a short. Record.
+	|
+	|☐
+	|
+CC-R08
+	|+5V to +3V3
+	|J7 pin 1
+	|J101 pin 49
+	|Not a short.
+	|
+	|☐
+	|
+
+Part B: isolated-rail pins on every harness connector. Take the same reading on each connector and write it in its column.
+Table 4 – Control Card resistance checks, part B (J101 to J104)
+ID
+	|Measure
+	|Red (+) pin
+	|Black (−) pin
+	|Expected (power off)
+	|J101
+	|J102
+	|J103
+	|J104
+	|OK
+	|
+CC-R09
+	|+5V_ISO to ISO_GND
+	|Pin 1
+	|Pin 5
+	|Not a short (no steady reading below about 10 Ω). Record.
+	|
+	|
+	|
+	|
+	|☐
+	|
+CC-R10
+	|+5V_ISO_1 to ISO_GND_1
+	|Pin 9
+	|Pin 13
+	|Not a short. Record.
+	|
+	|
+	|
+	|
+	|☐
+	|
+CC-R11
+	|ISO_GND to GND
+	|Pin 5
+	|Pin 17
+	|Open (isolated).
+	|
+	|
+	|
+	|
+	|☐
+	|
+CC-R12
+	|ISO_GND_1 to GND
+	|Pin 13
+	|Pin 17
+	|Open (isolated).
+	|
+	|
+	|
+	|
+	|☐
+	|
+CC-R13
+	|+5V_ISO to GND
+	|Pin 1
+	|Pin 17
+	|Open.
+	|
+	|
+	|
+	|
+	|☐
+	|
+CC-R14
+	|+5V_ISO_1 to GND
+	|Pin 9
+	|Pin 17
+	|Open.
+	|
+	|
+	|
+	|
+	|☐
+	|
+CC-R15
+	|+5V_ISO to +5V_ISO_1
+	|Pin 1
+	|Pin 9
+	|Open, unless the schematic shows the rails joined. Record.
+	|
+	|
+	|
+	|
+	|☐
+	|
+CC-R16
+	|J7 +5V to +5V_ISO
+	|J7 pin 1
+	|Pin 1
+	|Open (isolated converter input to output).
+	|
+	|
+	|
+	|
+	|☐
+	|
+CC-R17
+	|J7 +5V to +5V_ISO_1
+	|J7 pin 1
+	|Pin 9
+	|Open (isolated converter input to output).
+	|
+	|
+	|
+	|
+	|☐
+	|
+CC-R18
+	|Pin groups (continuity)
+	|Pins 1–4; 5–8; 9–12; 13–16; 17, 18, 31, 32, 47, 48
+	|Each group to itself
+	|Continuity inside each group, open between groups.
+	|
+	|
+	|
+	|
+	|☐
+	|
+CC-R19
+	|Same net across connectors: pins 1, 5, 9, 13 against J101
+	|J101 pin
+	|Same pin on J102, J103, J104
+	|Continuity on each of the four nets.
+	|—
+	|
+	|
+	|
+	|☐
+	|
+
+Part C: on-board nodes (not connector pins).
+Table 5 – Control Card on-board node checks
+ID
+	|Measure
+	|Red (+) probe
+	|Black (−) probe
+	|Expected (power off)
+	|Reading
+	|OK
+	|
+CC-N01
+	|Ground test points
+	|TP15
+	|TP16, TP17, TP18
+	|Continuity.
+	|
+	|☐
+	|
+CC-N02
+	|MCU supply pins to +3V3
+	|U1 VBAT 1, VDD 16, 32, 48, 64
+	|J101 pin 49
+	|Continuity or very low resistance.
+	|
+	|☐
+	|
+CC-N03
+	|MCU analog pins to +3V3
+	|U1 VDDA 29, VREF+ 28
+	|J101 pin 49
+	|Low resistance (a filter part may add a little). Record.
+	|
+	|☐
+	|
+
+1.4 Other jumpers, straps and option parts
+Table 6 – Control Card non-power jumpers and straps
+ID
+	|Item
+	|Required state
+	|How to verify
+	|OK
+	|
+CC-S01
+	|JP2 (Reset_Jumper)
+	|Not soldered (not a power jumper). Solder only for reset under debug (NRST to J1 reset pin).
+	|Visual.
+	|☐
+	|
+CC-S02
+	|SW1 (reset button), R83, C12
+	|Soldered. NRST has R83 (10 kΩ) pull-up to +3V3, SW1 to GND, and C12 100 nF to GND.
+	|Press SW1 with a meter on NRST: low while pressed.
+	|☐
+	|
+CC-S03
+	|SW2 (boot button) and R55
+	|Soldered, not pressed at power-up. Boot net runs through SW2 and R55 (10 kΩ) to GND, so the 10 kΩ is in circuit only while SW2 is pressed.
+	|Visual: R55 present. With SW2 not pressed there is no external pull on the Boot net.
+	|☐
+	|
+CC-S04
+	|U20 address straps
+	|Solder R8, R77, R79 (pull-downs to GND). Do not solder R1, R76, R78 (pull-ups to +3V3). Result: address 0x20.
+	|Visual: pads of R1, R76, R78 not soldered and R8, R77, R79 soldered. If both of a pair are soldered the pin sits near 1.65 V and the address is undefined.
+	|☐
+	|
+CC-S05
+	|R80, R81, R82
+	|Soldered. 4.7 kΩ to +3V3 on RESET, INTB and INTA of U20.
+	|Measure about 4.7 kΩ to +3V3 with power off.
+	|☐
+	|
+CC-S06
+	|I2C pull-ups
+	|2.2 kΩ on every SDA and SCL line (to +3V3 on side 1, to +5V on side 2 of the isolators).
+	|Visual, spot-check by resistance.
+	|☐
+	|
+CC-S07
+	|R75 (SPI1_CS pull-up)
+	|Soldered next to the temperature sensor U2.
+	|Visual.
+	|☐
+	|
+CC-S08
+	|J1 (JTAG) header
+	|Free of wires. Nothing is connected to any harness.
+	|Visual.
+	|☐
+	|
+
+1.5 Powered rail checkpoints
+Table 7 – Control Card powered checks
+ID
+	|Check
+	|Expected
+	|Reading
+	|OK
+	|
+CC-P01
+	|Apply 5 V at J7, current limit set
+	|Current settles and nothing gets hot.
+	|
+	|☐
+	|
+CC-P02
+	|+5V at TP19 and TP20
+	|5.0 V ±5%.
+	|
+	|☐
+	|
+CC-P03
+	|+3V3 at TP21 and TP22
+	|3.3 V ±5%.
+	|
+	|☐
+	|
+CC-P04
+	|+5V_ISO to ISO_GND and +5V_ISO_1 to ISO_GND_1 at J101 to J104
+	|About 5 V each, unloaded.
+	|
+	|☐
+	|
+CC-P05
+	|U1 VBAT 1, VDD 16, 32, 48, 64; VDDA 29; VREF+ 28
+	|3.3 V; VDDA and VREF+ within 50 mV of 3.3 V.
+	|
+	|☐
+	|
+CC-P06
+	|NRST (pin 7) and Boot (pin 61) at idle, SW1 and SW2 not pressed
+	|NRST high (R83 pull-up). Boot: record the level; there is no external pull on it while SW2 is not pressed.
+	|
+	|☐
+	|
+
+2. Matrix Card (IHT-MKI-MC)
+The Matrix Card has no regulator. It takes +5V, +3V3 and GND from Control Card J101, so test it only after every Control Card check passes.
+2.1 Power input and ground jumper checklist
+Table 8 – Matrix Card power and ground jumper checklist
+ID
+	|Jumper or item
+	|Required state
+	|How to verify
+	|OK
+	|
+MC-J01
+	|J101 supply
+	|+5V, +3V3 and GND arrive only from Control J101. No other supply connected.
+	|Visual.
+	|☐
+	|
+MC-J02
+	|JP1 (GND_JP)
+	|Soldered bridge (closed): ADS124S08 AINCOM (U68 pin 1) to GND. Desolder it only if AINCOM is used differently.
+	|Visual and continuity, MC-R05.
+	|☐
+	|
+MC-J03
+	|Test points TP_GND1 to TP_GND4
+	|GND pads, probe ground.
+	|MC-R06.
+	|☐
+	|
+MC-J04
+	|Footprints drawn crossed
+	|Do not solder any footprint drawn crossed, including the unused half of each address strap pair.
+	|Visual, against the address strap table in section 2.4.
+	|☐
+	|
+MC-J05
+	|U68 ADS124S08
+	|Orientation correct and thermal pad soldered.
+	|Visual.
+	|☐
+	|
+
+2.2 Connector J101 pin map for power measurements
+The Matrix Card has one connector, J101, a 2 × 25 header (Wurth 61205022021), so all measurements are on its pins. On this card +5V and GND come from the Control Card second isolated rail (+5V_ISO_1, ISO_GND_1) and +3V3 from the Control +3V3, through harness W101A.
+Table 9 – Matrix Card J101 power and select pins
+Net (Matrix J101)
+	|Matrix J101 pins
+	|Comes from Control J101 pins
+	|
++5V
+	|1, 2, 3, 4
+	|9, 10, 11, 12 (+5V_ISO_1)
+	|
+GND
+	|5, 6, 7, 8 and 13, 14, 15, 16
+	|13, 14, 15, 16 (ISO_GND_1)
+	|
++3V3
+	|9, 10, 11, 12
+	|49, 50 (+3V3)
+	|
+LO_S0 to LO_S3
+	|23, 24, 25, 26
+	|Control pins 20, 22, 24, 26
+	|
+HI_S0 to HI_S3
+	|27, 28, 29, 30
+	|Control pins 27, 30, 34, 36
+	|
+HI_COM
+	|33, 34
+	|Control IN, pin 29
+	|
+LO_COM
+	|39, 40
+	|Not wired (free)
+	|
+
+2.3 Power-off resistance checks across the power lines
+Table 10 – Matrix Card power-off resistance checks
+ID
+	|Measure
+	|Red (+) probe
+	|Black (−) probe
+	|Expected (power off)
+	|Reading
+	|OK
+	|
+MC-R01
+	|+5V to GND
+	|J101 pin 1
+	|J101 pin 5
+	|Not a short (no steady reading below about 10 Ω). Record. Repeat on pins 2, 3, 4 (same net).
+	|
+	|☐
+	|
+MC-R02
+	|+3V3 to GND
+	|J101 pin 9
+	|J101 pin 5
+	|Not a short. Record.
+	|
+	|☐
+	|
+MC-R03
+	|+5V to +3V3
+	|J101 pin 1
+	|J101 pin 9
+	|Not a short.
+	|
+	|☐
+	|
+MC-R04
+	|Pin groups (continuity)
+	|Pins 1–4; 5–8 with 13–16; 9–12
+	|Each group to itself
+	|Continuity inside each group, open between +5V and +3V3.
+	|
+	|☐
+	|
+MC-R05
+	|AINCOM to GND (JP1 closed)
+	|U68 pin 1
+	|J101 pin 5
+	|Continuity.
+	|
+	|☐
+	|
+MC-R06
+	|Ground test points
+	|TP_GND1
+	|TP_GND2, TP_GND3, TP_GND4, J101 pin 5
+	|Continuity.
+	|
+	|☐
+	|
+MC-R07
+	|Select pull-downs R123 to R130
+	|J101 pins 23, 24, 25, 26 (LO_S0 to LO_S3), then 27, 28, 29, 30 (HI_S0 to HI_S3)
+	|J101 pin 5
+	|About 100 kΩ each. An in-circuit reading may be lower.
+	|
+	|☐
+	|
+MC-R08
+	|LO_COM reference R131
+	|J101 pin 39
+	|J101 pin 5
+	|About 100 Ω (R131, 0.01%, 1206). An in-circuit reading may be slightly lower.
+	|
+	|☐
+	|
+MC-R09
+	|Supply pins to +3V3
+	|CD74HC4051 VCC (pin 16) of several muxes; MCP23017 VDD (pin 9) of each
+	|J101 pin 9 (+3V3)
+	|Continuity or very low resistance.
+	|
+	|☐
+	|
+
+2.4 Other jumpers, straps and address resistors
+Each MCP23017 has a pull-up (to +3V3) and a pull-down (to GND) footprint on every address pin, all 4.7 kΩ. Solder one of each pair and do not solder the other. On the Matrix Card the strap columns are in the order A2, A1, A0.
+Table 11 – Matrix Card MCP23017 address straps
+ID
+	|IC (bus)
+	|Address
+	|Solder
+	|Do not solder
+	|OK
+	|
+MC-S01
+	|U101 (BUFF1)
+	|0x20
+	|R113, R114, R115
+	|R107, R108, R109
+	|☐
+	|
+MC-S02
+	|U69 (BUFF1)
+	|0x21
+	|R91, R93, R95
+	|R90, R92, R96
+	|☐
+	|
+MC-S03
+	|U102 (BUFF1)
+	|0x22
+	|R116, R111, R118
+	|R110, R117, R112
+	|☐
+	|
+MC-S04
+	|U105 (BUFF1)
+	|0x24
+	|R162, R165, R167
+	|R163, R164, R166
+	|☐
+	|
+MC-S05
+	|U106 (BUFF1)
+	|0x26
+	|R171, R173, R177
+	|R172, R174, R176
+	|☐
+	|
+MC-S06
+	|U66 (BUFF2)
+	|0x20
+	|R77, R78, R79
+	|R71, R72, R73
+	|☐
+	|
+MC-S07
+	|U67 (BUFF2)
+	|0x22
+	|R80, R75, R82
+	|R74, R81, R76
+	|☐
+	|
+MC-S08
+	|U107 (BUFF2)
+	|0x24
+	|R180, R183, R186
+	|R181, R182, R185
+	|☐
+	|
+MC-S09
+	|U108 (BUFF2)
+	|0x26
+	|R189, R191, R195
+	|R190, R192, R194
+	|☐
+	|
+
+BUFF1 and BUFF2 are separate I2C segments, switched by HI_S3 and LO_S3, so the repeated addresses do not clash. Other option parts to confirm:
+Table 12 – Matrix Card other option parts
+ID
+	|Item
+	|Required state
+	|OK
+	|
+MC-S10
+	|R123 to R130 (select pull-downs)
+	|Soldered. They hold the muxes at address 0 when the lines float.
+	|☐
+	|
+MC-S11
+	|R131 (LO_COM reference)
+	|Soldered, 100 Ω, 0.01%.
+	|☐
+	|
+MC-S12
+	|I2C pull-ups on the B side of U141 and U142 (NTS0102)
+	|2.2 kΩ, soldered.
+	|☐
+	|
+
+2.5 Powered rail checkpoints
+Table 13 – Matrix Card powered checks
+ID
+	|Check
+	|Expected
+	|Reading
+	|OK
+	|
+MC-P01
+	|+3V3 at CD74HC4051 VCC (pin 16) and MCP23017 VDD (pin 9)
+	|3.3 V ±5%.
+	|
+	|☐
+	|
+MC-P02
+	|Every mux E pin at idle
+	|3.3 V (all muxes disabled).
+	|
+	|☐
+	|
+MC-P03
+	|I2C scan with HI_S3 high, LO_S3 low (BUFF1)
+	|0x20, 0x21, 0x22, 0x24, 0x26.
+	|
+	|☐
+	|
+MC-P04
+	|I2C scan with HI_S3 low, LO_S3 high (BUFF2)
+	|0x20, 0x22, 0x24, 0x26.
+	|
+	|☐
+	|
+
+3. HV Card (IHT-MKI-HVC)
+The HV Card has no regulator and no drawn jumpers. It takes +5V_ISO and RET_ISO from a Control Card connector (J101 to J104) through its own J1001. Prove all low-voltage logic with the HV module off before enabling it.
+3.1 Power and ground arrangement checklist
+Table 14 – HV Card power and ground checklist
+ID
+	|Item
+	|Required state
+	|How to verify
+	|OK
+	|
+HV-J01
+	|Jumpers
+	|No jumpers are drawn on this card. Confirm none have been soldered.
+	|Visual.
+	|☐
+	|
+HV-J02
+	|J1001 logic supply
+	|+5V_ISO on pins 1 to 6 and RET_ISO on pins 9 to 14, from Control J101 to J104.
+	|Continuity on each J1001 pin (see HV-R03).
+	|☐
+	|
+HV-J03
+	|U401 CA05P-5 and D401
+	|U401 orientation correct, D401 cathode toward U401 VIN, C401 polarity correct.
+	|Visual.
+	|☐
+	|
+HV-J04
+	|First power-up
+	|U401 not soldered, or D401 desoldered, so no HV is possible.
+	|Visual. Solder U401 or D401 back only for the HV step.
+	|☐
+	|
+HV-J05
+	|Case_GND
+	|Tied to U401 CGND (pin 5) and to chassis as intended.
+	|HV-N04.
+	|☐
+	|
+HV-J06
+	|Card-select enable
+	|This card sees ISO_HV_CARD_EN1; the harness must route EN1 for card 1, EN2 for card 2, up to EN4.
+	|Harness check against the HV Card position.
+	|☐
+	|
+HV-J07
+	|Relays and 2N7002 drivers
+	|All soldered; no solder bridges on the relay rows.
+	|Visual.
+	|☐
+	|
+
+3.2 Connector J1001 pin map for power measurements
+The HV Card has one connector, J1001, a 2 × 25 header (Wurth 61205022021), so all measurements are on its pins. It is wired from Control J101 (HV Card 1) or J102 to J104 (HV Cards 2 to 4) through harnesses W101B and W102 to W104. Repeat Part A on every HV Card in use and write each reading in that card column.
+Table 15 – HV Card J1001 power pins
+Net (HV J1001)
+	|HV J1001 pins
+	|Comes from Control J101 to J104 pins
+	|
++5V_ISO
+	|1, 2, 3, 4, 5, 6
+	|1, 2, 3, 4 (pins 1 and 2 also feed 5 and 6)
+	|
+RET_ISO
+	|9, 10, 11, 12, 13, 14
+	|5, 6, 7, 8 (ISO_GND; pins 5 and 6 also feed 13 and 14)
+	|
+Not connected
+	|7, 8, 15, 16, 17
+	|—
+	|
+
+3.3 Power-off resistance checks on the connector pins
+Part A: J1001 pins, one column per HV Card.
+Table 16 – HV Card J1001 resistance checks
+ID
+	|Measure
+	|Red (+) pin
+	|Black (−) pin
+	|Expected (power off)
+	|Card 1
+	|Card 2
+	|Card 3
+	|Card 4
+	|OK
+	|
+HV-R01
+	|+5V_ISO to RET_ISO
+	|J1001 pin 1
+	|J1001 pin 9
+	|Not a short (no steady reading below about 10 Ω). Record.
+	|
+	|
+	|
+	|
+	|☐
+	|
+HV-R02
+	|+5V_ISO to RET_ISO, far pins
+	|J1001 pin 6
+	|J1001 pin 14
+	|Not a short.
+	|
+	|
+	|
+	|
+	|☐
+	|
+HV-R03
+	|Pin groups (continuity)
+	|Pins 1–6; 9–14
+	|Each group to itself
+	|Continuity inside each group, open between the two groups.
+	|
+	|
+	|
+	|
+	|☐
+	|
+HV-R04
+	|+5V_ISO to GNDPWR (HV return)
+	|J1001 pin 1
+	|HV return (U401 HV_RTN)
+	|Open or high.
+	|
+	|
+	|
+	|
+	|☐
+	|
+HV-R05
+	|RET_ISO to GNDPWR (HV return)
+	|J1001 pin 9
+	|HV return (U401 HV_RTN)
+	|Open (only C102, 100 nF, between them).
+	|
+	|
+	|
+	|
+	|☐
+	|
+HV-R06
+	|Case_GND to RET_ISO
+	|Case_GND
+	|J1001 pin 9
+	|Record. Case_GND ties to U401 CGND (pin 5), not necessarily to RET_ISO.
+	|
+	|
+	|
+	|
+	|☐
+	|
+
+Part B: on-board nodes (not connector pins). Measure each against J1001 pin 9 or pin 1 as shown.
+Table 17 – HV Card on-board node checks
+ID
+	|Measure
+	|Red (+) probe
+	|Black (−) probe
+	|Expected (power off)
+	|Reading
+	|OK
+	|
+HV-N01
+	|5 V test points
+	|J1001 pin 1
+	|TP_5V1, TP_5V2, TP_5V3, TP_5V4
+	|Continuity.
+	|
+	|☐
+	|
+HV-N02
+	|Ground test points
+	|J1001 pin 9
+	|TP_GND1, TP_GND2, TP_GND3, TP_GND4
+	|Continuity.
+	|
+	|☐
+	|
+HV-N03
+	|GNDA to RET_ISO
+	|Relay driver source or translator ground
+	|J1001 pin 9
+	|Record the value. The schematic calls GNDA the analog and relay ground and does not say how it joins RET_ISO.
+	|
+	|☐
+	|
+HV-N04
+	|Case_GND to U401 CGND
+	|Case_GND
+	|U401 pin 5
+	|Continuity (with U401 soldered).
+	|
+	|☐
+	|
+HV-N05
+	|HV output to GNDPWR
+	|U401 HV output
+	|HV return (U401 HV_RTN)
+	|Not a short, before any HV is applied.
+	|
+	|☐
+	|
+HV-N06
+	|Supply pins to +5V_ISO
+	|VDD of U101, U201, U301, U302, U501 to U508
+	|J1001 pin 1
+	|Continuity or very low resistance.
+	|
+	|☐
+	|
+HV-N07
+	|Relay outputs
+	|H_PWRn (TP1009 to TP1072)
+	|L_PWRn (TP1073 to TP1136)
+	|Open (all relays off). Spot-check each expander range.
+	|
+	|☐
+	|
+
+3.4 Other jumpers, straps and address resistors
+On the HV Card the strap columns are in the order A0, A1, A2. Pull-ups go to +5V_ISO and pull-downs to RET_ISO, all 4.7 kΩ. Eight expanders use all eight addresses, 0x20 to 0x27.
+Table 18 – HV Card MCP23017 address straps
+ID
+	|IC
+	|Address
+	|Solder
+	|Do not solder
+	|OK
+	|
+HV-S01
+	|U501
+	|0x20
+	|R502, R506, R511
+	|R501, R505, R510
+	|☐
+	|
+HV-S02
+	|U503
+	|0x21
+	|R519, R524, R529
+	|R520, R523, R528
+	|☐
+	|
+HV-S03
+	|U505
+	|0x22
+	|R538, R541, R547
+	|R537, R542, R503
+	|☐
+	|
+HV-S04
+	|U507
+	|0x23
+	|R555, R559, R565
+	|R556, R560, R564
+	|☐
+	|
+HV-S05
+	|U502
+	|0x24
+	|R504, R508, R513
+	|R546, R507, R514
+	|☐
+	|
+HV-S06
+	|U504
+	|0x25
+	|R521, R526, R531
+	|R522, R525, R532
+	|☐
+	|
+HV-S07
+	|U506
+	|0x26
+	|R540, R543, R549
+	|R539, R544, R550
+	|☐
+	|
+HV-S08
+	|U508
+	|0x27
+	|R557, R561, R567
+	|R558, R562, R568
+	|☐
+	|
+
+The U506 row is the solder pattern that gives the labelled 0x26. The schematic as drawn has R539, R543 and R550 soldered, which gives 0x23 and clashes with U507, so check this row first.
+Table 19 – HV Card other option parts
+ID
+	|Item
+	|Required state
+	|OK
+	|
+HV-S09
+	|R579 (2.2 kΩ to RET_ISO)
+	|Soldered. Holds U1001 OE low when this card enable is low.
+	|☐
+	|
+HV-S10
+	|I2C pull-ups on SDA1_ISO and SCL1_ISO
+	|Soldered.
+	|☐
+	|
+
+3.5 Powered rail checkpoints
+Table 20 – HV Card powered checks
+ID
+	|Check
+	|Expected
+	|Reading
+	|OK
+	|
+HV-P01
+	|TP_5V1 to TP_5V4 (HV module not enabled)
+	|5 V ±5%.
+	|
+	|☐
+	|
+HV-P02
+	|VDD of U101, U201, U301, U302, U501 to U508
+	|5 V.
+	|
+	|☐
+	|
+HV-P03
+	|V_PGM before any HV step
+	|0 V.
+	|
+	|☐
+	|
+HV-P04
+	|I2C scan with the card enabled
+	|Eight devices, 0x20 to 0x27.
+	|
+	|☐
+	|
+HV-P05
+	|After any HV test
+	|+500V decayed, discharged, and 0 V confirmed with a rated probe before touching.
+	|
+	|☐
+	|
+
+4. Sign-off
+Table 21 – Section sign-off
+Section
+	|All items passed
+	|Tester
+	|Date
+	|
+1. Control Card
+	|☐ Yes   ☐ No
+	|
+	|
+	|
+2. Matrix Card
+	|☐ Yes   ☐ No
+	|
+	|
+	|
+3. HV Card (position ___)
+	|☐ Yes   ☐ No
+	|
+	|
+	|
+

@@ -1,0 +1,91 @@
+/* Light Theme — Harness Tester (Phase 2 will expand this) */
+QMainWindow, QDialog, QWidget {
+    background-color: #F5F5F5;
+    color: #1C1C1C;
+}
+
+QMenuBar {
+    background-color: #FFFFFF;
+    color: #1C1C1C;
+    border-bottom: 1px solid #CCCCCC;
+}
+
+QMenuBar::item:selected {
+    background-color: #E0E0E0;
+}
+
+QMenu {
+    background-color: #FFFFFF;
+    border: 1px solid #CCCCCC;
+}
+
+QMenu::item:selected {
+    background-color: #0078D7;
+    color: #FFFFFF;
+}
+
+QTabWidget::pane {
+    border: 1px solid #CCCCCC;
+    background-color: #FFFFFF;
+}
+
+QTabBar::tab {
+    background-color: #E8E8E8;
+    color: #1C1C1C;
+    padding: 6px 14px;
+    border: 1px solid #CCCCCC;
+    border-bottom: none;
+}
+
+QTabBar::tab:selected {
+    background-color: #FFFFFF;
+    border-bottom: none;
+}
+
+QStatusBar {
+    background-color: #ECECEC;
+    color: #1C1C1C;
+    border-top: 1px solid #CCCCCC;
+}
+
+QGroupBox {
+    border: 1px solid #CCCCCC;
+    border-radius: 4px;
+    margin-top: 8px;
+    font-weight: bold;
+    color: #1C1C1C;
+}
+
+QGroupBox::title {
+    subcontrol-origin: margin;
+    left: 8px;
+    padding: 0 4px;
+}
+
+QPushButton {
+    background-color: #E8E8E8;
+    color: #1C1C1C;
+    border: 1px solid #CCCCCC;
+    border-radius: 4px;
+    padding: 4px 10px;
+}
+
+QPushButton:hover {
+    background-color: #D0D0D0;
+}
+
+QPushButton:disabled {
+    color: #AAAAAA;
+}
+
+QComboBox, QSpinBox, QDoubleSpinBox, QLineEdit {
+    background-color: #FFFFFF;
+    color: #1C1C1C;
+    border: 1px solid #CCCCCC;
+    border-radius: 3px;
+    padding: 2px 6px;
+}
+
+QSplitter::handle {
+    background-color: #CCCCCC;
+}

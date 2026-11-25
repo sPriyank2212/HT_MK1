@@ -1,0 +1,2727 @@
+diff --git a/Core/Inc/app/log.h b/Core/Inc/app/log.h
+index 7a803f8..67996a6 100644
+--- a/Core/Inc/app/log.h
++++ b/Core/Inc/app/log.h
+@@ -27,6 +27,8 @@ extern "C" {
+ #endif
+ 
+ #include "main.h"
++#include "i2c.h"
++#include "spi.h"
+ 
+ typedef enum
+ {
+@@ -42,7 +44,7 @@ typedef enum
+ #define LOG_LEVEL        LOG_INFO
+ #endif
+ #ifndef LOG_MSG_MAX
+-#define LOG_MSG_MAX      72U     /* max bytes per line incl. prefix + CRLF */
++#define LOG_MSG_MAX      112U    /* max bytes per line incl. prefix + CRLF */
+ #endif
+ #ifndef LOG_QUEUE_DEPTH
+ #define LOG_QUEUE_DEPTH  24U
+@@ -91,11 +93,60 @@ HAL_StatusTypeDef Log_ConsoleWrite(const uint8_t *data, uint16_t len, uint32_t t
+   */
+ UART_HandleTypeDef *Log_HwInit_Console(void);
+ 
+-#define LOG_E(tag, ...) do { if ((LOG_LEVEL) >= LOG_ERROR) Log_Write(LOG_ERROR, (tag), __VA_ARGS__); } while (0)
+-#define LOG_W(tag, ...) do { if ((LOG_LEVEL) >= LOG_WARN ) Log_Write(LOG_WARN , (tag), __VA_ARGS__); } while (0)
++/* Source location of the call site. GCC 12+ gives the bare file name. */
++#ifndef __FILE_NAME__
++#define __FILE_NAME__ __FILE__
++#endif
++
++/**
++  * @brief  Like Log_Write() but appends " @file:line" of the call site. The
++  *         location is reserved first, so a long message is cut, never the
++  *         location. LOG_E / LOG_W use this, so every error and warning in the
++  *         firmware says exactly where it was raised.
++  */
++void Log_WriteAt(LogLevel_t lvl, const char *file, int line, const char *tag, const char *fmt, ...);
++
++#define LOG_E(tag, ...) do { if ((LOG_LEVEL) >= LOG_ERROR) Log_WriteAt(LOG_ERROR, __FILE_NAME__, __LINE__, (tag), __VA_ARGS__); } while (0)
++#define LOG_W(tag, ...) do { if ((LOG_LEVEL) >= LOG_WARN ) Log_WriteAt(LOG_WARN , __FILE_NAME__, __LINE__, (tag), __VA_ARGS__); } while (0)
+ #define LOG_I(tag, ...) do { if ((LOG_LEVEL) >= LOG_INFO ) Log_Write(LOG_INFO , (tag), __VA_ARGS__); } while (0)
+ #define LOG_D(tag, ...) do { if ((LOG_LEVEL) >= LOG_DEBUG) Log_Write(LOG_DEBUG, (tag), __VA_ARGS__); } while (0)
+ 
++/* -------------------------------------------------------------------------- */
++/* Failure diagnostics (implemented in log.c)                                  */
++/*                                                                             */
++/* Every failed I2C / SPI transaction and every error return in the drivers,   */
++/* cards and test code is recorded with file, line, bus, device address,       */
++/* register, HAL status and the peripheral's own error code, and printed as    */
++/*   #E[tick] DIAG: mcp23017.c:55 i2c2 wr 0x22 r0x0A hal=1 e=0x04(NAK) x3      */
++/* Repeats of the same failure are counted and printed only at 1, 2, 4, 8 ...  */
++/* so a dead card cannot flood the console. Records made before the logger     */
++/* exists (Board_Init) are kept and printed by Diag_Go().                      */
++/* -------------------------------------------------------------------------- */
++
++/** @brief Forget the "first failure" record; call at the start of a bring-up. */
++void Diag_Mark(void);
++/** @brief The logger is up: print everything recorded so far, and print new records immediately. */
++void Diag_Go(void);
++/** @brief Record a failed I2C transaction. @p what e.g. "wr", "rd". */
++void Diag_I2c(const char *file, int line, const char *what, HAL_StatusTypeDef st,
++              const I2C_HandleTypeDef *h, uint8_t addr7, uint8_t reg);
++/** @brief Record a failed SPI transaction. */
++void Diag_Spi(const char *file, int line, const char *what, HAL_StatusTypeDef st,
++              const SPI_HandleTypeDef *h);
++/** @brief Record any other failure (logic error, NULL argument, timeout, bad ID ...). */
++void Diag_Fail(const char *file, int line, const char *what, HAL_StatusTypeDef st);
++/** @brief Diag_Fail() only if @p st is not HAL_OK; returns @p st unchanged. */
++HAL_StatusTypeDef Diag_Check(HAL_StatusTypeDef st, const char *file, int line, const char *what);
++/** @brief Text of the FIRST failure since Diag_Mark(), e.g. "mcp23017.c:55 i2c2 NAK"; "" if none. */
++void Diag_FirstText(char *buf, uint8_t n);
++
++/** Use as   st = DIAG_ST(MCP23017_Init(...), "matrix force exp");   */
++#define DIAG_ST(expr, what)  Diag_Check((expr), __FILE_NAME__, __LINE__, (what))
++/** Use as   return DIAG_RET(HAL_ERROR);   - records file:line and returns the status. */
++#define DIAG_RET(st)         Diag_Check((st), __FILE_NAME__, __LINE__, "return")
++/** Use as   DIAG_FAIL("bad id", HAL_ERROR);  */
++#define DIAG_FAIL(what, st)  Diag_Fail(__FILE_NAME__, __LINE__, (what), (st))
++
+ #ifdef __cplusplus
+ }
+ #endif
+diff --git a/Core/Inc/app/tasks.h b/Core/Inc/app/tasks.h
+index d88acff..4d6ff01 100644
+--- a/Core/Inc/app/tasks.h
++++ b/Core/Inc/app/tasks.h
+@@ -95,7 +95,9 @@ int Tasks_PostCommand(const TestCmd_t *cmd);
+ /**
+   * @brief  Raise a system fault; the safety task forces a safe state.
+   */
+-void Safety_SignalFault(const char *reason);
++void Safety_SignalFaultAt(const char *reason, const char *file, int line);
++/* Logs the reason with the file:line of the caller, then latches the fault. */
++#define Safety_SignalFault(reason) Safety_SignalFaultAt((reason), __FILE_NAME__, __LINE__)
+ 
+ /**
+   * @brief  Clear the fault latch (after the cause is handled).
+diff --git a/Core/Inc/bsp/board.h b/Core/Inc/bsp/board.h
+index cba9b72..1ab0aaa 100644
+--- a/Core/Inc/bsp/board.h
++++ b/Core/Inc/bsp/board.h
+@@ -49,6 +49,30 @@ extern "C" {
+ #define BOARD_VREF_HV         5.0f
+ #endif
+ 
++/* Matrix stage of Board_Init(): attempts and the delay between them (the Matrix
++ * Card can power up after the Control Card's firmware has started). */
++#ifndef BOARD_MATRIX_TRIES
++#define BOARD_MATRIX_TRIES      5
++#endif
++#ifndef BOARD_MATRIX_RETRY_MS
++#define BOARD_MATRIX_RETRY_MS   250
++#endif
++
++/** @brief Attempts the Matrix stage of Board_Init() needed (1 = first try worked). */
++uint8_t Board_MatrixTries(void);
++
++/* Boot-failure bus scans (Board_ScanI2c3Log / Board_ScanMatrixBusLog): each whole
++ * scan gives up after this many ms, and after this many consecutive HAL_BUSY
++ * answers, and reports why - a scan can only ever report, never hang. They run
++ * from the low-priority tScan thread once the kernel is up (tasks.c), after
++ * SCAN_START_DELAY_MS, so the GUI handshake is answered first. */
++#ifndef BOARD_SCAN_BUDGET_MS
++#define BOARD_SCAN_BUDGET_MS  1500
++#endif
++#ifndef BOARD_SCAN_BUSY_MAX
++#define BOARD_SCAN_BUSY_MAX   3
++#endif
++
+ /* Global instances (defined in board.c). */
+ extern MatrixCard_t      g_matrix;
+ extern ControlFrontend_t g_frontend;
+@@ -73,6 +97,59 @@ HAL_StatusTypeDef Board_Init(void);
+   */
+ uint8_t Board_IsReady(void);
+ 
++/**
++  * @brief  Name of the Board_Init() stage that failed ("matrix", "ads124s08",
++  *         "frontend"), or NULL if init succeeded / has not run.
++  * @note   Board_Init() stops at the first failing stage among matrix / ads124s08 /
++  *         frontend. HV cards are not in this list: they are optional, see
++  *         Board_HvFitted().
++  */
++const char *Board_InitFailStage(void);
++
++/**
++  * @brief  Human-readable failure point for logs/replies, e.g. "matrix/U20@0x27",
++  *         "matrix/force-exp@0x22", "ads124s08" or "frontend". "none" if init succeeded.
++  * @param  buf : [out] destination.
++  * @param  n   : [in]  its size (>= 28 recommended).
++  */
++void Board_InitFailText(char *buf, uint8_t n);
++
++/**
++  * @brief  Probe every address 0x08-0x77 on I2C3 (U20's local bus) and log which
++  *         ones ACK. For the boot failure path: tells a wrong address strap
++  *         (something answers elsewhere) from a dead/unpowered/absent U20
++  *         (nothing answers). Address-only probes; needs the logger running.
++  */
++void Board_ScanI2c3Log(void);
++
++/**
++  * @brief  Scan the shared I2C2 bus under each of the four U20 buffer-enable
++  *         combinations and log who answers - for a Matrix-stage failure past
++  *         U20. Separates "nothing reaches the card" (none in every combination)
++  *         from "wrong enable bit / polarity" (answers under one combination).
++  *         Leaves the buffers disabled and the Matrix segment released.
++  */
++void Board_ScanMatrixBusLog(void);
++
++/**
++  * @brief  Whether HV card @p idx (0 = HV1 ... ) came up in Board_Init().
++  * @note   A missing HV card does not make Board_IsReady() false: continuity and
++  *         resistance (Matrix Card + control front end only) still run. Anything
++  *         that touches an HV card must check this first - an unfitted card has
++  *         no valid driver state and shares the Matrix Card's bus enable (EN1).
++  * @retval 1 if fitted and initialised, 0 if absent/failed or @p idx out of range.
++  */
++uint8_t Board_HvFitted(uint8_t idx);
++
++/** @brief HAL status HV card @p idx returned at init (0 = OK, 1 = ERROR, 2 = BUSY, 3 = TIMEOUT). */
++uint8_t Board_HvStatus(uint8_t idx);
++
++/** @brief Non-zero if at least one HV card is fitted. */
++uint8_t Board_HvAnyFitted(void);
++
++/** @brief HAL status the failing stage returned (1 = ERROR, 2 = BUSY, 3 = TIMEOUT); 0 if none. */
++uint8_t Board_InitFailStatus(void);
++
+ /**
+   * @brief  Wait for hardware to settle, yielding the CPU if the RTOS is running.
+   * @note   Use this instead of HAL_Delay() anywhere inside a test. HAL_Delay
+@@ -98,7 +175,7 @@ typedef struct
+ } BoardBusEntry_t;
+ 
+ /* Matrix Card: 9 expanders (U101/102/105/106 force, U66/67/69/107/108
+- * sense) + U21 (local, no bus-claim) + the ADS124S08 itself (SPI, probed by
++ * sense) + U20 (local, no bus-claim) + the ADS124S08 itself (SPI, probed by
+  * identity rather than an I2C ACK) = 11, plus 8 relay expanders (4 HS + 4 LS)
+  * per HV card. */
+ #define BOARD_BUS_SCAN_MAX  (11U + 8U * (uint8_t)BOARD_HV_COUNT)
+diff --git a/Core/Inc/cards/matrix_card.h b/Core/Inc/cards/matrix_card.h
+index 14b15ab..91980f3 100644
+--- a/Core/Inc/cards/matrix_card.h
++++ b/Core/Inc/cards/matrix_card.h
+@@ -28,7 +28,7 @@
+   *
+   *          Exactly one segment may be enabled at a time. Every expander access
+   *          therefore costs a segment selection first - which is itself an I2C
+-  *          write to U21 on the Control Card.
++  *          write to U20 on the Control Card.
+   *
+   *          ENABLE BIT ORDER IS BYTE-SWAPPED. Within each 16-enable block the
+   *          schematic wires GPB0..7 to EN1..8 and GPA0..7 to EN9..16. In the
+@@ -77,11 +77,25 @@ typedef enum
+   MATRIX_SEG_SENSE = 1    /* BUFF2, OE = LO_S3 */
+ } MatrixSeg_t;
+ 
+-/* BUFF1 - force enables. Straps read off Matrix_Card 2 sheet 3. */
++/* BUFF1 - force enables, plus U69 (strap 1) which shares this segment.
++ * Straps read off the fitted/DNP address resistors of Matrix_Card-9 sheet 3
++ * (A2,A1,A0 column order, DNP = crossed) and cross-checked 2026-11-20 against
++ * the MCP23017 datasheet (7-bit address = 0100 A2 A1 A0 = 0x20 + A2:A1:A0), the
++ * hardware checklist (Table 11) and the bus scan of 2026-11-19 17:52, where the
++ * force segment answered exactly 0x20 0x21 0x22 0x24 0x26.
++ * NOTE the force-sheet address labels (0x01000010, 0x01000100, 0x01000110) carry
++ * one 0 too many (8 digits against the sense sheet's 7); read as 8-bit
++ * "control byte" values they give 0x21/0x22/0x23, which is what this file used
++ * before 2026-11-20 and is wrong. The resistors decide:
++ *   U101 R113/R114/R115 fitted (pull-downs)          A=000 -> 0x20
++ *   U69  R91/R93 pull-downs, R95 pull-up   (sheet 9) A=001 -> 0x21
++ *   U102 R116 down, R111 up, R118 down               A=010 -> 0x22
++ *   U105 R162 up, R165 down, R167 down               A=100 -> 0x24
++ *   U106 R171 up, R173 up, R177 down                 A=110 -> 0x26         */
+ #define MATRIX_HI_EN_LO_STRAP    0U   /* U101 0x20  HI_EN1..16  */
+-#define MATRIX_LO_EN_LO_STRAP    1U   /* U102 0x21  LO_EN1..16  */
+-#define MATRIX_HI_EN_HI_STRAP    2U   /* U105 0x22  HI_EN17..32 */
+-#define MATRIX_LO_EN_HI_STRAP    3U   /* U106 0x23  LO_EN17..32 */
++#define MATRIX_LO_EN_LO_STRAP    2U   /* U102 0x22  LO_EN1..16  */
++#define MATRIX_HI_EN_HI_STRAP    4U   /* U105 0x24  HI_EN17..32 */
++#define MATRIX_LO_EN_HI_STRAP    6U   /* U106 0x26  LO_EN17..32 */
+ 
+ /* BUFF2 - sense enables. Straps confirmed 2026-08-11 against Matrix_Card-7.pdf
+  * sheet 9 (HW-12): each expander's binary address label was read directly off
+@@ -95,25 +109,26 @@ typedef enum
+ 
+ /* U69, the ADS124S08 control expander.
+  *
+- * RESOLVED 2026-08-11 (HW-12): the schematic swap that brought in
+- * Matrix_Card-7.pdf also moved U69 to BUFF2 at strap 1 (0x21), sitting between
+- * U66 (0x20) and U67 (0x22) - it no longer collides with U101 (which stays at
+- * 0x20 on BUFF1, the force segment). Confirmed by reading both sheets, not
+- * assumed. This layer never touches U69 - it belongs to the ADS124S08 driver
++ * CORRECTED 2026-11-20: U69 is on BUFF1 (the force segment) at strap 1 (0x21),
++ * NOT on BUFF2 as Matrix_Card-7 drew it (HW-12, 2026-08-11). Matrix_Card-9 sheet 9
++ * shows U69 on BUFF1_SDA/BUFF1_SCK; the bench scan of 2026-11-19 found 0x21 only
++ * with the force buffer on; and the firmware's lookup on the sense segment NAKed
++ * (init failed at ads124s08). On BUFF1 it does not clash with U101 (0x20) or
++ * U102 (0x22). This layer never touches U69 - it belongs to the ADS124S08 driver
+  * (bsp/board.c) - but the strap is recorded here since it is the matrix's own
+- * segment-select (U21/BUFF2) that every U69 access must go through first. */
++ * segment-select (U20/BUFF1) that every U69 access must go through first. */
+ #ifndef MATRIX_ADCCTL_SEG
+-#define MATRIX_ADCCTL_SEG        MATRIX_SEG_SENSE  /* BUFF2, confirmed */
++#define MATRIX_ADCCTL_SEG        MATRIX_SEG_FORCE  /* BUFF1, Matrix_Card-9 + bench */
+ #endif
+ #ifndef MATRIX_ADCCTL_STRAP
+ #define MATRIX_ADCCTL_STRAP      1U                /* -> 0x21 on that segment */
+ #endif
+ 
+ /* -------------------------------------------------------------------------- */
+-/* U21 - channel address + segment select, on the Control Card (I2C3)         */
++/* U20 - channel address + segment select, on the Control Card (I2C3)         */
+ /* -------------------------------------------------------------------------- */
+ 
+-/* Control_Card-4 sheet 11 wires U21 GPA0..GPA7 to
++/* Control_Card-4 sheet 11 wires U20 GPA0..GPA7 to
+  *   LO_S1, LO_S2, LO_S3, LO_S4, HI_S1, HI_S2, HI_S3, HI_S4
+  * and the Matrix Card names the same eight wires LO_S0..S3 / HI_S0..S3, i.e.
+  * the two cards number them from a different base. Mapping Control Sn+1 to
+@@ -138,18 +153,21 @@ typedef enum
+ #define MATRIX_SEG_OE_ACTIVE_HIGH  1
+ #endif
+ 
+-/* U21's own strap. Not annotated - confirm by scan. U21 is local to the
+- * Control Card on I2C3 and does NOT share a bus with the Matrix expanders -
+- * see the bus-sharing note above matrix_card_t below. */
++/* U20's strap. CONFIRMED against Control_Card-6 sheet 11 (2026-11): the symbol's
++ * address box reads 0x0100000, i.e. A2:A1:A0 = 000 -> 7-bit 0x20. (Until
++ * 2026-11-16 this was assumed to be strap 7 / 0x27 and was never right: U20 never
++ * answered, MatrixCard_Init() failed at its first step and Board_Init() refused
++ * every hardware command.) U20 is local to the Control Card on I2C3 and does NOT
++ * share a bus with the Matrix expanders - see the bus-sharing note below. */
+ #ifndef MATRIX_SEL_MCP_STRAP
+-#define MATRIX_SEL_MCP_STRAP     7U   /* -> 0x27 (assumed) */
++#define MATRIX_SEL_MCP_STRAP     0U   /* -> 0x20 (Control_Card-6 sheet 11) */
+ #endif
+ 
+ /* -------------------------------------------------------------------------- */
+ /* Card-level bus sharing (confirmed 2026-08-11, see Doc/i2c_bus_sharing.md)   */
+ /* -------------------------------------------------------------------------- */
+ 
+-/* The Matrix Card's own onboard expanders (everything above except U21, which
++/* The Matrix Card's own onboard expanders (everything above except U20, which
+  * is local to the Control Card on I2C3) sit on the SAME isolated I2C bus as
+  * HV Card 1 - confirmed against real hardware, not inferred. Every card on
+  * that bus straps its expanders to the same 0x20..0x27, so the Matrix Card
+@@ -179,15 +197,15 @@ typedef struct
+   MCP23017_t hi_sns[MATRIX_EXP_PER_BANK];  /* HI_SENSE_EN1..16, 17..32 */
+   MCP23017_t lo_sns[MATRIX_EXP_PER_BANK];  /* LO_SENSE_EN1..16, 17..32 */
+ 
+-  MCP23017_t  sel;          /* U21 - channel address + segment OEs       */
+-  uint16_t    sel_cache;    /* shadow of the U21 output word             */
++  MCP23017_t  sel;          /* U20 - channel address + segment OEs       */
++  uint16_t    sel_cache;    /* shadow of the U20 output word             */
+   MatrixSeg_t seg;          /* which segment is currently enabled        */
+   uint8_t     sense_paired; /* mirror every enable onto the sense array  */
+ 
+   /* This card's segment enable on the shared I2C bus (HV_Card_EN1) - must be
+    * asserted before, and deasserted after, every access to hi_en/lo_en/
+    * hi_sns/lo_sns above (and, via MatrixCard_BusClaim/Release, U69 - see
+-   * bsp/board.c). Never needed for sel (U21), which is local to I2C3. */
++   * bsp/board.c). Never needed for sel (U20), which is local to I2C3. */
+   GPIO_TypeDef *en_port;    uint16_t en_pin;
+ } MatrixCard_t;
+ 
+@@ -196,13 +214,13 @@ typedef struct
+ /* -------------------------------------------------------------------------- */
+ 
+ /**
+-  * @brief  Bring up U21 and all eight enable expanders, and open every mux.
++  * @brief  Bring up U20 and all eight enable expanders, and open every mux.
+   * @note   Walks both segments in turn. Leaves the force segment selected and
+   *         sense pairing OFF. Claims the shared-bus enable (@p en_port/
+   *         @p en_pin) around the expander bring-up, same as every other
+   *         function that touches hi_en/lo_en/hi_sns/lo_sns.
+   * @param  m          instance
+-  * @param  hi2c_local  I2C bus for U21 only (I2C3 - local to the Control Card)
++  * @param  hi2c_local  I2C bus for U20 only (I2C3 - local to the Control Card)
+   * @param  hi2c_shared I2C bus for the eight Matrix-card expanders (shared
+   *                      with the HV cards - see the header note above)
+   * @param  en_port/en_pin  this card's segment-enable line on the shared bus
+@@ -213,6 +231,11 @@ HAL_StatusTypeDef MatrixCard_Init(MatrixCard_t *m, I2C_HandleTypeDef *hi2c_local
+                                   I2C_HandleTypeDef *hi2c_shared,
+                                   GPIO_TypeDef *en_port, uint16_t en_pin);
+ 
++/** @brief Last step MatrixCard_Init() reached ("U20", "flush", "seg-force", "force-exp", "seg-sense", "sense-exp", "seg-final"). Diagnostics. */
++const char *MatrixCard_InitStep(void);
++/** @brief 7-bit address of the expander that step was talking to (0 if not an expander step). */
++uint8_t MatrixCard_InitAddr(void);
++
+ /**
+   * @brief  Put the Matrix Card, and only the Matrix Card, on the shared bus.
+   * @note   Public because U69 (the ADS124S08 control expander) sits on this
+@@ -229,7 +252,7 @@ void MatrixCard_BusRelease(MatrixCard_t *m);
+ 
+ /**
+   * @brief  Enable exactly one I2C segment. No-op if already selected.
+-  * @note   Costs one I2C write to U21. Everything that touches an expander must
++  * @note   Costs one I2C write to U20. Everything that touches an expander must
+   *         go through here first.
+   */
+ HAL_StatusTypeDef MatrixCard_SelectSegment(MatrixCard_t *m, MatrixSeg_t seg);
+@@ -244,7 +267,7 @@ HAL_StatusTypeDef MatrixCard_SelectSegment(MatrixCard_t *m, MatrixSeg_t seg);
+   *         expander. Call this BEFORE raising a line shared with the Matrix
+   *         (hv_card.c does, through HvCardCfg_t.pre_enable). The next
+   *         MatrixCard_SelectSegment() re-selects normally. Local to the Control
+-  *         Card (U21 on I2C3): needs no bus claim.
++  *         Card (U20 on I2C3): needs no bus claim.
+   * @retval HAL_OK on success (also when already off), HAL_ERROR on NULL, else the
+   *         propagated I2C status.
+   */
+@@ -271,13 +294,13 @@ HAL_StatusTypeDef MatrixCard_BankOff(MatrixCard_t *m, MatrixBank_t bank);
+ /**
+   * @brief  Connect one harness pin (1..256) to the given bank's common bus.
+   *         Break-before-make: the bank is opened, the shared 3-bit channel
+-  *         address is driven via U21, then exactly one enable is asserted.
++  *         address is driven via U20, then exactly one enable is asserted.
+   */
+ HAL_StatusTypeDef MatrixCard_SelectPin(MatrixCard_t *m, MatrixBank_t bank, uint16_t pin);
+ 
+ /**
+   * @brief  Connect a HI pin and a LO pin. Both channel addresses live in one
+-  *         U21 byte, so they are staged and flushed together.
++  *         U20 byte, so they are staged and flushed together.
+   */
+ HAL_StatusTypeDef MatrixCard_ConnectPair(MatrixCard_t *m, uint16_t hi_pin, uint16_t lo_pin);
+ 
+diff --git a/Core/Src/app/log.c b/Core/Src/app/log.c
+index 9bce5a5..bbd777d 100644
+--- a/Core/Src/app/log.c
++++ b/Core/Src/app/log.c
+@@ -85,28 +85,31 @@ HAL_StatusTypeDef Log_ConsoleWrite(const uint8_t *data, uint16_t len, uint32_t t
+ 
+ /**
+   * @brief  Format one log line and enqueue it for the drain task.
+-  * @note   Builds "<L>[tick] tag: <message>\r\n", clamped to LOG_MSG_MAX, then
+-  *         posts it non-blocking: if the queue is full the line is dropped
+-  *         rather than stalling the caller, so this is safe from an ISR. No-op
+-  *         if the logger has not been initialised. Prefer the LOG_x() macros.
+-  * @param  lvl : [in] severity level (selects the prefix character).
+-  * @param  tag : [in] short subsystem tag; NULL is treated as empty.
+-  * @param  fmt : [in] printf-style format string for the message body.
+-  * @param  ... : [in] arguments consumed by @p fmt.
+-  * @retval None
++  * @note   Builds "#<L>[tick] tag: <message> @file:line\r\n", clamped to
++  *         LOG_MSG_MAX. The " @file:line" tail is reserved first, so a long
++  *         message is truncated rather than losing the location. Posted
++  *         non-blocking: if the queue is full the line is dropped rather than
++  *         stalling the caller, so this is safe from an ISR. No-op if the
++  *         logger has not been initialised.
++  * @param  lvl  : [in] severity level (selects the prefix character).
++  * @param  file : [in] source file name, or NULL for no location tail.
++  * @param  line : [in] source line.
++  * @param  tag  : [in] short subsystem tag; NULL is treated as empty.
++  * @param  fmt  : [in] printf-style format string for the message body.
++  * @param  ap   : [in] arguments consumed by @p fmt.
+   */
+-void Log_Write(LogLevel_t lvl, const char *tag, const char *fmt, ...)
++static void log_vemit(LogLevel_t lvl, const char *file, int line,
++                      const char *tag, const char *fmt, va_list ap)
+ {
+   LogMsg_t m;
+-  int n;
+-  va_list ap;
++  char tail[32];
++  int n, tl = 0, room, k;
+ 
+   if (s_logq == NULL)
+   {
+     return;
+   }
+ 
+-  /* Prefix: "<L>[tick] tag: " */
+   /* Leading '#' marks a human-readable log line for the GUI protocol - see
+    * Doc/GUI_development_brief.md 3.1. Anything not starting '<' or '!' is
+    * display-only, and the '#' makes that explicit rather than implied. */
+@@ -122,18 +125,31 @@ void Log_Write(LogLevel_t lvl, const char *tag, const char *fmt, ...)
+     n = (int)(sizeof(m.buf) - 3);
+   }
+ 
+-  va_start(ap, fmt);
+-  n += vsnprintf(&m.buf[n], sizeof(m.buf) - (size_t)n - 2U, fmt, ap);
+-  va_end(ap);
++  tail[0] = '\0';
++  if (file != NULL)
++  {
++    tl = snprintf(tail, sizeof(tail), " @%s:%d", file, line);
++    if (tl < 0) { tl = 0; tail[0] = '\0'; }
++    if (tl > (int)sizeof(tail) - 1) { tl = (int)sizeof(tail) - 1; }
++  }
+ 
+-  if (n < 0)
++  room = (int)sizeof(m.buf) - 2 - n - tl;     /* body bytes, leaving CRLF + tail */
++  if (room < 0)
++  {
++    room = 0;
++  }
++  k = vsnprintf(&m.buf[n], (size_t)room + 1U, fmt, ap);
++  if (k < 0)
+   {
+     return;
+   }
+-  if (n > (int)(sizeof(m.buf) - 3))
++  if (k > room)
+   {
+-    n = (int)(sizeof(m.buf) - 3);
++    k = room;
+   }
++  n += k;
++  memcpy(&m.buf[n], tail, (size_t)tl);
++  n += tl;
+   m.buf[n++] = '\r';
+   m.buf[n++] = '\n';
+   m.len = (uint8_t)n;
+@@ -142,6 +158,228 @@ void Log_Write(LogLevel_t lvl, const char *tag, const char *fmt, ...)
+   (void)osMessageQueuePut(s_logq, &m, 0U, 0U);
+ }
+ 
++void Log_Write(LogLevel_t lvl, const char *tag, const char *fmt, ...)
++{
++  va_list ap;
++  va_start(ap, fmt);
++  log_vemit(lvl, NULL, 0, tag, fmt, ap);
++  va_end(ap);
++}
++
++void Log_WriteAt(LogLevel_t lvl, const char *file, int line, const char *tag,
++                 const char *fmt, ...)
++{
++  va_list ap;
++  va_start(ap, fmt);
++  log_vemit(lvl, file, line, tag, fmt, ap);
++  va_end(ap);
++}
++
++/* ========================================================================== */
++/* Failure diagnostics                                                         */
++/* ========================================================================== */
++
++#define DIAG_SITES  12U
++
++typedef enum { DK_GENERIC = 0, DK_I2C = 1, DK_SPI = 2 } DiagKind_t;
++
++typedef struct
++{
++  const char *file;
++  const char *what;
++  uint16_t    line;
++  uint8_t     kind;
++  uint8_t     hal;
++  uint8_t     bus;     /* I2C2 -> 2, I2C3 -> 3, SPI1..3 -> 1..3, else 0 */
++  uint8_t     addr;
++  uint8_t     reg;
++  uint32_t    err;     /* the peripheral's ErrorCode */
++  uint32_t    count;
++  uint32_t    printed; /* count at the last print */
++  uint8_t     used;
++} DiagSite_t;
++
++static DiagSite_t s_site[DIAG_SITES];
++static uint8_t    s_site_next;
++static uint8_t    s_diag_live;
++static DiagSite_t s_first;
++static uint8_t    s_first_valid;
++
++static const char *diag_i2c_err(uint32_t e)
++{
++  if ((e & HAL_I2C_ERROR_AF) != 0U)      { return "NAK"; }
++  if ((e & HAL_I2C_ERROR_TIMEOUT) != 0U) { return "TIMEOUT"; }
++  if ((e & HAL_I2C_ERROR_ARLO) != 0U)    { return "ARLO"; }
++  if ((e & HAL_I2C_ERROR_BERR) != 0U)    { return "BERR"; }
++  if ((e & HAL_I2C_ERROR_OVR) != 0U)     { return "OVR"; }
++  return (e == 0U) ? "none" : "ERR";
++}
++
++static void diag_print(const DiagSite_t *r, uint32_t count)
++{
++  char rep[16];
++  rep[0] = '\0';
++  if (count > 1U)
++  {
++    (void)snprintf(rep, sizeof(rep), " x%lu", (unsigned long)count);
++  }
++  switch (r->kind)
++  {
++    case DK_I2C:
++      Log_Write(LOG_ERROR, "DIAG", "%s:%u i2c%u %s 0x%02X r0x%02X hal=%u e=0x%02lX(%s)%s",
++                r->file, (unsigned)r->line, (unsigned)r->bus, r->what,
++                (unsigned)r->addr, (unsigned)r->reg, (unsigned)r->hal,
++                (unsigned long)r->err, diag_i2c_err(r->err), rep);
++      break;
++    case DK_SPI:
++      Log_Write(LOG_ERROR, "DIAG", "%s:%u spi%u %s hal=%u e=0x%02lX%s",
++                r->file, (unsigned)r->line, (unsigned)r->bus, r->what,
++                (unsigned)r->hal, (unsigned long)r->err, rep);
++      break;
++    default:
++      Log_Write(LOG_ERROR, "DIAG", "%s:%u %s hal=%u%s",
++                r->file, (unsigned)r->line, r->what, (unsigned)r->hal, rep);
++      break;
++  }
++}
++
++static void diag_record(const DiagSite_t *in)
++{
++  DiagSite_t snap;
++  uint32_t   primask = __get_PRIMASK();
++  uint8_t    i, hit = 0U, idx = 0U, emit = 0U;
++
++  __disable_irq();
++  for (i = 0U; i < DIAG_SITES; i++)
++  {
++    const DiagSite_t *x = &s_site[i];
++    if (x->used != 0U && x->file == in->file && x->line == in->line &&
++        x->hal == in->hal && x->addr == in->addr && x->reg == in->reg &&
++        x->err == in->err && x->what == in->what)
++    {
++      hit = 1U;
++      idx = i;
++      break;
++    }
++  }
++  if (hit == 0U)
++  {
++    idx = s_site_next;
++    s_site_next = (uint8_t)((s_site_next + 1U) % DIAG_SITES);
++    s_site[idx] = *in;
++    s_site[idx].used = 1U;
++    s_site[idx].count = 0U;
++    s_site[idx].printed = 0U;
++  }
++  s_site[idx].count++;
++  if (s_first_valid == 0U)
++  {
++    s_first = s_site[idx];
++    s_first_valid = 1U;
++  }
++  /* Print the 1st, 2nd, 4th, 8th ... occurrence of the same failure. */
++  emit = (uint8_t)((s_site[idx].count & (s_site[idx].count - 1U)) == 0U);
++  if (emit != 0U && s_diag_live != 0U)
++  {
++    s_site[idx].printed = s_site[idx].count;
++  }
++  snap = s_site[idx];
++  if (primask == 0U)
++  {
++    __enable_irq();
++  }
++
++  if (emit != 0U && s_diag_live != 0U)
++  {
++    diag_print(&snap, snap.count);
++  }
++}
++
++void Diag_Mark(void)
++{
++  s_first_valid = 0U;
++}
++
++void Diag_Go(void)
++{
++  uint8_t i;
++  s_diag_live = 1U;
++  for (i = 0U; i < DIAG_SITES; i++)
++  {
++    if (s_site[i].used != 0U && s_site[i].count > s_site[i].printed)
++    {
++      s_site[i].printed = s_site[i].count;
++      diag_print(&s_site[i], s_site[i].count);
++    }
++  }
++}
++
++void Diag_I2c(const char *file, int line, const char *what, HAL_StatusTypeDef st,
++              const I2C_HandleTypeDef *h, uint8_t addr7, uint8_t reg)
++{
++  DiagSite_t r = {0};
++  r.file = file; r.line = (uint16_t)line; r.what = what; r.kind = DK_I2C;
++  r.hal = (uint8_t)st; r.addr = addr7; r.reg = reg;
++  r.bus = (h == &hi2c2) ? 2U : (h == &hi2c3) ? 3U : 0U;
++  r.err = (h != NULL) ? h->ErrorCode : 0U;
++  diag_record(&r);
++}
++
++void Diag_Spi(const char *file, int line, const char *what, HAL_StatusTypeDef st,
++              const SPI_HandleTypeDef *h)
++{
++  DiagSite_t r = {0};
++  r.file = file; r.line = (uint16_t)line; r.what = what; r.kind = DK_SPI;
++  r.hal = (uint8_t)st;
++  r.bus = (h == &hspi1) ? 1U : (h == &hspi2) ? 2U : (h == &hspi3) ? 3U : 0U;
++  r.err = (h != NULL) ? h->ErrorCode : 0U;
++  diag_record(&r);
++}
++
++void Diag_Fail(const char *file, int line, const char *what, HAL_StatusTypeDef st)
++{
++  DiagSite_t r = {0};
++  r.file = file; r.line = (uint16_t)line; r.what = what; r.kind = DK_GENERIC;
++  r.hal = (uint8_t)st;
++  diag_record(&r);
++}
++
++HAL_StatusTypeDef Diag_Check(HAL_StatusTypeDef st, const char *file, int line, const char *what)
++{
++  if (st != HAL_OK)
++  {
++    Diag_Fail(file, line, what, st);
++  }
++  return st;
++}
++
++void Diag_FirstText(char *buf, uint8_t n)
++{
++  if (buf == NULL || n == 0U)
++  {
++    return;
++  }
++  buf[0] = '\0';
++  if (s_first_valid == 0U)
++  {
++    return;
++  }
++  switch (s_first.kind)
++  {
++    case DK_I2C:
++      (void)snprintf(buf, n, "%s:%u i2c%u %s", s_first.file, (unsigned)s_first.line,
++                     (unsigned)s_first.bus, diag_i2c_err(s_first.err));
++      break;
++    case DK_SPI:
++      (void)snprintf(buf, n, "%s:%u spi%u e=%lX", s_first.file, (unsigned)s_first.line,
++                     (unsigned)s_first.bus, (unsigned long)s_first.err);
++      break;
++    default:
++      (void)snprintf(buf, n, "%s:%u", s_first.file, (unsigned)s_first.line);
++      break;
++  }
++}
++
+ /**
+   * @brief  Logger drain thread: block on the queue and transmit each line.
+   * @note   Runs forever; the only place that touches the UART for logging, so
+diff --git a/Core/Src/app/proto.c b/Core/Src/app/proto.c
+index 986780d..5793587 100644
+--- a/Core/Src/app/proto.c
++++ b/Core/Src/app/proto.c
+@@ -113,10 +113,12 @@ static void proto_emit(char mark, const char *fmt, ...)
+   * @param  text : [in] short human-readable explanation.
+   * @retval None
+   */
+-static void proto_err(const char *code, const char *text)
++static void proto_err_at(const char *code, const char *text, const char *file, int line)
+ {
++  Log_WriteAt(LOG_WARN, file, line, "PROTO", "ERR %s %s", code, text);
+   proto_emit('<', "ERR %s %s", code, text);
+ }
++#define proto_err(code, text) proto_err_at((code), (text), __FILE_NAME__, __LINE__)
+ 
+ void Proto_EvtProgress(uint16_t done, uint16_t total)
+ {
+@@ -413,7 +415,32 @@ static int proto_hw_ready(void)
+ {
+   if (Board_IsReady() == 0U)
+   {
+-    proto_err("EHW", "board init failed - card missing or unseated");
++    char where[28];
++    char site[36];
++    Board_InitFailText(where, (uint8_t)sizeof where);
++    Diag_FirstText(site, (uint8_t)sizeof site);
++    LOG_W("BOARD", "refused: init failed at %s (hal=%u) first: %s", where,
++          (unsigned)Board_InitFailStatus(), site);
++    proto_emit('<', "ERR EHW board init failed at %s (hal=%u) %s",
++               where, (unsigned)Board_InitFailStatus(), site);
++    return 0;
++  }
++  return 1;
++}
++
++/**
++  * @brief  Refuse an HV command with ERR EHW if no HV card came up at boot.
++  * @note   Continuity and resistance do not need an HV card, so Board_IsReady()
++  *         stays true without one; arming or running insulation does need it.
++  * @retval Non-zero if at least one HV card is fitted, 0 if ERR EHW was sent.
++  */
++static int proto_hv_fitted(void)
++{
++  if (Board_HvAnyFitted() == 0U)
++  {
++    LOG_W("BOARD", "HV command refused: no HV card fitted (hv1 hal=%u)",
++          (unsigned)Board_HvStatus(0U));
++    proto_emit('<', "ERR EHW no HV card fitted (hv1 hal=%u)", (unsigned)Board_HvStatus(0U));
+     return 0;
+   }
+   return 1;
+@@ -590,7 +617,11 @@ static void proto_exec(char *line)
+     {
+       /* Arming is refused unless the harness has been moved to the HV fixture.
+        * The GUI enforces this too, but it must not be the only thing that does. */
+-      if (s_fixture != PROTO_FIXTURE_HV)
++      if (proto_hv_fitted() == 0)
++      {
++        /* ERR EHW already sent: there is no HV card to arm for. */
++      }
++      else if (s_fixture != PROTO_FIXTURE_HV)
+       {
+         proto_err("EFIXTURE", "move harness to the HV fixture");
+       }
+@@ -604,7 +635,7 @@ static void proto_exec(char *line)
+     else if (strcmp(t[1], "RUN") == 0)
+     {
+       if (s_armed == 0U) { proto_err("ENOTARMED", "INSUL ARM first"); }
+-      else if (proto_hw_ready() != 0) { proto_post_run(CMD_INSUL_RUN, 0U); }
++      else if (proto_hw_ready() != 0 && proto_hv_fitted() != 0) { proto_post_run(CMD_INSUL_RUN, 0U); }
+     }
+     else
+     {
+diff --git a/Core/Src/app/tasks.c b/Core/Src/app/tasks.c
+index 8c567d8..4e03926 100644
+--- a/Core/Src/app/tasks.c
++++ b/Core/Src/app/tasks.c
+@@ -113,10 +113,10 @@ static void Ads1232BenchTask(void *arg)
+   * @param  reason : [in] short human-readable cause; NULL logs as "?".
+   * @retval None
+   */
+-void Safety_SignalFault(const char *reason)
++void Safety_SignalFaultAt(const char *reason, const char *file, int line)
+ {
+   s_fault = 1U;
+-  LOG_E("SAFE", "fault: %s", (reason != NULL) ? reason : "?");
++  Log_WriteAt(LOG_ERROR, file, line, "SAFE", "fault: %s", (reason != NULL) ? reason : "?");
+ }
+ 
+ /**
+@@ -142,6 +142,7 @@ static void force_safe_all(void)
+   uint8_t i;
+   for (i = 0U; i < (uint8_t)BOARD_HV_COUNT; i++)
+   {
++    if (Board_HvFitted(i) == 0U) { continue; }   /* no card: nothing to make safe */
+     (void)HvCard_HvEnable(&g_hv[i], 0U);
+     (void)HvCard_OpenAllRelays(&g_hv[i]);
+   }
+@@ -174,6 +175,7 @@ static void rail_monitor(void)
+   for (i = 0U; i < (uint8_t)BOARD_HV_COUNT; i++)
+   {
+     uint16_t code = 0U;
++    if (Board_HvFitted(i) == 0U) { continue; }
+     HvCard_Hold(&g_hv[i]);
+     if (HvCard_ReadRailRaw(&g_hv[i], &code) == HAL_OK &&
+         AD7476_CodeToVolts(code, g_hv[i].cfg.vref) >
+@@ -205,12 +207,21 @@ static void watchdog_start(void)
+ #ifdef DEBUG
+   DBGMCU->APB1FZR1 |= DBGMCU_APB1FZR1_DBG_IWDG_STOP;   /* freeze while halted */
+ #endif
++  /* Start FIRST. Writing 0xCCCC forces the LSI on; the PR/RLR update flags in
++   * IWDG->SR are only cleared by the LSI domain, so with the LSI still off the
++   * wait below would never end (the safety task, the highest priority, would
++   * spin forever and starve comms and the logger). This is the order the ST HAL
++   * uses. The wait is bounded so a dead LSI can never hang the thread. */
++  uint32_t t0 = osKernelGetTickCount();
++  IWDG->KR  = 0xCCCCU;                       /* start - cannot be stopped; LSI on */
+   IWDG->KR  = 0x5555U;                       /* unlock PR/RLR */
+   IWDG->PR  = WDG_PRESCALER_DIV32;
+   IWDG->RLR = WDG_RELOAD_TICKS;
+-  while (IWDG->SR != 0U) { }                 /* wait for PVU/RVU/WVU to clear */
++  while (IWDG->SR != 0U)                     /* wait for PVU/RVU/WVU to clear */
++  {
++    if ((osKernelGetTickCount() - t0) > 50U) { break; }
++  }
+   IWDG->KR  = 0xAAAAU;                       /* load the counter */
+-  IWDG->KR  = 0xCCCCU;                       /* start - cannot be stopped */
+ }
+ 
+ static inline void watchdog_refresh(void) { IWDG->KR = 0xAAAAU; }
+@@ -253,7 +264,7 @@ static void SafetyTask(void *arg)
+       uint32_t now = osKernelGetTickCount();
+       for (i = 0U; i < (uint8_t)BOARD_HV_COUNT; i++)
+       {
+-        (void)HvCard_HvEnable(&g_hv[i], 0U);
++        if (Board_HvFitted(i) != 0U) { (void)HvCard_HvEnable(&g_hv[i], 0U); }
+       }
+       if ((now - last_mon) >= RAIL_MON_PERIOD_MS &&
+           (now - s_hv_last_tick) >= RAIL_MON_HOLDOFF_MS)
+@@ -269,7 +280,21 @@ static void SafetyTask(void *arg)
+ 
+ /* ---- sequencer ----------------------------------------------------------- */
+ 
++/* Every F-code raised from this file is also logged with the line that raised it. */
++static void task_fault(const char *code, const char *text, const char *file, int line)
++{
++  Log_WriteAt(LOG_ERROR, file, line, "FAULT", "%s %s", code, text);
++  Proto_EvtFault(code, text);
++}
++#define Proto_EvtFault(code, text) task_fault((code), (text), __FILE_NAME__, __LINE__)
++
+ static void run_continuity_all(uint8_t discover);
++
++/* A run that cannot read the ADC at all (SPI timeout, dead part, bad wiring) must
++ * stop, not grind through every point: a full discovery is 65,536 reads and at the
++ * AD7476's 50 ms timeout that is over an hour. This many failed reads IN A ROW
++ * stops the run with a fault; any good read resets the count. */
++#define RUN_GIVEUP_ERRORS  8U
+ static void run_resistance_all(void);
+ static void run_insulation_all(void);
+ static void run_manual_sweep(uint16_t hi);
+@@ -454,7 +479,10 @@ static void run_continuity_all(uint8_t discover)
+   ContinuityResult_t r;
+   uint16_t i, n, hi, lo;
+   uint16_t pass = 0U, fail = 0U;
+-  uint16_t bus_err = 0U;
++  uint32_t bus_err = 0U;   /* 32-bit: a scan of nothing but errors is 65,536 of them,
++                            * which wrapped a uint16_t to 0 and read as a clean PASS */
++  uint8_t  consec = 0U;    /* failed reads in a row */
++  uint8_t  giveup = 0U;
+ 
+   /* Do NOT clear the abort flag here. proto_post_run() clears it before the
+    * command is queued, which is the only point where clearing is correct; a
+@@ -474,22 +502,30 @@ static void run_continuity_all(uint8_t discover)
+         if (Continuity_TestPair(hi, lo, &r) != HAL_OK)
+         {
+           bus_err++;        /* a bus error is NOT "no connection": count it */
++          if (++consec >= RUN_GIVEUP_ERRORS) { giveup = 1U; break; }
+         }
+-        else if (r.verdict == TEST_PASS)
++        else
+         {
+-          Proto_EvtCont(hi, lo, "pass");
+-          pass++;
++          consec = 0U;
++          if (r.verdict == TEST_PASS)
++          {
++            Proto_EvtCont(hi, lo, "pass");
++            pass++;
++          }
+         }
+       }
++      if (giveup != 0U) { break; }
+       Proto_EvtProgress(hi, 256U);
+       if (s_fault != 0U || Proto_AbortRequested() != 0U) { break; }
+     }
+     if (bus_err != 0U)
+     {
+       /* The scan is incomplete: say so, and count the errors as failures so the
+-       * run cannot read as a clean pass. */
+-      Proto_EvtFault("F01", "bus error during scan: result incomplete");
+-      fail = bus_err;
++       * run cannot read as a clean pass (never 0 - see bus_err above). */
++      Proto_EvtFault("F01", (giveup != 0U)
++                     ? "ADC read failed 8 times in a row: scan stopped, nothing measured"
++                     : "bus error during scan: result incomplete");
++      fail = (bus_err > 0xFFFFU) ? 0xFFFFU : (uint16_t)bus_err;
+     }
+   }
+   else
+@@ -505,14 +541,21 @@ static void run_continuity_all(uint8_t discover)
+         Proto_EvtCont(hi, lo, "open");
+         Proto_EvtFault("F01", "bus error: pair not verified");
+         fail++;
++        if (++consec >= RUN_GIVEUP_ERRORS)
++        {
++          Proto_EvtFault("F01", "ADC read failed 8 times in a row: run stopped");
++          break;
++        }
+       }
+       else if (r.verdict == TEST_PASS)
+       {
++        consec = 0U;
+         Proto_EvtCont(hi, lo, "pass");
+         pass++;
+       }
+       else
+       {
++        consec = 0U;
+         Proto_EvtCont(hi, lo, "open");
+         Proto_EvtFault("F06", "continuity open");
+         fail++;
+@@ -541,20 +584,35 @@ static void run_manual_sweep(uint16_t hi)
+   ContinuityResult_t r;
+   uint16_t lo;
+   uint16_t found = 0U;
++  uint8_t  consec = 0U;
++  uint8_t  failed = 0U;
+ 
+   Proto_EvtState("running");
+   for (lo = 1U; lo <= 256U; lo++)
+   {
+-    if (Continuity_TestPair(hi, lo, &r) == HAL_OK && r.verdict == TEST_PASS)
++    if (Continuity_TestPair(hi, lo, &r) != HAL_OK)
+     {
+-      Proto_EvtCont(hi, lo, "pass");
+-      found++;
++      if (++consec >= RUN_GIVEUP_ERRORS)
++      {
++        Proto_EvtFault("F01", "ADC read failed 8 times in a row: sweep stopped");
++        failed = 1U;
++        break;
++      }
++    }
++    else
++    {
++      consec = 0U;
++      if (r.verdict == TEST_PASS)
++      {
++        Proto_EvtCont(hi, lo, "pass");
++        found++;
++      }
+     }
+     if ((lo % 16U) == 0U) { Proto_EvtProgress(lo, 256U); }
+     if (s_fault != 0U || Proto_AbortRequested() != 0U) { break; }
+   }
+   Proto_EvtState("idle");
+-  Proto_EvtDone("sweep", found, 0U);
++  Proto_EvtDone("sweep", found, (failed != 0U) ? 1U : 0U);
+ }
+ 
+ /**
+@@ -658,7 +716,8 @@ static void run_insulation_all(void)
+   for (i = 0U; i < n; i++)
+   {
+     if (Proto_NetlistGet(i, &hi, &lo) != 0) { continue; }
+-    if (hi < 1U || lo < 1U || (hi - 1U) / HV_PINS_PER_SIDE >= (uint16_t)BOARD_HV_COUNT)
++    if (hi < 1U || lo < 1U || (hi - 1U) / HV_PINS_PER_SIDE >= (uint16_t)BOARD_HV_COUNT ||
++        Board_HvFitted((uint8_t)((hi - 1U) / HV_PINS_PER_SIDE)) == 0U)
+     {
+       Proto_EvtFault("F05", "netlist pin outside fitted HV cards");
+       Proto_ClearArm();
+@@ -671,6 +730,7 @@ static void run_insulation_all(void)
+   for (i = 0U; i < (uint16_t)BOARD_HV_COUNT; i++)
+   {
+     float v_idle = 0.0f, v_hv = 0.0f;
++    if (Board_HvFitted((uint8_t)i) == 0U) { continue; }
+     if (Insulation_HvSelfTest((uint8_t)i, &v_idle, &v_hv) != HAL_OK)
+     {
+       LOG_E("INS", "b%u HV self-test FAILED idle=%dmV rail=%dmV", (unsigned)i,
+@@ -914,6 +974,63 @@ static void console_puts(const char *s)
+   }
+ }
+ 
++/* Boot-failure bus scans. Run AFTER the kernel is up, from this low-priority
++ * thread, never from Tasks_Init: the comms task (higher priority) keeps
++ * answering the GUI whatever the scans do, and each scan is time-bounded
++ * (board.c, BOARD_SCAN_BUDGET_MS) so it reports instead of hanging. Waits
++ * SCAN_START_DELAY_MS first so the GUI handshake and the boot log go out
++ * before any bus is touched. Runs once, only if Board_Init failed. */
++#define SCAN_START_DELAY_MS  1500U
++
++static osThreadId_t s_scan;
++static const osThreadAttr_t s_attr_scan = { .name = "tScan", .priority = osPriorityLow, .stack_size = 640 * 4 };
++
++static void ScanTask(void *arg)
++{
++  char     where[28];
++  uint32_t t0;
++  (void)arg;
++
++  osDelay(SCAN_START_DELAY_MS);
++  if (Board_IsReady() != 0U)
++  {
++    osThreadExit();   /* board is fine: nothing to diagnose */
++  }
++
++  Board_InitFailText(where, (uint8_t)sizeof where);
++  t0 = osKernelGetTickCount();
++  LOG_I("SCAN", "start (init failed at %s; each scan limited to %u ms)", where, (unsigned)BOARD_SCAN_BUDGET_MS);
++  osDelay(20U);
++
++  if (osMutexAcquire(s_hwmtx, 3000U) != osOK)
++  {
++    LOG_W("SCAN", "skipped: hardware busy (mutex not free within 3 s)");
++    osThreadExit();
++  }
++
++  if (strncmp(where, "matrix/", 7U) == 0 && Board_InitFailStatus() != 0U)
++  {
++    Board_ScanI2c3Log();   /* who DOES answer on U20's bus? */
++    if (strncmp(where, "matrix/U20", 10U) != 0 && strncmp(where, "matrix/flush", 12U) != 0)
++    {
++      Board_ScanMatrixBusLog();   /* U20 is fine: who answers on the card's bus? */
++    }
++  }
++  else if (strcmp(where, "ads124s08") == 0 && Board_InitFailStatus() != 0U)
++  {
++    /* U69 (ADC control) is reached through the force segment (BUFF1, 0x21).
++     * Show who answers where. */
++    Board_ScanMatrixBusLog();
++  }
++  else
++  {
++    LOG_W("SCAN", "no bus scan defined for stage '%s'", where);
++  }
++  osMutexRelease(s_hwmtx);
++  LOG_I("SCAN", "done in %lu ms", (unsigned long)(osKernelGetTickCount() - t0));
++  osThreadExit();
++}
++
+ /**
+   * @brief  Bring up the console, logger, IPC objects and all RTOS threads.
+   * @note   Brings up the VCP first so boot progress is always visible, then
+@@ -931,6 +1048,21 @@ void Tasks_Init(void)
+   {
+     console_puts("#[boot] LOG init FAILED\r\n");
+   }
++  Diag_Go();   /* print every failure recorded during Board_Init(), with file:line */
++  {
++    /* Why did the MCU start? A watchdog / brown-out / pin reset right after the
++     * host connects explains a "link lost" with no other trace. Read-only: the
++     * flags are left for SafetyTask's own IWDG check. */
++    const uint32_t csr = RCC->CSR;
++    LOG_I("BOOT", "reset cause:%s%s%s%s%s%s%s",
++          ((csr & RCC_CSR_IWDGRSTF) != 0U) ? " IWDG" : "",
++          ((csr & RCC_CSR_WWDGRSTF) != 0U) ? " WWDG" : "",
++          ((csr & RCC_CSR_SFTRSTF)  != 0U) ? " SW" : "",
++          ((csr & RCC_CSR_BORRSTF)  != 0U) ? " BOR/POR" : "",
++          ((csr & RCC_CSR_PINRSTF)  != 0U) ? " PIN" : "",
++          ((csr & RCC_CSR_LPWRRSTF) != 0U) ? " LPWR" : "",
++          ((csr & RCC_CSR_OBLRSTF)  != 0U) ? " OBL" : "");
++  }
+ 
+   s_hwmtx = osMutexNew(NULL);
+   s_cmdq  = osMessageQueueNew(8U, sizeof(TestCmd_t), NULL);
+@@ -947,6 +1079,12 @@ void Tasks_Init(void)
+   s_seq    = osThreadNew(SequencerTask, NULL, &s_attr_seq);
+   s_comms  = osThreadNew(CommsTask,     NULL, &s_attr_comms);
+ 
++  if (Board_IsReady() == 0U)   /* init failed: diagnose the buses once the kernel runs */
++  {
++    s_scan = osThreadNew(ScanTask, NULL, &s_attr_scan);
++    if (s_scan == NULL) { console_puts("#[boot] SCAN task alloc FAILED\r\n"); }
++  }
++
+   /* Loud, synchronous report if any thread failed to allocate (heap too small). */
+   if (s_logger == NULL || s_safety == NULL || s_seq == NULL || s_comms == NULL)
+   {
+@@ -961,5 +1099,40 @@ void Tasks_Init(void)
+   }
+ #endif
+ 
++  console_puts("#[boot] tasks created\r\n");
+   LOG_I("SYS", "tasks started (hv boards=%u)", (unsigned)BOARD_HV_COUNT);
++  if (Board_MatrixTries() > 1U)
++  {
++    LOG_W("BOARD", "matrix stage needed %u attempts (%u ms apart): Matrix Card slow to power up or an intermittent contact",
++          (unsigned)Board_MatrixTries(), (unsigned)BOARD_MATRIX_RETRY_MS);
++  }
++  /* Board_Init() ran before the logger existed; report its outcome now. */
++  if (Board_IsReady() != 0U)
++  {
++    uint8_t k;
++    LOG_I("BOARD", "init ok: matrix, ads124s08, frontend");
++    for (k = 0U; k < (uint8_t)BOARD_HV_COUNT; k++)
++    {
++      if (Board_HvFitted(k) != 0U) { LOG_I("BOARD", "hv%u fitted", (unsigned)(k + 1U)); }
++      else
++      {
++        LOG_W("BOARD", "hv%u NOT fitted (hal=%u) - continuity/resistance only",
++              (unsigned)(k + 1U), (unsigned)Board_HvStatus(k));
++      }
++    }
++  }
++  else
++  {
++    char where[28];
++    char site[36];
++    Board_InitFailText(where, (uint8_t)sizeof where);
++    Diag_FirstText(site, (uint8_t)sizeof site);
++    LOG_E("BOARD", "init FAILED at %s (hal=%u) first: %s", where,
++          (unsigned)Board_InitFailStatus(), site);
++    /* The I2C/SPI bus scans that used to run here (Board_ScanI2c3Log /
++     * Board_ScanMatrixBusLog) are NOT called any more: they ran before the
++     * scheduler started and the board went silent after "bus scans" on the
++     * bench (2026-11-18), so no GUI connect. The functions stay in board.c. */
++  }
++  console_puts("#[boot] Tasks_Init done, starting scheduler\r\n");
+ }
+diff --git a/Core/Src/bsp/board.c b/Core/Src/bsp/board.c
+index e6bab2a..f0f3d52 100644
+--- a/Core/Src/bsp/board.c
++++ b/Core/Src/bsp/board.c
+@@ -10,7 +10,11 @@
+ /* USER CODE END Header */
+ 
+ #include "bsp/board.h"
++#include "app/log.h"
+ #include "cmsis_os2.h"
++#include <stdarg.h>
++#include <stdio.h>
++#include <string.h>
+ 
+ /**
+   * @brief  Wait for hardware to settle, yielding the CPU if the RTOS is running.
+@@ -43,6 +47,19 @@ DS18B20_t         g_ds18b20;
+  * happen, but costs nothing to cover) is refused rather than assumed safe. */
+ static uint8_t s_board_ready = 0U;
+ 
++/* Where Board_Init() stopped, for diagnostics: the failing stage name (NULL if
++ * none / not run) and the HAL status it returned (1 = ERROR, 2 = BUSY,
++ * 3 = TIMEOUT). Read by Board_InitFailStage()/Board_InitFailStatus(). */
++static const char *s_init_stage = NULL;
++static uint8_t     s_init_hal   = 0U;
++static uint8_t     s_matrix_tries = 0U;   /* attempts the matrix stage needed, see Board_Init() */
++
++/* Per HV slot: 1 if its card came up in Board_Init(), 0 if absent/unseated/dead
++ * (and the HAL status it returned). A missing HV card does NOT fail Board_Init():
++ * a unit with only a Matrix Card must still run continuity and resistance. */
++static uint8_t s_hv_fitted[BOARD_HV_COUNT];
++static uint8_t s_hv_hal[BOARD_HV_COUNT];
++
+ /* ---------------------------------------------------------------------------
+  * Bus assignment - corrected against the Doc/ schematics (2026-07):
+  *   SPI1 = Matrix-Card ADS124S08 (U68, HI_SENSE/LO_SENSE + its own IDAC)
+@@ -56,7 +73,7 @@ static uint8_t s_board_ready = 0U;
+  *   must be set per transaction, or run 8-bit with the drivers doing byte
+  *   framing. See fw_status CONFIG TODO.
+  * ------------------------------------------------------------------------- */
+-#define BOARD_MATRIX_I2C      (&hi2c3)   /* U21/U20 ONLY - local to the Control
++#define BOARD_MATRIX_I2C      (&hi2c3)   /* U20 ONLY - local to the Control
+                                            * Card (Control_Card-5 sheet
+                                            * /GPIO_Expander/). The Matrix Card's
+                                            * OWN onboard expanders are NOT on
+@@ -126,7 +143,7 @@ static uint8_t s_board_ready = 0U;
+   */
+ static HAL_StatusTypeDef board_init_matrix(void)
+ {
+-  /* U21 is local (I2C3, BOARD_MATRIX_I2C). The Matrix Card's own eight
++  /* U20 is local (I2C3, BOARD_MATRIX_I2C). The Matrix Card's own eight
+    * expanders are on the shared bus (I2C2, BOARD_HV_I2C) behind HV_Card_EN1 -
+    * confirmed against real hardware, same bus HV Card 1 uses. See
+    * Doc/i2c_bus_sharing.md. */
+@@ -145,11 +162,11 @@ static HAL_StatusTypeDef board_init_matrix(void)
+ 
+ /* -----------------------------------------------------------------------
+  * ADS124S08 (Matrix Card U68) control lines. All four live on U69
+- * (MCP23017 @ MATRIX_ADCCTL_STRAP), which sits behind the same BUFF2
+- * translator as the sense-enable expanders - see matrix_card.h HW-12 - AND
++ * (MCP23017 @ MATRIX_ADCCTL_STRAP), which sits behind the same BUFF1
++ * translator as the force-enable expanders - see matrix_card.h - AND
+  * on the same card-vs-card shared bus as every other Matrix expander (see
+  * Doc/i2c_bus_sharing.md), so every access claims g_matrix's bus enable
+- * before selecting the sense segment, and releases it after.
++ * before selecting its segment, and releases it after.
+  * -------------------------------------------------------------------- */
+ static MCP23017_t s_adcctl;   /* U69 */
+ 
+@@ -162,9 +179,9 @@ static MCP23017_t s_adcctl;   /* U69 */
+ #define BOARD_ADS_PIN_START   11U
+ 
+ /**
+-  * @brief  Claim the shared bus, select the sense segment, drive one U69 pin.
++  * @brief  Claim the shared bus, select U69's segment, drive one U69 pin.
+   * @note   Common path for cs/reset/start: all three cost a possible segment
+-  *         switch (free if the sense segment is already selected - see
++  *         switch (free if that segment is already selected - see
+   *         MatrixCard_SelectSegment) plus one expander write, bracketed by
+   *         the shared-bus claim/release every card must use.
+   */
+@@ -236,8 +253,8 @@ static HAL_StatusTypeDef board_ads_drdy(void *ctx, uint8_t *ready)
+ 
+ /**
+   * @brief  Instantiate U69 and the ADS124S08 itself.
+-  * @note   Must run after board_init_matrix(), which brings up U21 - U69 is
+-  *         unreachable until the sense segment can be selected. Runs a self
++  * @note   Must run after board_init_matrix(), which brings up U20 - U69 is
++  *         unreachable until its (force) segment can be selected. Runs a self
+   *         offset calibration once at bring-up (cancels the ADC's own offset;
+   *         Kelvin_MeasurePair separately subtracts a fresh zero-current
+   *         baseline per point for the rest of the path - see BU-10).
+@@ -269,13 +286,13 @@ static HAL_StatusTypeDef board_init_ads124s08(void)
+     return st;
+   }
+ 
+-  st = ADS124S08_Init(&g_ads124s08, BOARD_MATRIX_ADC_SPI, &io,
+-                      ADS124S08_GAIN_128, ADS124S08_DR_20);
++  st = DIAG_ST(ADS124S08_Init(&g_ads124s08, BOARD_MATRIX_ADC_SPI, &io,
++                              ADS124S08_GAIN_128, ADS124S08_DR_20), "ADS124S08_Init");
+   if (st != HAL_OK)
+   {
+     return st;
+   }
+-  return ADS124S08_SelfOffsetCal(&g_ads124s08);
++  return DIAG_ST(ADS124S08_SelfOffsetCal(&g_ads124s08), "ADS124S08 self offset cal");
+ }
+ 
+ /**
+@@ -291,6 +308,26 @@ static HAL_StatusTypeDef board_init_ads124s08(void)
+ static HAL_StatusTypeDef board_init_frontend(void)
+ {
+   ControlFrontendCfg_t cfg;
++  HAL_StatusTypeDef    spi_st;
++
++  /* SPI3 carries the Control Card AD7476 (U4). spi.c / the .ioc leave SPI3 at the
++   * CubeMX defaults - 4-bit frames at 32 MHz - which the AD7476 cannot work with
++   * (ad7476.h says so: 16-bit frame, SCLK <= 20 MHz) and every read timed out
++   * (hal=3) in the 2026-11-20 bench log. Reconfigured here, not in spi.c, so a
++   * CubeMX regeneration cannot undo it. AD7476 datasheet p.18: data is valid on
++   * SCLK falling edges, first leading zero already present when CS falls
++   * -> idle-high clock, sample on the first (falling) edge = CPOL 1 / CPHA 0.
++   * 64 MHz / 8 = 8 MHz, well inside the 20 MHz limit. */
++  hspi3.Init.DataSize          = SPI_DATASIZE_16BIT;
++  hspi3.Init.CLKPolarity       = SPI_POLARITY_HIGH;
++  hspi3.Init.CLKPhase          = SPI_PHASE_1EDGE;
++  hspi3.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_8;
++  spi_st = DIAG_ST(HAL_SPI_Init(&hspi3), "board: SPI3 (AD7476) config");
++  if (spi_st != HAL_OK)
++  {
++    return spi_st;
++  }
++
+   cfg.adc_spi      = BOARD_ADC_SPI;
+   cfg.adc_cs_port  = BOARD_ADC_CS_PORT;
+   cfg.adc_cs_pin   = BOARD_ADC_CS_PIN;
+@@ -408,28 +445,36 @@ HAL_StatusTypeDef Board_Init(void)
+   HAL_StatusTypeDef st;
+   uint8_t i;
+ 
+-  st = board_init_matrix();
+-  if (st != HAL_OK)
+-  {
+-    return st;
+-  }
+-  st = board_init_ads124s08();
+-  if (st != HAL_OK)
+-  {
+-    return st;
+-  }
+-  st = board_init_frontend();
+-  if (st != HAL_OK)
++  s_init_stage = NULL;
++  s_init_hal   = 0U;
++  Diag_Mark();
++
++  /* The Matrix Card is powered (isolated rails, I2C2 buffers) independently of
++   * the Control Card and can come up AFTER this code runs at power-up: bench
++   * 2026-11-18 - U101 NAKed on the cold boot ("matrix/force-exp@0x20") and the
++   * same card passed after a reset. So a failed matrix stage is retried, with a
++   * delay, before it counts as a failure. Bounded: BOARD_MATRIX_TRIES x
++   * BOARD_MATRIX_RETRY_MS (a card that is really absent costs ~1 s once). */
++  s_matrix_tries = 1U;
++  st = DIAG_ST(board_init_matrix(), "Board_Init: matrix stage");
++  while (st != HAL_OK && s_matrix_tries < (uint8_t)BOARD_MATRIX_TRIES)
+   {
+-    return st;
++    HAL_Delay((uint32_t)BOARD_MATRIX_RETRY_MS);
++    s_matrix_tries++;
++    Diag_Mark();   /* "first failure" must describe the LAST attempt */
++    st = DIAG_ST(board_init_matrix(), "Board_Init: matrix stage");
+   }
++  if (st != HAL_OK) { s_init_stage = "matrix"; s_init_hal = (uint8_t)st; return st; }
++  st = DIAG_ST(board_init_ads124s08(), "Board_Init: ads124s08 stage");
++  if (st != HAL_OK) { s_init_stage = "ads124s08"; s_init_hal = (uint8_t)st; return st; }
++  st = DIAG_ST(board_init_frontend(), "Board_Init: frontend stage");
++  if (st != HAL_OK) { s_init_stage = "frontend"; s_init_hal = (uint8_t)st; return st; }
++  /* HV cards are optional: a failure marks that slot "not fitted" and carries on. */
+   for (i = 0U; i < (uint8_t)BOARD_HV_COUNT; i++)
+   {
+-    st = board_init_hv(i);
+-    if (st != HAL_OK)
+-    {
+-      return st;
+-    }
++    st = DIAG_ST(board_init_hv(i), "Board_Init: HV card stage");
++    s_hv_fitted[i] = (st == HAL_OK) ? 1U : 0U;
++    s_hv_hal[i]    = (uint8_t)st;
+   }
+   /* Not gated into the abort-on-failure chain above: DS18B20_Init() only
+    * fails on a NULL argument (never happens here - the pointers are fixed
+@@ -442,11 +487,249 @@ HAL_StatusTypeDef Board_Init(void)
+   return HAL_OK;
+ }
+ 
++const char *Board_InitFailStage(void)
++{
++  return s_init_stage;
++}
++
++void Board_InitFailText(char *buf, uint8_t n)
++{
++  if (buf == NULL || n == 0U) { return; }
++  if (s_init_stage == NULL)
++  {
++    (void)snprintf(buf, n, "none");
++  }
++  else if (strcmp(s_init_stage, "matrix") == 0)
++  {
++    (void)snprintf(buf, n, "matrix/%s@0x%02X", MatrixCard_InitStep(),
++                   (unsigned)MatrixCard_InitAddr());
++  }
++  else
++  {
++    (void)snprintf(buf, n, "%s", s_init_stage);
++  }
++}
++
++uint8_t Board_InitFailStatus(void)
++{
++  return s_init_hal;
++}
++
++uint8_t Board_HvFitted(uint8_t idx)
++{
++  return (idx < (uint8_t)BOARD_HV_COUNT) ? s_hv_fitted[idx] : 0U;
++}
++
++uint8_t Board_HvStatus(uint8_t idx)
++{
++  return (idx < (uint8_t)BOARD_HV_COUNT) ? s_hv_hal[idx] : 0U;
++}
++
++uint8_t Board_HvAnyFitted(void)
++{
++  uint8_t i;
++  for (i = 0U; i < (uint8_t)BOARD_HV_COUNT; i++)
++  {
++    if (s_hv_fitted[i] != 0U) { return 1U; }
++  }
++  return 0U;
++}
++
++uint8_t Board_MatrixTries(void)
++{
++  return s_matrix_tries;
++}
++
+ uint8_t Board_IsReady(void)
+ {
+   return s_board_ready;
+ }
+ 
++/* ---- bus scans (boot-failure diagnosis) ------------------------------------
++ * Run from the low-priority tScan thread AFTER the kernel is up (tasks.c), never
++ * from Tasks_Init: a stuck bus must not be able to stop the comms task answering
++ * the GUI. Every scan is bounded three ways so it can only ever report, never
++ * hang: HAL_I2C_IsDeviceReady() has a 3 ms timeout per address, each whole scan
++ * has a time budget (BOARD_SCAN_BUDGET_MS), and BOARD_SCAN_BUSY_MAX consecutive
++ * HAL_BUSY answers (SDA/SCL held low, or a transfer left the peripheral locked)
++ * end it early with a message that names the bus. */
++
++typedef struct
++{
++  uint8_t  n_ack;
++  uint8_t  n_busy;
++  uint8_t  n_probed;
++  uint8_t  busy_run;     /* consecutive HAL_BUSY, resets on any other answer */
++  uint8_t  stop;         /* 1 = gave up: budget or busy limit */
++  uint8_t  last_addr;
++  char     line[40];     /* room for 8 addresses; more are counted, not listed */
++  size_t   len;
++  uint32_t t0;
++} ScanAcc_t;
++
++static void scan_begin(ScanAcc_t *s)
++{
++  s->n_ack = 0U; s->n_busy = 0U; s->n_probed = 0U; s->busy_run = 0U;
++  s->stop = 0U; s->last_addr = 0U; s->len = 0U; s->line[0] = '\0';
++  s->t0 = HAL_GetTick();
++}
++
++/* Probe addresses 0x08..0x77 on one bus; fills @p s. */
++static void scan_bus(I2C_HandleTypeDef *bus, ScanAcc_t *s)
++{
++  uint8_t a;
++
++  scan_begin(s);
++  for (a = 0x08U; a <= 0x77U; a++)
++  {
++    HAL_StatusTypeDef r;
++
++    if ((HAL_GetTick() - s->t0) > (uint32_t)BOARD_SCAN_BUDGET_MS) { s->stop = 1U; break; }
++    s->last_addr = a;
++    r = HAL_I2C_IsDeviceReady(bus, (uint16_t)(a << 1U), 1U, 3U);
++    s->n_probed++;
++    if (r == HAL_OK)
++    {
++      int w = snprintf(s->line + s->len, sizeof s->line - s->len, " 0x%02X", (unsigned)a);
++      if (w > 0 && (size_t)w < sizeof s->line - s->len) { s->len += (size_t)w; }
++      s->n_ack++;
++      s->busy_run = 0U;
++    }
++    else if (r == HAL_BUSY)
++    {
++      s->n_busy++;
++      if (++s->busy_run >= (uint8_t)BOARD_SCAN_BUSY_MAX) { s->stop = 1U; break; }
++    }
++    else
++    {
++      s->busy_run = 0U;   /* HAL_ERROR = NAK or 3 ms timeout: normal for an empty address */
++    }
++  }
++}
++
++/* One summary line per scan: who answered, and why it stopped early if it did. */
++static void scan_report(const char *what, const ScanAcc_t *s)
++{
++  const uint32_t ms = HAL_GetTick() - s->t0;
++
++  if (s->stop != 0U && s->busy_run >= (uint8_t)BOARD_SCAN_BUSY_MAX)
++  {
++    LOG_E("SCAN", "%s: bus BUSY at 0x%02X (SDA/SCL held low or peripheral stuck) - gave up after %u probes, %lu ms",
++          what, (unsigned)s->last_addr, (unsigned)s->n_probed, (unsigned long)ms);
++  }
++  else if (s->stop != 0U)
++  {
++    LOG_E("SCAN", "%s: TIMEOUT - %lu ms budget used, stopped at 0x%02X after %u probes (%u ack)",
++          what, (unsigned long)ms, (unsigned)s->last_addr, (unsigned)s->n_probed, (unsigned)s->n_ack);
++  }
++  else if (s->n_ack == 0U)
++  {
++    LOG_W("SCAN", "%s: nothing answers (%u probes, %lu ms)", what, (unsigned)s->n_probed, (unsigned long)ms);
++  }
++  else
++  {
++    LOG_W("SCAN", "%s: %u ack:%s (%lu ms)", what, (unsigned)s->n_ack, s->line, (unsigned long)ms);
++  }
++  Board_SettleMs(15U);   /* let the logger drain: 24-deep queue, non-blocking put */
++}
++
++/* Matrix-card bus diagnosis, for when the first Matrix expander on the shared
++ * I2C2 NAKs although U20 answers. With the Matrix segment claimed (EN1 high),
++ * drive U20's two buffer-enable bits through all four combinations and scan
++ * I2C2 under each: "none" everywhere = nothing electrically reaches the card
++ * (unpowered / unseated / ISO_SDA2-SCL2 not connected); answers under only one
++ * combination = the enable bit or its polarity is not what the firmware
++ * assumes. Channel-select bits stay 0, no Matrix expander is written, and the
++ * buffers are left disabled afterwards. Caller holds the hardware mutex. */
++void Board_ScanMatrixBusLog(void)
++{
++  static const uint16_t combo[4] = {
++    0U,
++    (uint16_t)(1U << MATRIX_SEL_BUFF2_OE_BIT),
++    (uint16_t)(1U << MATRIX_SEL_BUFF1_OE_BIT),
++    (uint16_t)((1U << MATRIX_SEL_BUFF2_OE_BIT) | (1U << MATRIX_SEL_BUFF1_OE_BIT))
++  };
++  static const char *const name[4] = { "both off", "sense/BUFF2", "force/BUFF1", "both on" };
++  uint8_t c;
++
++  if (g_matrix.en_port == NULL)
++  {
++    LOG_W("SCAN", "i2c2: skipped - init never reached the Matrix bus claim");
++    return;
++  }
++
++  MatrixCard_BusClaim(&g_matrix);
++  for (c = 0U; c < 4U; c++)
++  {
++    ScanAcc_t s;
++    char      what[40];
++
++    if (MCP23017_WritePins(&g_matrix.sel, combo[c]) != HAL_OK)
++    {
++      LOG_E("SCAN", "i2c2: U20 write failed (%s) - scan aborted", name[c]);
++      break;
++    }
++    Board_SettleMs(2U);
++    (void)snprintf(what, sizeof what, "i2c2 U20=0x%04X (%s)", combo[c], name[c]);
++    scan_bus(BOARD_HV_I2C, &s);
++    scan_report(what, &s);
++    if (s.stop != 0U) { break; }   /* a stuck bus will not get better under another combination */
++  }
++  if (c == 4U)
++  {
++    /* Identify, not just detect: the same address answers on both segments
++     * (0x20/0x22/0x24/0x26), so an ACK cannot say whether it is one device or two.
++     * Read IODIRA (register 0x00, read-only) of each candidate with ONLY the
++     * sense buffer on, then ONLY the force buffer on. Different values = two
++     * separate parts; identical values prove nothing either way. A part Board_Init
++     * never reached (e.g. U69 after an ads124s08 failure) still holds its power-on
++     * 0xFF while the configured expanders read 0x00. "--" = no ACK. */
++    static const uint8_t ident[5] = { 0x20U, 0x21U, 0x22U, 0x24U, 0x26U };
++    int16_t v[2][5];
++    uint8_t k, j;
++    char    out[80];
++    size_t  n = 0U;
++
++    for (k = 0U; k < 2U; k++)
++    {
++      for (j = 0U; j < 5U; j++) { v[k][j] = -1; }
++      if (MCP23017_WritePins(&g_matrix.sel, combo[k + 1U]) != HAL_OK) { break; }
++      Board_SettleMs(2U);
++      for (j = 0U; j < 5U; j++)
++      {
++        uint8_t b = 0U;
++        if (HAL_I2C_Mem_Read(BOARD_HV_I2C, (uint16_t)(ident[j] << 1U), 0x00U,
++                             I2C_MEMADD_SIZE_8BIT, &b, 1U, 5U) == HAL_OK)
++        {
++          v[k][j] = (int16_t)b;
++        }
++      }
++    }
++    for (j = 0U; j < 5U && n < sizeof out; j++)
++    {
++      char a[6], f[6];
++      if (v[0][j] < 0) { (void)snprintf(a, sizeof a, "--"); } else { (void)snprintf(a, sizeof a, "%02X", (unsigned)v[0][j]); }
++      if (v[1][j] < 0) { (void)snprintf(f, sizeof f, "--"); } else { (void)snprintf(f, sizeof f, "%02X", (unsigned)v[1][j]); }
++      n += (size_t)snprintf(out + n, sizeof out - n, " %02X=%s/%s", (unsigned)ident[j], a, f);
++    }
++    LOG_W("SCAN", "IODIRA sense-only/force-only:%s", out);
++    Board_SettleMs(15U);
++  }
++  (void)MCP23017_WritePins(&g_matrix.sel, 0U);   /* buffers disabled again */
++  MatrixCard_BusRelease(&g_matrix);
++}
++
++/* Probe every legal 7-bit address on I2C3 and log who answers. I2C3 carries
++ * U20 only, so the expected answer is exactly "0x20". A probe is address-only,
++ * so it cannot disturb any device. Caller holds the hardware mutex. */
++void Board_ScanI2c3Log(void)
++{
++  ScanAcc_t s;
++
++  scan_bus(&hi2c3, &s);
++  scan_report("i2c3 (U20 wants its strap address)", &s);
++}
++
+ /**
+   * @brief  Probe one MCP23017 by address only - a real transaction (a
+   *         register read would need to know each part's own state), so a
+@@ -470,10 +753,10 @@ uint8_t Board_ScanBus(BoardBusEntry_t *out, uint8_t max)
+     return 0U;
+   }
+ 
+-  /* U21 - channel/segment select. Local to I2C3, no bus-claim needed. Names
++  /* U20 - channel/segment select. Local to I2C3, no bus-claim needed. Names
+    * are single tokens (no spaces) - Proto_EvtBusLine emits them on the wire,
+    * a space-delimited protocol. */
+-  out[n].name = "U21";
++  out[n].name = "U20";
+   (void)board_probe(&out[n], g_matrix.sel.hi2c, g_matrix.sel.addr7);
+   n++;
+ 
+@@ -497,6 +780,16 @@ uint8_t Board_ScanBus(BoardBusEntry_t *out, uint8_t max)
+       (void)board_probe(&out[n], force[i]->hi2c, force[i]->addr7);
+       n++;
+     }
++    /* U69, the ADS124S08 control expander, lives on this same segment
++     * (board.c's own s_adcctl, not part of MatrixCard_t - see
++     * board_init_ads124s08()). Corrected 2026-11-20: it was probed on the
++     * sense segment, where it is not. */
++    if (n < max)
++    {
++      out[n].name = "U69";
++      (void)board_probe(&out[n], s_adcctl.hi2c, s_adcctl.addr7);
++      n++;
++    }
+   }
+ 
+   if (MatrixCard_SelectSegment(&g_matrix, MATRIX_SEG_SENSE) == HAL_OK)
+@@ -514,15 +807,6 @@ uint8_t Board_ScanBus(BoardBusEntry_t *out, uint8_t max)
+       (void)board_probe(&out[n], sense[i]->hi2c, sense[i]->addr7);
+       n++;
+     }
+-    /* U69, the ADS124S08 control expander, lives on this same segment
+-     * (board.c's own s_adcctl, not part of MatrixCard_t - see
+-     * board_init_ads124s08()). */
+-    if (n < max)
+-    {
+-      out[n].name = "U69";
+-      (void)board_probe(&out[n], s_adcctl.hi2c, s_adcctl.addr7);
+-      n++;
+-    }
+   }
+ 
+   MatrixCard_BusRelease(&g_matrix);
+diff --git a/Core/Src/cards/control_frontend.c b/Core/Src/cards/control_frontend.c
+index 51c2f8d..f361280 100644
+--- a/Core/Src/cards/control_frontend.c
++++ b/Core/Src/cards/control_frontend.c
+@@ -8,6 +8,7 @@
+ /* USER CODE END Header */
+ 
+ #include "cards/control_frontend.h"
++#include "app/log.h"
+ 
+ /**
+   * @brief  Initialise the Control-Card front end and its underlying devices.
+@@ -29,7 +30,7 @@ HAL_StatusTypeDef Frontend_Init(ControlFrontend_t *fe, const ControlFrontendCfg_
+ 
+   if (fe == NULL || cfg == NULL)
+   {
+-    return HAL_ERROR;
++    return DIAG_RET(HAL_ERROR);
+   }
+ 
+   fe->opto_port = cfg->opto_port;
+@@ -67,7 +68,7 @@ HAL_StatusTypeDef Frontend_SetMode(ControlFrontend_t *fe, FrontendMode_t mode)
+ 
+   if (fe == NULL || fe->opto_port == NULL)
+   {
+-    return HAL_ERROR;
++    return DIAG_RET(HAL_ERROR);
+   }
+ 
+   level = (mode == FRONTEND_MODE_IMPEDANCE) ? FRONTEND_OPTO_LEVEL_IMPEDANCE
+@@ -89,7 +90,7 @@ HAL_StatusTypeDef Frontend_ReadRaw(ControlFrontend_t *fe, uint16_t *code)
+ {
+   if (fe == NULL)
+   {
+-    return HAL_ERROR;
++    return DIAG_RET(HAL_ERROR);
+   }
+   return AD7476_ReadRaw(&fe->adc, code);
+ }
+@@ -107,7 +108,7 @@ HAL_StatusTypeDef Frontend_ReadVolts(ControlFrontend_t *fe, float *volts)
+ {
+   if (fe == NULL)
+   {
+-    return HAL_ERROR;
++    return DIAG_RET(HAL_ERROR);
+   }
+   return AD7476_ReadVolts(&fe->adc, fe->vref, volts);
+ }
+\ No newline at end of file
+diff --git a/Core/Src/cards/hv_card.c b/Core/Src/cards/hv_card.c
+index 7f208dd..faf5312 100644
+--- a/Core/Src/cards/hv_card.c
++++ b/Core/Src/cards/hv_card.c
+@@ -8,6 +8,7 @@
+ /* USER CODE END Header */
+ 
+ #include "cards/hv_card.h"
++#include "app/log.h"
+ 
+ /* Settle time after asserting this board's bus-enable line, before the first
+  * I2C transaction: the isolator's own propagation delay is nanoseconds, but
+@@ -135,7 +136,7 @@ static HAL_StatusTypeDef hv_side_close_one(MCP23017_t side[HV_MCP_PER_SIDE], uin
+ 
+   if (pin < 1U || pin > HV_PINS_PER_SIDE)
+   {
+-    return HAL_ERROR;
++    return DIAG_RET(HAL_ERROR);
+   }
+   hv_map(pin, &exp, &bit);
+ 
+@@ -159,7 +160,7 @@ HAL_StatusTypeDef HvCard_OpenAllRelays(HvCard_t *hv)
+   HAL_StatusTypeDef st;
+   if (hv == NULL)
+   {
+-    return HAL_ERROR;
++    return DIAG_RET(HAL_ERROR);
+   }
+   hv_bus_claim(hv);
+   st = hv_side_open(hv->inject);
+@@ -190,7 +191,7 @@ HAL_StatusTypeDef HvCard_Init(HvCard_t *hv, const HvCardCfg_t *cfg)
+ 
+   if (hv == NULL || cfg == NULL || cfg->en_port == NULL)
+   {
+-    return HAL_ERROR;
++    return DIAG_RET(HAL_ERROR);
+   }
+   hv->cfg = *cfg;
+   hv->bus_depth = 0U;
+@@ -198,12 +199,12 @@ HAL_StatusTypeDef HvCard_Init(HvCard_t *hv, const HvCardCfg_t *cfg)
+   hv_bus_claim(hv);
+   for (i = 0U; i < HV_MCP_PER_SIDE; i++)
+   {
+-    st = MCP23017_Init(&hv->inject[i], cfg->i2c, cfg->inject_strap[i]);
++    st = DIAG_ST(MCP23017_Init(&hv->inject[i], cfg->i2c, cfg->inject_strap[i]), "hv: inject expander init");
+     if (st != HAL_OK)
+     {
+       break;
+     }
+-    st = MCP23017_Init(&hv->ret[i], cfg->i2c, cfg->return_strap[i]);
++    st = DIAG_ST(MCP23017_Init(&hv->ret[i], cfg->i2c, cfg->return_strap[i]), "hv: return expander init");
+     if (st != HAL_OK)
+     {
+       break;
+@@ -216,18 +217,18 @@ HAL_StatusTypeDef HvCard_Init(HvCard_t *hv, const HvCardCfg_t *cfg)
+   }
+ 
+   /* DAC8830 -> 0 V program (HV off). */
+-  st = DAC8830_Init(&hv->dac, cfg->spi, cfg->dac_cs_port, cfg->dac_cs_pin);
++  st = DIAG_ST(DAC8830_Init(&hv->dac, cfg->spi, cfg->dac_cs_port, cfg->dac_cs_pin), "hv: DAC init");
+   if (st != HAL_OK)
+   {
+     return st;
+   }
+   /* Two sense ADCs share the isolated SPI, each with its own soft-CS. */
+-  st = AD7476_Init(&hv->adc_rail, cfg->spi, cfg->adc_rail_cs_port, cfg->adc_rail_cs_pin);
++  st = DIAG_ST(AD7476_Init(&hv->adc_rail, cfg->spi, cfg->adc_rail_cs_port, cfg->adc_rail_cs_pin), "hv: rail ADC init");
+   if (st != HAL_OK)
+   {
+     return st;
+   }
+-  st = AD7476_Init(&hv->adc_leak, cfg->spi, cfg->adc_leak_cs_port, cfg->adc_leak_cs_pin);
++  st = DIAG_ST(AD7476_Init(&hv->adc_leak, cfg->spi, cfg->adc_leak_cs_port, cfg->adc_leak_cs_pin), "hv: leak ADC init");
+   if (st != HAL_OK)
+   {
+     return st;
+@@ -250,7 +251,7 @@ HAL_StatusTypeDef HvCard_CloseInject(HvCard_t *hv, uint8_t pin)
+ 
+   if (hv == NULL)
+   {
+-    return HAL_ERROR;
++    return DIAG_RET(HAL_ERROR);
+   }
+   hv_bus_claim(hv);
+   st = hv_side_close_one(hv->inject, pin);
+@@ -270,7 +271,7 @@ HAL_StatusTypeDef HvCard_CloseReturn(HvCard_t *hv, uint8_t pin)
+ 
+   if (hv == NULL)
+   {
+-    return HAL_ERROR;
++    return DIAG_RET(HAL_ERROR);
+   }
+   hv_bus_claim(hv);
+   st = hv_side_close_one(hv->ret, pin);
+@@ -298,7 +299,7 @@ HAL_StatusTypeDef HvCard_CloseReturnMask(HvCard_t *hv, uint64_t mask)
+ 
+   if (hv == NULL || mask == 0ULL)
+   {
+-    return HAL_ERROR;
++    return DIAG_RET(HAL_ERROR);
+   }
+   hv_bus_claim(hv);
+   st = hv_side_open(hv->ret);
+@@ -385,7 +386,7 @@ HAL_StatusTypeDef HvCard_HvEnable(HvCard_t *hv, uint8_t on)
+ {
+   if (hv == NULL)
+   {
+-    return HAL_ERROR;
++    return DIAG_RET(HAL_ERROR);
+   }
+   return (on != 0U) ? HAL_OK : HvCard_HvOff(hv);
+ }
+diff --git a/Core/Src/cards/matrix_card.c b/Core/Src/cards/matrix_card.c
+index 335cf09..b30984a 100644
+--- a/Core/Src/cards/matrix_card.c
++++ b/Core/Src/cards/matrix_card.c
+@@ -8,6 +8,7 @@
+ /* USER CODE END Header */
+ 
+ #include "cards/matrix_card.h"
++#include "app/log.h"
+ 
+ /* -------------------------------------------------------------------------- */
+ /* Shared-bus arbitration                                                     */
+@@ -16,7 +17,7 @@
+ /**
+   * @brief  Put the Matrix Card, and only the Matrix Card, on the shared bus.
+   * @note   See matrix_card.h - the Matrix Card's own expanders (everything
+-  *         except U21) share an I2C bus with the HV cards, all at the same
++  *         except U20) share an I2C bus with the HV cards, all at the same
+   *         0x20..0x27, so exactly one card's segment may be live at a time.
+   * @param  m : [in] instance; must be non-NULL, en_port must be configured.
+   * @retval None (GPIO writes do not fail). No-op if @p m or en_port is NULL -
+@@ -69,7 +70,7 @@ HAL_StatusTypeDef MatrixCard_MapPin(uint16_t pin, uint8_t *mux, uint8_t *channel
+   if (mux == NULL || channel == NULL ||
+       pin < MATRIX_PIN_MIN || pin > MATRIX_PIN_MAX)
+   {
+-    return HAL_ERROR;
++    return DIAG_RET(HAL_ERROR);
+   }
+ 
+   idx      = (uint16_t)(pin - 1U);              /* 0..255 */
+@@ -109,7 +110,7 @@ static MCP23017_t *matrix_exp(MatrixCard_t *m, MatrixBank_t bank, uint8_t sense)
+ }
+ 
+ /**
+-  * @brief  Push the staged select word out to U21.
++  * @brief  Push the staged select word out to U20.
+   * @param  m : [in] instance.
+   * @retval HAL status from the expander write.
+   */
+@@ -119,7 +120,7 @@ static HAL_StatusTypeDef matrix_flush_select(MatrixCard_t *m)
+ }
+ 
+ /**
+-  * @brief  Stage a bank's 3-bit channel address into the U21 shadow word.
++  * @brief  Stage a bank's 3-bit channel address into the U20 shadow word.
+   * @param  m       : [in] instance.
+   * @param  bank    : [in] bank whose address to set.
+   * @param  channel : [in] 0..7.
+@@ -171,7 +172,7 @@ static HAL_StatusTypeDef matrix_drive_bank(MatrixCard_t *m, MatrixBank_t bank,
+ /**
+   * @brief  Enable exactly one I2C segment.
+   * @note   The two NTS0102DP output enables are HI_S3 (BUFF1) and LO_S3 (BUFF2),
+-  *         both bits in the U21 word. Only one may be on at a time - with both
++  *         both bits in the U20 word. Only one may be on at a time - with both
+   *         enabled the two address spaces overlap on the same wires. Returns
+   *         immediately if the segment is already selected, so callers can invoke
+   *         it freely without paying for redundant I2C traffic.
+@@ -185,7 +186,7 @@ HAL_StatusTypeDef MatrixCard_SelectSegment(MatrixCard_t *m, MatrixSeg_t seg)
+ 
+   if (m == NULL)
+   {
+-    return HAL_ERROR;
++    return DIAG_RET(HAL_ERROR);
+   }
+   if (m->seg == seg)
+   {
+@@ -204,7 +205,7 @@ HAL_StatusTypeDef MatrixCard_SelectSegment(MatrixCard_t *m, MatrixSeg_t seg)
+ 
+   if (matrix_flush_select(m) != HAL_OK)
+   {
+-    return HAL_ERROR;
++    return DIAG_RET(HAL_ERROR);
+   }
+   m->seg = seg;
+   return HAL_OK;
+@@ -216,7 +217,7 @@ HAL_StatusTypeDef MatrixCard_Deselect(MatrixCard_t *m)
+ 
+   if (m == NULL)
+   {
+-    return HAL_ERROR;
++    return DIAG_RET(HAL_ERROR);
+   }
+   if (m->seg == (MatrixSeg_t)0xFF)
+   {
+@@ -234,15 +235,15 @@ HAL_StatusTypeDef MatrixCard_Deselect(MatrixCard_t *m)
+ 
+   if (matrix_flush_select(m) != HAL_OK)
+   {
+-    return HAL_ERROR;
++    return DIAG_RET(HAL_ERROR);
+   }
+   m->seg = (MatrixSeg_t)0xFF;              /* next SelectSegment() must act */
+   return HAL_OK;
+ }
+ 
+ /**
+-  * @brief  Bring up U21 and all eight enable expanders, and open every mux.
+-  * @note   Order matters twice over. U21 comes first because nothing else is
++  * @brief  Bring up U20 and all eight enable expanders, and open every mux.
++  * @note   Order matters twice over. U20 comes first because nothing else is
+   *         reachable until a segment is enabled. Within each expander the output
+   *         latch is written 0xFF BEFORE the direction is set to output, so no
+   *         mux is ever briefly enabled - MCP23017_Init leaves outputs low, which
+@@ -251,6 +252,13 @@ HAL_StatusTypeDef MatrixCard_Deselect(MatrixCard_t *m)
+   * @param  hi2c : [in]  shared I2C bus; must be non-NULL.
+   * @retval HAL_OK on success, HAL_ERROR on a NULL argument, else propagated.
+   */
++/* Where MatrixCard_Init() was when it last stopped - diagnostics only. */
++static const char *s_init_step = "";
++static uint8_t     s_init_addr = 0U;
++
++const char *MatrixCard_InitStep(void) { return s_init_step; }
++uint8_t     MatrixCard_InitAddr(void) { return s_init_addr; }
++
+ HAL_StatusTypeDef MatrixCard_Init(MatrixCard_t *m, I2C_HandleTypeDef *hi2c_local,
+                                   I2C_HandleTypeDef *hi2c_shared,
+                                   GPIO_TypeDef *en_port, uint16_t en_pin)
+@@ -268,7 +276,7 @@ HAL_StatusTypeDef MatrixCard_Init(MatrixCard_t *m, I2C_HandleTypeDef *hi2c_local
+ 
+   if (m == NULL || hi2c_local == NULL || hi2c_shared == NULL || en_port == NULL)
+   {
+-    return HAL_ERROR;
++    return DIAG_RET(HAL_ERROR);
+   }
+ 
+   m->sense_paired = 0U;
+@@ -277,13 +285,16 @@ HAL_StatusTypeDef MatrixCard_Init(MatrixCard_t *m, I2C_HandleTypeDef *hi2c_local
+   m->en_port      = en_port;
+   m->en_pin       = en_pin;
+ 
+-  /* U21 is local to the Control Card on hi2c_local - no bus claim needed. */
+-  st = MCP23017_Init(&m->sel, hi2c_local, MATRIX_SEL_MCP_STRAP);
++  /* U20 is local to the Control Card on hi2c_local - no bus claim needed. */
++  s_init_step = "U20";
++  s_init_addr = (uint8_t)(MCP23017_ADDR_BASE | MATRIX_SEL_MCP_STRAP);
++  st = DIAG_ST(MCP23017_Init(&m->sel, hi2c_local, MATRIX_SEL_MCP_STRAP), "matrix: U20 init");
+   if (st != HAL_OK)
+   {
+     return st;
+   }
+-  st = matrix_flush_select(m);   /* both segments disabled, channel 0 */
++  s_init_step = "flush";
++  st = DIAG_ST(matrix_flush_select(m), "matrix: U20 flush");   /* both segments disabled, channel 0 */
+   if (st != HAL_OK)
+   {
+     return st;
+@@ -295,7 +306,8 @@ HAL_StatusTypeDef MatrixCard_Init(MatrixCard_t *m, I2C_HandleTypeDef *hi2c_local
+ 
+   /* Force segment. */
+   m->seg = (MatrixSeg_t)0xFF;    /* force SelectSegment to act */
+-  st = MatrixCard_SelectSegment(m, MATRIX_SEG_FORCE);
++  s_init_step = "seg-force";
++  st = DIAG_ST(MatrixCard_SelectSegment(m, MATRIX_SEG_FORCE), "matrix: select force seg");
+   if (st != HAL_OK)
+   {
+     goto release;
+@@ -305,12 +317,14 @@ HAL_StatusTypeDef MatrixCard_Init(MatrixCard_t *m, I2C_HandleTypeDef *hi2c_local
+     MCP23017_t *exp = (b == 0U) ? m->hi_en : m->lo_en;
+     for (i = 0U; i < MATRIX_EXP_PER_BANK; i++)
+     {
+-      st = MCP23017_Init(&exp[i], hi2c_shared, force_straps[b][i]);
++      s_init_step = "force-exp";
++      s_init_addr = (uint8_t)(MCP23017_ADDR_BASE | force_straps[b][i]);
++      st = DIAG_ST(MCP23017_Init(&exp[i], hi2c_shared, force_straps[b][i]), "matrix: force expander init");
+       if (st != HAL_OK)
+       {
+         goto release;
+       }
+-      st = MCP23017_WritePins(&exp[i], MATRIX_EN_ALL_OFF);
++      st = DIAG_ST(MCP23017_WritePins(&exp[i], MATRIX_EN_ALL_OFF), "matrix: expander all-off");
+       if (st != HAL_OK)
+       {
+         goto release;
+@@ -319,7 +333,8 @@ HAL_StatusTypeDef MatrixCard_Init(MatrixCard_t *m, I2C_HandleTypeDef *hi2c_local
+   }
+ 
+   /* Sense segment. */
+-  st = MatrixCard_SelectSegment(m, MATRIX_SEG_SENSE);
++  s_init_step = "seg-sense";
++  st = DIAG_ST(MatrixCard_SelectSegment(m, MATRIX_SEG_SENSE), "matrix: select sense seg");
+   if (st != HAL_OK)
+   {
+     goto release;
+@@ -329,12 +344,14 @@ HAL_StatusTypeDef MatrixCard_Init(MatrixCard_t *m, I2C_HandleTypeDef *hi2c_local
+     MCP23017_t *exp = (b == 0U) ? m->hi_sns : m->lo_sns;
+     for (i = 0U; i < MATRIX_EXP_PER_BANK; i++)
+     {
+-      st = MCP23017_Init(&exp[i], hi2c_shared, sense_straps[b][i]);
++      s_init_step = "sense-exp";
++      s_init_addr = (uint8_t)(MCP23017_ADDR_BASE | sense_straps[b][i]);
++      st = DIAG_ST(MCP23017_Init(&exp[i], hi2c_shared, sense_straps[b][i]), "matrix: sense expander init");
+       if (st != HAL_OK)
+       {
+         goto release;
+       }
+-      st = MCP23017_WritePins(&exp[i], MATRIX_EN_ALL_OFF);
++      st = DIAG_ST(MCP23017_WritePins(&exp[i], MATRIX_EN_ALL_OFF), "matrix: expander all-off");
+       if (st != HAL_OK)
+       {
+         goto release;
+@@ -343,7 +360,8 @@ HAL_StatusTypeDef MatrixCard_Init(MatrixCard_t *m, I2C_HandleTypeDef *hi2c_local
+   }
+ 
+   /* Leave the force segment selected - the common case. */
+-  st = MatrixCard_SelectSegment(m, MATRIX_SEG_FORCE);
++  s_init_step = "seg-final";
++  st = DIAG_ST(MatrixCard_SelectSegment(m, MATRIX_SEG_FORCE), "matrix: select force seg");
+ 
+ release:
+   MatrixCard_BusRelease(m);
+@@ -364,7 +382,7 @@ HAL_StatusTypeDef MatrixCard_SetSensePaired(MatrixCard_t *m, uint8_t on)
+ 
+   if (m == NULL)
+   {
+-    return HAL_ERROR;
++    return DIAG_RET(HAL_ERROR);
+   }
+ 
+   if (on == 0U)
+@@ -406,7 +424,7 @@ HAL_StatusTypeDef MatrixCard_BankOff(MatrixCard_t *m, MatrixBank_t bank)
+ 
+   if (m == NULL)
+   {
+-    return HAL_ERROR;
++    return DIAG_RET(HAL_ERROR);
+   }
+ 
+   MatrixCard_BusClaim(m);
+@@ -444,7 +462,7 @@ HAL_StatusTypeDef MatrixCard_AllOff(MatrixCard_t *m)
+ 
+   if (m == NULL)
+   {
+-    return HAL_ERROR;
++    return DIAG_RET(HAL_ERROR);
+   }
+   st = MatrixCard_BankOff(m, MATRIX_BANK_HI);
+   if (st != HAL_OK)
+@@ -472,7 +490,7 @@ HAL_StatusTypeDef MatrixCard_SelectPin(MatrixCard_t *m, MatrixBank_t bank, uint1
+ 
+   if (m == NULL || MatrixCard_MapPin(pin, &mux, &channel) != HAL_OK)
+   {
+-    return HAL_ERROR;
++    return DIAG_RET(HAL_ERROR);
+   }
+ 
+   MatrixCard_BusClaim(m);
+@@ -510,7 +528,7 @@ HAL_StatusTypeDef MatrixCard_SelectPin(MatrixCard_t *m, MatrixBank_t bank, uint1
+ 
+ /**
+   * @brief  Connect a HI pin and a LO pin.
+-  * @note   Both channel addresses live in the same U21 byte, so they are staged
++  * @note   Both channel addresses live in the same U20 byte, so they are staged
+   *         and flushed once. With sense pairing on this costs two segment
+   *         switches for the pair rather than four for two SelectPin calls.
+   * @param  m      : [in] instance; must be non-NULL.
+@@ -527,7 +545,7 @@ HAL_StatusTypeDef MatrixCard_ConnectPair(MatrixCard_t *m, uint16_t hi_pin, uint1
+       MatrixCard_MapPin(hi_pin, &hi_mux, &hi_ch) != HAL_OK ||
+       MatrixCard_MapPin(lo_pin, &lo_mux, &lo_ch) != HAL_OK)
+   {
+-    return HAL_ERROR;
++    return DIAG_RET(HAL_ERROR);
+   }
+ 
+   MatrixCard_BusClaim(m);
+diff --git a/Core/Src/drivers/ad7476.c b/Core/Src/drivers/ad7476.c
+index 4c9bf75..a48e2d8 100644
+--- a/Core/Src/drivers/ad7476.c
++++ b/Core/Src/drivers/ad7476.c
+@@ -8,6 +8,7 @@
+ /* USER CODE END Header */
+ 
+ #include "drivers/ad7476.h"
++#include "app/log.h"
+ 
+ /* The HV-card chip-selects arrive as GPIO pins that CubeMX leaves in INPUT mode
+  * (PC13/PC14/PC0). WritePin on an input only changes the output latch, so the
+@@ -40,7 +41,7 @@ HAL_StatusTypeDef AD7476_Init(AD7476_t *dev, SPI_HandleTypeDef *hspi,
+ {
+   if (dev == NULL || hspi == NULL || cs_port == NULL)
+   {
+-    return HAL_ERROR;
++    return DIAG_RET(HAL_ERROR);
+   }
+   dev->hspi    = hspi;
+   dev->cs_port = cs_port;
+@@ -69,12 +70,13 @@ HAL_StatusTypeDef AD7476_ReadRaw(AD7476_t *dev, uint16_t *code)
+ 
+   if (dev == NULL || dev->hspi == NULL || code == NULL)
+   {
+-    return HAL_ERROR;
++    return DIAG_RET(HAL_ERROR);
+   }
+ 
+   /* CS low starts the conversion; the 16-clock frame reads the result. */
+   HAL_GPIO_WritePin(dev->cs_port, dev->cs_pin, GPIO_PIN_RESET);
+   st = HAL_SPI_Receive(dev->hspi, (uint8_t *)&rx, 1U, AD7476_SPI_TIMEOUT);
++  if (st != HAL_OK) { Diag_Spi(__FILE_NAME__, __LINE__, "ad7476 rx", st, dev->hspi); }
+   HAL_GPIO_WritePin(dev->cs_port, dev->cs_pin, GPIO_PIN_SET);
+ 
+   if (st == HAL_OK)
+@@ -113,7 +115,7 @@ HAL_StatusTypeDef AD7476_ReadVolts(AD7476_t *dev, float vref, float *volts)
+ 
+   if (volts == NULL)
+   {
+-    return HAL_ERROR;
++    return DIAG_RET(HAL_ERROR);
+   }
+   st = AD7476_ReadRaw(dev, &code);
+   if (st == HAL_OK)
+diff --git a/Core/Src/drivers/ads1232.c b/Core/Src/drivers/ads1232.c
+index d139254..ba43d80 100644
+--- a/Core/Src/drivers/ads1232.c
++++ b/Core/Src/drivers/ads1232.c
+@@ -141,7 +141,7 @@ static HAL_StatusTypeDef ads1232_read_retry(ADS1232_t *dev, int32_t *code,
+     }
+   }
+   s_retries += (uint16_t)ADS1232_READ_ATTEMPTS;
+-  return HAL_ERROR;
++  return DIAG_RET(HAL_ERROR);
+ }
+ 
+ /**
+@@ -182,11 +182,11 @@ HAL_StatusTypeDef ADS1232_Init(ADS1232_t *dev, const ADS1232_Cfg_t *cfg)
+ {
+   if (dev == NULL || cfg == NULL)
+   {
+-    return HAL_ERROR;
++    return DIAG_RET(HAL_ERROR);
+   }
+   if (cfg->sclk.port == NULL || cfg->dout.port == NULL)
+   {
+-    return HAL_ERROR;   /* the two-wire interface is not optional */
++    return DIAG_RET(HAL_ERROR);   /* the two-wire interface is not optional */
+   }
+ 
+   dev->cfg         = *cfg;
+@@ -218,11 +218,11 @@ HAL_StatusTypeDef ADS1232_SetGain(ADS1232_t *dev, ADS1232_Gain_t gain)
+ {
+   if (dev == NULL)
+   {
+-    return HAL_ERROR;
++    return DIAG_RET(HAL_ERROR);
+   }
+   if (dev->cfg.gain0.port == NULL || dev->cfg.gain1.port == NULL)
+   {
+-    return HAL_ERROR;   /* strapped - cannot change from firmware */
++    return DIAG_RET(HAL_ERROR);   /* strapped - cannot change from firmware */
+   }
+ 
+   dev->cfg.gain = gain;
+@@ -241,11 +241,11 @@ HAL_StatusTypeDef ADS1232_SetChannel(ADS1232_t *dev, ADS1232_Channel_t ch)
+ {
+   if (dev == NULL)
+   {
+-    return HAL_ERROR;
++    return DIAG_RET(HAL_ERROR);
+   }
+   if (dev->cfg.a0.port == NULL)
+   {
+-    return HAL_ERROR;
++    return DIAG_RET(HAL_ERROR);
+   }
+ 
+   dev->cfg.channel = ch;
+@@ -270,7 +270,7 @@ HAL_StatusTypeDef ADS1232_WaitReady(ADS1232_t *dev, uint32_t timeout_ms)
+ 
+   if (dev == NULL)
+   {
+-    return HAL_ERROR;
++    return DIAG_RET(HAL_ERROR);
+   }
+ 
+   start = HAL_GetTick();
+@@ -278,7 +278,7 @@ HAL_StatusTypeDef ADS1232_WaitReady(ADS1232_t *dev, uint32_t timeout_ms)
+   {
+     if ((HAL_GetTick() - start) > timeout_ms)
+     {
+-      return HAL_TIMEOUT;
++      return DIAG_RET(HAL_TIMEOUT);
+     }
+   }
+   return HAL_OK;
+@@ -303,7 +303,7 @@ HAL_StatusTypeDef ADS1232_ReadRaw(ADS1232_t *dev, int32_t *code, uint32_t timeou
+ 
+   if (dev == NULL || code == NULL)
+   {
+-    return HAL_ERROR;
++    return DIAG_RET(HAL_ERROR);
+   }
+ 
+   st = ADS1232_WaitReady(dev, timeout_ms);
+@@ -323,7 +323,7 @@ HAL_StatusTypeDef ADS1232_ReadRaw(ADS1232_t *dev, int32_t *code, uint32_t timeou
+    * than handing back a plausible-looking zero. */
+   if (HAL_GPIO_ReadPin(dev->cfg.dout.port, dev->cfg.dout.pin) == GPIO_PIN_RESET)
+   {
+-    return HAL_ERROR;
++    return DIAG_RET(HAL_ERROR);
+   }
+ 
+   /* Reject the two bus-failure signatures. All-zeros means DOUT was held low
+@@ -333,7 +333,7 @@ HAL_StatusTypeDef ADS1232_ReadRaw(ADS1232_t *dev, int32_t *code, uint32_t timeou
+    * them costs nothing real and removes the dominant error on a flaky link. */
+   if (raw == 0x00000000U || raw == 0x00FFFFFFU)
+   {
+-    return HAL_ERROR;
++    return DIAG_RET(HAL_ERROR);
+   }
+ 
+   /* Sign-extend 24 -> 32 bits. */
+@@ -360,7 +360,7 @@ HAL_StatusTypeDef ADS1232_ReadVolts(ADS1232_t *dev, float *volts, uint32_t timeo
+ 
+   if (dev == NULL || volts == NULL)
+   {
+-    return HAL_ERROR;
++    return DIAG_RET(HAL_ERROR);
+   }
+ 
+   st = ADS1232_ReadRaw(dev, &code, timeout_ms);
+@@ -391,7 +391,7 @@ HAL_StatusTypeDef ADS1232_Tare(ADS1232_t *dev, uint16_t n, uint32_t timeout_ms)
+ 
+   if (dev == NULL || n == 0U)
+   {
+-    return HAL_ERROR;
++    return DIAG_RET(HAL_ERROR);
+   }
+ 
+   for (i = 0U; i < n; i++)
+@@ -399,7 +399,7 @@ HAL_StatusTypeDef ADS1232_Tare(ADS1232_t *dev, uint16_t n, uint32_t timeout_ms)
+     int32_t code;
+     if (ads1232_read_retry(dev, &code, timeout_ms) != HAL_OK)
+     {
+-      return HAL_ERROR;
++      return DIAG_RET(HAL_ERROR);
+     }
+     acc += code;
+   }
+@@ -424,7 +424,7 @@ HAL_StatusTypeDef ADS1232_ReadAverage(ADS1232_t *dev, uint16_t n, float *volts,
+ 
+   if (dev == NULL || volts == NULL || n == 0U)
+   {
+-    return HAL_ERROR;
++    return DIAG_RET(HAL_ERROR);
+   }
+ 
+   for (i = 0U; i < n; i++)
+@@ -432,7 +432,7 @@ HAL_StatusTypeDef ADS1232_ReadAverage(ADS1232_t *dev, uint16_t n, float *volts,
+     int32_t code;
+     if (ads1232_read_retry(dev, &code, timeout_ms) != HAL_OK)
+     {
+-      return HAL_ERROR;
++      return DIAG_RET(HAL_ERROR);
+     }
+     acc += code;
+   }
+@@ -454,7 +454,7 @@ HAL_StatusTypeDef ADS1232_Ohms(float volts, float current_a, float *ohms)
+ {
+   if (ohms == NULL || current_a == 0.0f)
+   {
+-    return HAL_ERROR;
++    return DIAG_RET(HAL_ERROR);
+   }
+   *ohms = volts / current_a;
+   return HAL_OK;
+@@ -482,7 +482,7 @@ HAL_StatusTypeDef ADS1232_OhmsRatiometric(ADS1232_t *dev, float r_ref_ohms,
+ 
+   if (dev == NULL || ohms == NULL || n == 0U)
+   {
+-    return HAL_ERROR;
++    return DIAG_RET(HAL_ERROR);
+   }
+ 
+   for (i = 0U; i < n; i++)
+@@ -490,7 +490,7 @@ HAL_StatusTypeDef ADS1232_OhmsRatiometric(ADS1232_t *dev, float r_ref_ohms,
+     int32_t code;
+     if (ads1232_read_retry(dev, &code, timeout_ms) != HAL_OK)
+     {
+-      return HAL_ERROR;
++      return DIAG_RET(HAL_ERROR);
+     }
+     acc += code;
+   }
+@@ -522,7 +522,7 @@ HAL_StatusTypeDef ADS1232_Calibrate(ADS1232_t *dev, uint32_t timeout_ms)
+ 
+   if (dev == NULL)
+   {
+-    return HAL_ERROR;
++    return DIAG_RET(HAL_ERROR);
+   }
+ 
+   /* Read and throw away one conversion so we are aligned to a frame boundary. */
+diff --git a/Core/Src/drivers/ads124s08.c b/Core/Src/drivers/ads124s08.c
+index 67fa7b7..01e5e3b 100644
+--- a/Core/Src/drivers/ads124s08.c
++++ b/Core/Src/drivers/ads124s08.c
+@@ -8,6 +8,7 @@
+ /* USER CODE END Header */
+ 
+ #include "drivers/ads124s08.h"
++#include "app/log.h"
+ 
+ #ifndef ADS124S08_SPI_TIMEOUT
+ #define ADS124S08_SPI_TIMEOUT   100U
+@@ -58,12 +59,16 @@ static HAL_StatusTypeDef ads_xfer(ADS124S08_t *dev, const uint8_t *tx,
+   {
+     if (n > sizeof(scratch))
+     {
+-      return HAL_ERROR;
++      return DIAG_RET(HAL_ERROR);
+     }
+     rx = scratch;
+   }
+-  return HAL_SPI_TransmitReceive(dev->spi, (uint8_t *)tx, rx, n,
+-                                 ADS124S08_SPI_TIMEOUT);
++  {
++    HAL_StatusTypeDef sst = HAL_SPI_TransmitReceive(dev->spi, (uint8_t *)tx, rx, n,
++                                                    ADS124S08_SPI_TIMEOUT);
++    if (sst != HAL_OK) { Diag_Spi(__FILE_NAME__, __LINE__, "ads124s08 xfer", sst, dev->spi); }
++    return sst;
++  }
+ }
+ 
+ /**
+@@ -132,7 +137,7 @@ HAL_StatusTypeDef ADS124S08_Command(ADS124S08_t *dev, uint8_t cmd)
+ 
+   if (dev == NULL)
+   {
+-    return HAL_ERROR;
++    return DIAG_RET(HAL_ERROR);
+   }
+   return ads_framed(dev, &tx, NULL, 1U);
+ }
+@@ -151,7 +156,7 @@ HAL_StatusTypeDef ADS124S08_WriteReg(ADS124S08_t *dev, uint8_t reg, uint8_t val)
+ 
+   if (dev == NULL)
+   {
+-    return HAL_ERROR;
++    return DIAG_RET(HAL_ERROR);
+   }
+   tx[0] = (uint8_t)(ADS124S08_CMD_WREG | (reg & 0x1FU));
+   tx[1] = 0U;      /* one register */
+@@ -175,7 +180,7 @@ HAL_StatusTypeDef ADS124S08_ReadReg(ADS124S08_t *dev, uint8_t reg, uint8_t *val)
+ 
+   if (dev == NULL || val == NULL)
+   {
+-    return HAL_ERROR;
++    return DIAG_RET(HAL_ERROR);
+   }
+   tx[0] = (uint8_t)(ADS124S08_CMD_RREG | (reg & 0x1FU));
+ 
+@@ -201,7 +206,7 @@ HAL_StatusTypeDef ADS124S08_Reset(ADS124S08_t *dev)
+ 
+   if (dev == NULL)
+   {
+-    return HAL_ERROR;
++    return DIAG_RET(HAL_ERROR);
+   }
+ 
+   st = dev->io.start(dev->io.ctx, 0U);
+@@ -274,7 +279,7 @@ HAL_StatusTypeDef ADS124S08_SetIdac(ADS124S08_t *dev, uint8_t idac1_mux,
+ 
+   if (dev == NULL)
+   {
+-    return HAL_ERROR;
++    return DIAG_RET(HAL_ERROR);
+   }
+   st = ADS124S08_WriteReg(dev, ADS124S08_REG_IDACMUX,
+                           (uint8_t)(((idac2_mux & 0x0FU) << 4) | (idac1_mux & 0x0FU)));
+@@ -298,7 +303,7 @@ HAL_StatusTypeDef ADS124S08_SetGain(ADS124S08_t *dev, ADS124S08_Gain_t gain)
+ 
+   if (dev == NULL)
+   {
+-    return HAL_ERROR;
++    return DIAG_RET(HAL_ERROR);
+   }
+   st = ADS124S08_WriteReg(dev, ADS124S08_REG_PGA,
+                           (uint8_t)(ADS124S08_PGA_ENABLE | ((uint8_t)gain & 0x07U)));
+@@ -320,7 +325,7 @@ HAL_StatusTypeDef ADS124S08_BypassPga(ADS124S08_t *dev)
+ 
+   if (dev == NULL)
+   {
+-    return HAL_ERROR;
++    return DIAG_RET(HAL_ERROR);
+   }
+   /* Datasheet requires GAIN[2:0] = 000 when the PGA is bypassed. */
+   st = ADS124S08_WriteReg(dev, ADS124S08_REG_PGA, ADS124S08_PGA_BYPASS);
+@@ -345,7 +350,7 @@ HAL_StatusTypeDef ADS124S08_SetRate(ADS124S08_t *dev, ADS124S08_Rate_t rate)
+ 
+   if (dev == NULL)
+   {
+-    return HAL_ERROR;
++    return DIAG_RET(HAL_ERROR);
+   }
+   st = ADS124S08_WriteReg(dev, ADS124S08_REG_DATARATE,
+                           (uint8_t)(0x10U | ((uint8_t)rate & 0x0FU)));
+@@ -374,7 +379,7 @@ HAL_StatusTypeDef ADS124S08_Init(ADS124S08_t *dev, SPI_HandleTypeDef *spi,
+   if (dev == NULL || spi == NULL || io == NULL ||
+       io->cs == NULL || io->reset == NULL || io->start == NULL)
+   {
+-    return HAL_ERROR;
++    return DIAG_RET(HAL_ERROR);
+   }
+ 
+   dev->spi  = spi;
+@@ -443,7 +448,7 @@ HAL_StatusTypeDef ADS124S08_SelfOffsetCal(ADS124S08_t *dev)
+ 
+   if (dev == NULL)
+   {
+-    return HAL_ERROR;
++    return DIAG_RET(HAL_ERROR);
+   }
+   period = ADS124S08_PeriodMs(dev->rate);
+ 
+@@ -512,7 +517,7 @@ HAL_StatusTypeDef ADS124S08_ConvertOnce(ADS124S08_t *dev, int32_t *code)
+ 
+   if (dev == NULL || code == NULL)
+   {
+-    return HAL_ERROR;
++    return DIAG_RET(HAL_ERROR);
+   }
+ 
+   st = ADS124S08_Command(dev, ADS124S08_CMD_START);
+@@ -537,6 +542,7 @@ HAL_StatusTypeDef ADS124S08_ConvertOnce(ADS124S08_t *dev, int32_t *code)
+   {
+     return st;
+   }
++  if (ready == 0U) { DIAG_FAIL("ads124s08 DRDY timeout", HAL_TIMEOUT); }
+   return (ready != 0U) ? HAL_OK : HAL_TIMEOUT;
+ }
+ 
+@@ -560,7 +566,7 @@ HAL_StatusTypeDef ADS124S08_ConvertAverage(ADS124S08_t *dev, uint16_t n, int32_t
+ 
+   if (dev == NULL || code == NULL || n == 0U)
+   {
+-    return HAL_ERROR;
++    return DIAG_RET(HAL_ERROR);
+   }
+   period = ADS124S08_PeriodMs(dev->rate);
+ 
+diff --git a/Core/Src/drivers/dac8830.c b/Core/Src/drivers/dac8830.c
+index 71ee945..66aeafb 100644
+--- a/Core/Src/drivers/dac8830.c
++++ b/Core/Src/drivers/dac8830.c
+@@ -8,6 +8,7 @@
+ /* USER CODE END Header */
+ 
+ #include "drivers/dac8830.h"
++#include "app/log.h"
+ 
+ /**
+   * @brief  Write a raw 16-bit code to the DAC8830 output register.
+@@ -26,11 +27,12 @@ HAL_StatusTypeDef DAC8830_WriteCode(DAC8830_t *dev, uint16_t code)
+ 
+   if (dev == NULL || dev->hspi == NULL)
+   {
+-    return HAL_ERROR;
++    return DIAG_RET(HAL_ERROR);
+   }
+ 
+   HAL_GPIO_WritePin(dev->cs_port, dev->cs_pin, GPIO_PIN_RESET);
+   st = HAL_SPI_Transmit(dev->hspi, (uint8_t *)&tx, 1U, DAC8830_SPI_TIMEOUT);
++  if (st != HAL_OK) { Diag_Spi(__FILE_NAME__, __LINE__, "dac8830 tx", st, dev->hspi); }
+   HAL_GPIO_WritePin(dev->cs_port, dev->cs_pin, GPIO_PIN_SET);  /* latch on rise */
+ 
+   return st;
+@@ -68,7 +70,7 @@ HAL_StatusTypeDef DAC8830_Init(DAC8830_t *dev, SPI_HandleTypeDef *hspi,
+ {
+   if (dev == NULL || hspi == NULL || cs_port == NULL)
+   {
+-    return HAL_ERROR;
++    return DIAG_RET(HAL_ERROR);
+   }
+   dev->hspi    = hspi;
+   dev->cs_port = cs_port;
+diff --git a/Core/Src/drivers/ds18b20.c b/Core/Src/drivers/ds18b20.c
+index a766525..1ba5c1b 100644
+--- a/Core/Src/drivers/ds18b20.c
++++ b/Core/Src/drivers/ds18b20.c
+@@ -8,6 +8,7 @@
+ /* USER CODE END Header */
+ 
+ #include "drivers/ds18b20.h"
++#include "app/log.h"
+ 
+ /* -------------------------------------------------------------------------- */
+ /* Microsecond delay - DWT cycle counter                                      */
+@@ -205,7 +206,7 @@ HAL_StatusTypeDef DS18B20_Init(DS18B20_t *dev, GPIO_TypeDef *port, uint16_t pin)
+ {
+   if (dev == NULL || port == NULL)
+   {
+-    return HAL_ERROR;
++    return DIAG_RET(HAL_ERROR);
+   }
+ 
+   dev->port = port;
+@@ -226,7 +227,7 @@ HAL_StatusTypeDef DS18B20_ReadTemperature(DS18B20_t *dev, float *celsius)
+ 
+   if (dev == NULL || celsius == NULL)
+   {
+-    return HAL_ERROR;
++    return DIAG_RET(HAL_ERROR);
+   }
+ 
+   st = ds18b20_reset_presence(dev);
+@@ -256,7 +257,7 @@ HAL_StatusTypeDef DS18B20_ReadTemperature(DS18B20_t *dev, float *celsius)
+ 
+   if (ds18b20_crc8(sp, DS18B20_SCRATCHPAD_LEN) != 0U)
+   {
+-    return HAL_ERROR;
++    return DIAG_RET(HAL_ERROR);
+   }
+ 
+   /* Scratchpad bytes 0-1 = temperature LSB/MSB, 12-bit default resolution,
+diff --git a/Core/Src/drivers/mcp23017.c b/Core/Src/drivers/mcp23017.c
+index 7fee3f7..6755cca 100644
+--- a/Core/Src/drivers/mcp23017.c
++++ b/Core/Src/drivers/mcp23017.c
+@@ -9,6 +9,7 @@
+ /* USER CODE END Header */
+ 
+ #include "drivers/mcp23017.h"
++#include "app/log.h"
+ 
+ /* HAL expects the address left-shifted into bits 7:1. */
+ #define MCP23017_HAL_ADDR(dev)   ((uint16_t)((dev)->addr7 << 1))
+@@ -28,12 +29,15 @@
+   */
+ HAL_StatusTypeDef MCP23017_WriteReg(MCP23017_t *dev, uint8_t reg, uint8_t val)
+ {
++  HAL_StatusTypeDef st;
+   if (dev == NULL || dev->hi2c == NULL)
+   {
+-    return HAL_ERROR;
++    return DIAG_RET(HAL_ERROR);
+   }
+-  return HAL_I2C_Mem_Write(dev->hi2c, MCP23017_HAL_ADDR(dev), reg,
+-                           I2C_MEMADD_SIZE_8BIT, &val, 1U, MCP23017_I2C_TIMEOUT);
++  st = HAL_I2C_Mem_Write(dev->hi2c, MCP23017_HAL_ADDR(dev), reg,
++                         I2C_MEMADD_SIZE_8BIT, &val, 1U, MCP23017_I2C_TIMEOUT);
++  if (st != HAL_OK) { Diag_I2c(__FILE_NAME__, __LINE__, "wr", st, dev->hi2c, dev->addr7, reg); }
++  return st;
+ }
+ 
+ /**
+@@ -47,12 +51,15 @@ HAL_StatusTypeDef MCP23017_WriteReg(MCP23017_t *dev, uint8_t reg, uint8_t val)
+   */
+ HAL_StatusTypeDef MCP23017_ReadReg(MCP23017_t *dev, uint8_t reg, uint8_t *val)
+ {
++  HAL_StatusTypeDef st;
+   if (dev == NULL || dev->hi2c == NULL || val == NULL)
+   {
+-    return HAL_ERROR;
++    return DIAG_RET(HAL_ERROR);
+   }
+-  return HAL_I2C_Mem_Read(dev->hi2c, MCP23017_HAL_ADDR(dev), reg,
+-                          I2C_MEMADD_SIZE_8BIT, val, 1U, MCP23017_I2C_TIMEOUT);
++  st = HAL_I2C_Mem_Read(dev->hi2c, MCP23017_HAL_ADDR(dev), reg,
++                        I2C_MEMADD_SIZE_8BIT, val, 1U, MCP23017_I2C_TIMEOUT);
++  if (st != HAL_OK) { Diag_I2c(__FILE_NAME__, __LINE__, "rd", st, dev->hi2c, dev->addr7, reg); }
++  return st;
+ }
+ 
+ /**
+@@ -70,16 +77,19 @@ HAL_StatusTypeDef MCP23017_ReadReg(MCP23017_t *dev, uint8_t reg, uint8_t *val)
+ HAL_StatusTypeDef MCP23017_WriteReg16(MCP23017_t *dev, uint8_t reg_a, uint16_t val)
+ {
+   uint8_t buf[2];
++  HAL_StatusTypeDef st;
+ 
+   if (dev == NULL || dev->hi2c == NULL)
+   {
+-    return HAL_ERROR;
++    return DIAG_RET(HAL_ERROR);
+   }
+   /* Sequential addressing: byte 0 -> port-A reg, byte 1 -> port-B reg. */
+   buf[0] = (uint8_t)(val & 0xFFU);
+   buf[1] = (uint8_t)(val >> 8);
+-  return HAL_I2C_Mem_Write(dev->hi2c, MCP23017_HAL_ADDR(dev), reg_a,
+-                           I2C_MEMADD_SIZE_8BIT, buf, 2U, MCP23017_I2C_TIMEOUT);
++  st = HAL_I2C_Mem_Write(dev->hi2c, MCP23017_HAL_ADDR(dev), reg_a,
++                         I2C_MEMADD_SIZE_8BIT, buf, 2U, MCP23017_I2C_TIMEOUT);
++  if (st != HAL_OK) { Diag_I2c(__FILE_NAME__, __LINE__, "wr16", st, dev->hi2c, dev->addr7, reg_a); }
++  return st;
+ }
+ 
+ /**
+@@ -100,10 +110,11 @@ HAL_StatusTypeDef MCP23017_ReadReg16(MCP23017_t *dev, uint8_t reg_a, uint16_t *v
+ 
+   if (dev == NULL || dev->hi2c == NULL || val == NULL)
+   {
+-    return HAL_ERROR;
++    return DIAG_RET(HAL_ERROR);
+   }
+   st = HAL_I2C_Mem_Read(dev->hi2c, MCP23017_HAL_ADDR(dev), reg_a,
+                         I2C_MEMADD_SIZE_8BIT, buf, 2U, MCP23017_I2C_TIMEOUT);
++  if (st != HAL_OK) { Diag_I2c(__FILE_NAME__, __LINE__, "rd16", st, dev->hi2c, dev->addr7, reg_a); }
+   if (st == HAL_OK)
+   {
+     *val = (uint16_t)buf[0] | ((uint16_t)buf[1] << 8);
+@@ -134,7 +145,7 @@ HAL_StatusTypeDef MCP23017_Init(MCP23017_t *dev, I2C_HandleTypeDef *hi2c, uint8_
+ 
+   if (dev == NULL || hi2c == NULL || a2a1a0 > 7U)
+   {
+-    return HAL_ERROR;
++    return DIAG_RET(HAL_ERROR);
+   }
+ 
+   dev->hi2c       = hi2c;
+@@ -176,7 +187,7 @@ HAL_StatusTypeDef MCP23017_IsReady(MCP23017_t *dev)
+ {
+   if (dev == NULL || dev->hi2c == NULL)
+   {
+-    return HAL_ERROR;
++    return DIAG_RET(HAL_ERROR);
+   }
+   return HAL_I2C_IsDeviceReady(dev->hi2c, MCP23017_HAL_ADDR(dev), 3U,
+                                MCP23017_I2C_TIMEOUT);
+@@ -255,7 +266,7 @@ HAL_StatusTypeDef MCP23017_WritePin(MCP23017_t *dev, uint8_t pin, uint8_t state)
+ 
+   if (dev == NULL || pin > 15U)
+   {
+-    return HAL_ERROR;
++    return DIAG_RET(HAL_ERROR);
+   }
+ 
+   next = dev->olat_cache;
+diff --git a/Core/Src/main.c b/Core/Src/main.c
+index f04be30..dec60de 100644
+--- a/Core/Src/main.c
++++ b/Core/Src/main.c
+@@ -107,7 +107,12 @@ int main(void)
+    * from starting. Board_IsReady() latches the outcome; the sequencer
+    * (proto.c) checks it before any hardware command and refuses with a clean
+    * ERR EHW instead of running against un-initialised card state. */
++  /* Simple boot trail (polled, bounded 20 ms each; USART2 is already up). If the
++   * board ever goes quiet, the last "#[boot]" line says how far it got. */
++#define BOOT_PRINT(s) (void)HAL_UART_Transmit(&huart2, (uint8_t *)(s), (uint16_t)(sizeof(s) - 1U), 20U)
++  BOOT_PRINT("#[boot] main: peripherals up, Board_Init start\r\n");
+   (void)Board_Init();
++  BOOT_PRINT("#[boot] main: Board_Init done, starting scheduler\r\n");
+   /* USER CODE END 2 */
+ 
+   /* Init scheduler */
+diff --git a/Core/Src/test/continuity.c b/Core/Src/test/continuity.c
+index e6af27a..c6dbc06 100644
+--- a/Core/Src/test/continuity.c
++++ b/Core/Src/test/continuity.c
+@@ -8,6 +8,7 @@
+ /* USER CODE END Header */
+ 
+ #include "test/continuity.h"
++#include "app/log.h"
+ 
+ /**
+   * @brief  Test continuity of one harness pair via the +3V3 divider.
+@@ -33,7 +34,7 @@ HAL_StatusTypeDef Continuity_TestPair(uint16_t hi_pin, uint16_t lo_pin,
+ 
+   if (res == NULL)
+   {
+-    return HAL_ERROR;
++    return DIAG_RET(HAL_ERROR);
+   }
+   res->code    = 0U;
+   res->volts   = 0.0f;
+diff --git a/Core/Src/test/insulation.c b/Core/Src/test/insulation.c
+index 6af57a0..ee720b1 100644
+--- a/Core/Src/test/insulation.c
++++ b/Core/Src/test/insulation.c
+@@ -8,6 +8,7 @@
+ /* USER CODE END Header */
+ 
+ #include "test/insulation.h"
++#include "app/log.h"
+ 
+ /* Operator-set minimum insulation resistance, milliohms (FW-11). Written only
+  * by Insulation_SetMinMohm(), which the protocol layer calls outside a run. */
+@@ -19,7 +20,7 @@ HAL_StatusTypeDef Insulation_SetMinMohm(int64_t mohm)
+ 
+   if (!Insulation_LimitValid(mohm))
+   {
+-    return HAL_ERROR;
++    return DIAG_RET(HAL_ERROR);
+   }
+   /* A 64-bit store is two 32-bit stores on Cortex-M4: keep an interrupt or a
+    * preempting task from ever reading half of it. */
+@@ -144,7 +145,7 @@ static HAL_StatusTypeDef insulation_run(uint8_t board, uint8_t inject_pin,
+       return_mask == 0ULL || v_fraction < INSULATION_MIN_FRACTION ||
+       Insulation_PassLimitVoltsFor(v_fraction, s_limit_mohm) < INSULATION_MIN_PASS_V)
+   {
+-    return HAL_ERROR;
++    return DIAG_RET(HAL_ERROR);
+   }
+   hv = &g_hv[board];
+ 
+@@ -289,7 +290,7 @@ HAL_StatusTypeDef Insulation_HvSelfTest(uint8_t board, float *v_idle, float *v_h
+ 
+   if (board >= (uint8_t)BOARD_HV_COUNT)
+   {
+-    return HAL_ERROR;
++    return DIAG_RET(HAL_ERROR);
+   }
+   hv = &g_hv[board];
+   HvCard_Hold(hv);
+@@ -327,7 +328,7 @@ HAL_StatusTypeDef Insulation_TestPair(uint8_t board, uint8_t inject_pin,
+ {
+   if (return_pin < 1U || return_pin > (uint8_t)HV_PINS_PER_SIDE)
+   {
+-    return HAL_ERROR;
++    return DIAG_RET(HAL_ERROR);
+   }
+   return insulation_run(board, inject_pin, 1ULL << (return_pin - 1U),
+                         v_fraction, res);
+diff --git a/Core/Src/test/kelvin.c b/Core/Src/test/kelvin.c
+index 6cd8a36..bd442ab 100644
+--- a/Core/Src/test/kelvin.c
++++ b/Core/Src/test/kelvin.c
+@@ -8,6 +8,7 @@
+ /* USER CODE END Header */
+ 
+ #include "test/kelvin.h"
++#include "app/log.h"
+ 
+ #define KELVIN_FULLSCALE_CODE  8388608.0f   /* 2^23 */
+ 
+@@ -53,7 +54,7 @@ static HAL_StatusTypeDef kelvin_ranged_read(int32_t *code)
+   }
+   /* Saturated even at unity gain: open circuit or a gross fault, not a
+    * measurable resistance. */
+-  return HAL_ERROR;
++  return DIAG_RET(HAL_ERROR);
+ }
+ 
+ /**
+@@ -93,7 +94,7 @@ HAL_StatusTypeDef Kelvin_MeasurePair(uint16_t hi_pin, uint16_t lo_pin,
+ 
+   if (res == NULL)
+   {
+-    return HAL_ERROR;
++    return DIAG_RET(HAL_ERROR);
+   }
+   res->code           = 0;
+   res->volts          = 0.0f;
