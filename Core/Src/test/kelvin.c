@@ -8,6 +8,7 @@
 /* USER CODE END Header */
 
 #include "test/kelvin.h"
+#include "app/log.h"
 
 #define KELVIN_FULLSCALE_CODE  8388608.0f   /* 2^23 */
 
@@ -53,7 +54,7 @@ static HAL_StatusTypeDef kelvin_ranged_read(int32_t *code)
   }
   /* Saturated even at unity gain: open circuit or a gross fault, not a
    * measurable resistance. */
-  return HAL_ERROR;
+  return DIAG_RET(HAL_ERROR);
 }
 
 /**
@@ -93,7 +94,7 @@ HAL_StatusTypeDef Kelvin_MeasurePair(uint16_t hi_pin, uint16_t lo_pin,
 
   if (res == NULL)
   {
-    return HAL_ERROR;
+    return DIAG_RET(HAL_ERROR);
   }
   res->code           = 0;
   res->volts          = 0.0f;

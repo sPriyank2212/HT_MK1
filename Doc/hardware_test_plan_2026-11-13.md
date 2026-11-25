@@ -50,7 +50,7 @@ card 1's expanders are also on the bus.** If both cards are fitted, Matrix write
 
 | # | Do | Expect | Result |
 |---|---|---|---|
-| 2.1 | **Matrix only** (HV card 1 unplugged or not fitted): `>BUS SCAN` | `!BUSLINE` for U21, U101, U105, U102, U106, U66, U67, U107, U108, U69, U68 = `ok`; the 8 `HV1_*` lines = `fault` (card absent) | |
+| 2.1 | **Matrix only** (HV card 1 unplugged or not fitted): `>BUS SCAN` | `!BUSLINE` for U20, U101, U105, U102, U106, U66, U67, U107, U108, U69, U68 = `ok`; the 8 `HV1_*` lines = `fault` (card absent) | |
 | 2.2 | Record a baseline: connect a known loopback/resistor between a Matrix HI and LO pin. Upload netlist `>NETLIST BEGIN 1` / `>NETLIST ADD <hi> <lo>` / `>NETLIST END`, then `>RES RUN` and `>CONT RUN verify`. | Note the resistance (mΩ) and the continuity verdict | R = |
 | 2.3 | **Matrix + HV card 1 fitted:** `>BUS SCAN` | All 11 Matrix lines `ok` **and** all 8 `HV1_HS1..4`/`HV1_LS1..4` `ok` (19 lines, 0 faults) | |
 | 2.4 | Repeat 2.2 exactly (same loopback). | **Same** resistance (within noise) and verdict as 2.2 | R = |

@@ -79,6 +79,20 @@ static inline TestVerdict_t Continuity_Classify(float volts)
 HAL_StatusTypeDef Continuity_TestPair(uint16_t hi_pin, uint16_t lo_pin,
                                       ContinuityResult_t *res);
 
+/**
+  * @brief  Row-scan variant of Continuity_TestPair() (CL-106): leaves the pair
+  *         CONNECTED so the next call only has to move the LO side.
+  * @note   @p prev_lo = 0 connects the pair from scratch (ConnectPair);
+  *         otherwise @p prev_lo must be the LO pin the previous call on this
+  *         same @p hi_pin left connected, and only the LO side is switched.
+  *         The caller must call MatrixCard_AllOff() at the end of the row and
+  *         after any non-HAL_OK return (then pass prev_lo = 0 again), and
+  *         should hold the bus for the row (MatrixCard_BusHold()).
+  * @retval Same as Continuity_TestPair().
+  */
+HAL_StatusTypeDef Continuity_TestPairRow(uint16_t hi_pin, uint16_t prev_lo, uint16_t lo_pin,
+                                         ContinuityResult_t *res);
+
 #ifdef __cplusplus
 }
 #endif

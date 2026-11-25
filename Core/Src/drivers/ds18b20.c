@@ -8,6 +8,7 @@
 /* USER CODE END Header */
 
 #include "drivers/ds18b20.h"
+#include "app/log.h"
 
 /* -------------------------------------------------------------------------- */
 /* Microsecond delay - DWT cycle counter                                      */
@@ -205,7 +206,7 @@ HAL_StatusTypeDef DS18B20_Init(DS18B20_t *dev, GPIO_TypeDef *port, uint16_t pin)
 {
   if (dev == NULL || port == NULL)
   {
-    return HAL_ERROR;
+    return DIAG_RET(HAL_ERROR);
   }
 
   dev->port = port;
@@ -226,7 +227,7 @@ HAL_StatusTypeDef DS18B20_ReadTemperature(DS18B20_t *dev, float *celsius)
 
   if (dev == NULL || celsius == NULL)
   {
-    return HAL_ERROR;
+    return DIAG_RET(HAL_ERROR);
   }
 
   st = ds18b20_reset_presence(dev);
@@ -256,7 +257,7 @@ HAL_StatusTypeDef DS18B20_ReadTemperature(DS18B20_t *dev, float *celsius)
 
   if (ds18b20_crc8(sp, DS18B20_SCRATCHPAD_LEN) != 0U)
   {
-    return HAL_ERROR;
+    return DIAG_RET(HAL_ERROR);
   }
 
   /* Scratchpad bytes 0-1 = temperature LSB/MSB, 12-bit default resolution,

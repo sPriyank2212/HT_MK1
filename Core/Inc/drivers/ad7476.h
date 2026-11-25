@@ -48,7 +48,13 @@ typedef struct
   SPI_HandleTypeDef *hspi;       /* SPI bus (SPI1 on Control Card)            */
   GPIO_TypeDef      *cs_port;    /* chip-select GPIO port                    */
   uint16_t           cs_pin;     /* chip-select GPIO pin                     */
+  uint16_t           last_raw;   /* CL-108: whole 16-bit frame of the last read.
+                                  * A real AD7476 frame starts with 4 zero bits;
+                                  * 0xFFFF = MISO high / ADC not driving.      */
 } AD7476_t;
+
+/* Leading-zero bits of a valid frame (diagnostic check only). */
+#define AD7476_LEAD_MASK     0xF000U
 
 /**
   * @brief  Bind an instance and park CS high (idle).
@@ -60,6 +66,10 @@ HAL_StatusTypeDef AD7476_Init(AD7476_t *dev, SPI_HandleTypeDef *hspi,
   * @brief  Perform one acquisition and return the raw 12-bit code (0..4095).
   */
 HAL_StatusTypeDef AD7476_ReadRaw(AD7476_t *dev, uint16_t *code);
+/* CL-112: one dummy conversion, result discarded. AD7476 datasheet: the part
+ * may come up in power-down, and the first conversion after power-up is not
+ * valid. Call once after AD7476_Init(), before the first real reading. */
+HAL_StatusTypeDef AD7476_WakeUp(AD7476_t *dev);
 
 /**
   * @brief  Convert a raw code to volts for a given reference voltage.

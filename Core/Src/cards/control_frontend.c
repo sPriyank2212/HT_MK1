@@ -8,6 +8,7 @@
 /* USER CODE END Header */
 
 #include "cards/control_frontend.h"
+#include "app/log.h"
 
 /**
   * @brief  Initialise the Control-Card front end and its underlying devices.
@@ -29,7 +30,7 @@ HAL_StatusTypeDef Frontend_Init(ControlFrontend_t *fe, const ControlFrontendCfg_
 
   if (fe == NULL || cfg == NULL)
   {
-    return HAL_ERROR;
+    return DIAG_RET(HAL_ERROR);
   }
 
   fe->opto_port = cfg->opto_port;
@@ -40,6 +41,12 @@ HAL_StatusTypeDef Frontend_Init(ControlFrontend_t *fe, const ControlFrontendCfg_
   if (st != HAL_OK)
   {
     return st;
+  }
+  /* CL-112: discard the first conversion after power-up (AD7476 datasheet).
+   * A failure here is not fatal: the next real read reports its own status. */
+  if (AD7476_WakeUp(&fe->adc) != HAL_OK)
+  {
+    LOG_W("ADC", "AD7476 wake-up frame failed");
   }
 
   /* Default to continuity mode at start-up. */
@@ -67,7 +74,7 @@ HAL_StatusTypeDef Frontend_SetMode(ControlFrontend_t *fe, FrontendMode_t mode)
 
   if (fe == NULL || fe->opto_port == NULL)
   {
-    return HAL_ERROR;
+    return DIAG_RET(HAL_ERROR);
   }
 
   level = (mode == FRONTEND_MODE_IMPEDANCE) ? FRONTEND_OPTO_LEVEL_IMPEDANCE
@@ -89,7 +96,7 @@ HAL_StatusTypeDef Frontend_ReadRaw(ControlFrontend_t *fe, uint16_t *code)
 {
   if (fe == NULL)
   {
-    return HAL_ERROR;
+    return DIAG_RET(HAL_ERROR);
   }
   return AD7476_ReadRaw(&fe->adc, code);
 }
@@ -107,7 +114,7 @@ HAL_StatusTypeDef Frontend_ReadVolts(ControlFrontend_t *fe, float *volts)
 {
   if (fe == NULL)
   {
-    return HAL_ERROR;
+    return DIAG_RET(HAL_ERROR);
   }
   return AD7476_ReadVolts(&fe->adc, fe->vref, volts);
 }

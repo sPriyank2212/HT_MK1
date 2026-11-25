@@ -8,6 +8,7 @@
 /* USER CODE END Header */
 
 #include "drivers/dac8830.h"
+#include "app/log.h"
 
 /**
   * @brief  Write a raw 16-bit code to the DAC8830 output register.
@@ -26,11 +27,12 @@ HAL_StatusTypeDef DAC8830_WriteCode(DAC8830_t *dev, uint16_t code)
 
   if (dev == NULL || dev->hspi == NULL)
   {
-    return HAL_ERROR;
+    return DIAG_RET(HAL_ERROR);
   }
 
   HAL_GPIO_WritePin(dev->cs_port, dev->cs_pin, GPIO_PIN_RESET);
   st = HAL_SPI_Transmit(dev->hspi, (uint8_t *)&tx, 1U, DAC8830_SPI_TIMEOUT);
+  if (st != HAL_OK) { Diag_Spi(__FILE_NAME__, __LINE__, "dac8830 tx", st, dev->hspi); }
   HAL_GPIO_WritePin(dev->cs_port, dev->cs_pin, GPIO_PIN_SET);  /* latch on rise */
 
   return st;
@@ -68,7 +70,7 @@ HAL_StatusTypeDef DAC8830_Init(DAC8830_t *dev, SPI_HandleTypeDef *hspi,
 {
   if (dev == NULL || hspi == NULL || cs_port == NULL)
   {
-    return HAL_ERROR;
+    return DIAG_RET(HAL_ERROR);
   }
   dev->hspi    = hspi;
   dev->cs_port = cs_port;

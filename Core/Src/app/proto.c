@@ -113,10 +113,12 @@ static void proto_emit(char mark, const char *fmt, ...)
   * @param  text : [in] short human-readable explanation.
   * @retval None
   */
-static void proto_err(const char *code, const char *text)
+static void proto_err_at(const char *code, const char *text, const char *file, int line)
 {
+  Log_WriteAt(LOG_WARN, file, line, "PROTO", "ERR %s %s", code, text);
   proto_emit('<', "ERR %s %s", code, text);
 }
+#define proto_err(code, text) proto_err_at((code), (text), __FILE_NAME__, __LINE__)
 
 void Proto_EvtProgress(uint16_t done, uint16_t total)
 {
@@ -413,7 +415,37 @@ static int proto_hw_ready(void)
 {
   if (Board_IsReady() == 0U)
   {
-    proto_err("EHW", "board init failed - card missing or unseated");
+    char where[28];
+    char site[36];
+    Board_InitFailText(where, (uint8_t)sizeof where);
+    Diag_FirstText(site, (uint8_t)sizeof site);
+    LOG_W("BOARD", "refused: init failed at %s (hal=%u) first: %s", where,
+          (unsigned)Board_InitFailStatus(), site);
+    proto_emit('<', "ERR EHW board init failed at %s (hal=%u) %s",
+               where, (unsigned)Board_InitFailStatus(), site);
+    /* CL-105: the boot log is gone by the time the GUI connects - say how
+     * often init ran and how each matrix attempt of the last run ended. */
+    LOG_W("BOARD", "init runs=%u (1 = boot only; tScan retries in the background)",
+          (unsigned)Board_InitRuns());
+    Tasks_LogMatrixRecords();
+    return 0;
+  }
+  return 1;
+}
+
+/**
+  * @brief  Refuse an HV command with ERR EHW if no HV card came up at boot.
+  * @note   Continuity and resistance do not need an HV card, so Board_IsReady()
+  *         stays true without one; arming or running insulation does need it.
+  * @retval Non-zero if at least one HV card is fitted, 0 if ERR EHW was sent.
+  */
+static int proto_hv_fitted(void)
+{
+  if (Board_HvAnyFitted() == 0U)
+  {
+    LOG_W("BOARD", "HV command refused: no HV card fitted (hv1 hal=%u)",
+          (unsigned)Board_HvStatus(0U));
+    proto_emit('<', "ERR EHW no HV card fitted (hv1 hal=%u)", (unsigned)Board_HvStatus(0U));
     return 0;
   }
   return 1;
@@ -470,9 +502,22 @@ static void proto_exec(char *line)
   }
   else if (strcmp(t[0], "STATUS") == 0)
   {
+    static uint8_t s_boot_told = 0U;
     proto_emit('<', "STATUS state=%s fixture=%s hv_mv=%ld",
                proto_state_name(),
                proto_fixture_name(s_fixture), (long)s_hv_mv);
+    /* CL-105: once per boot, after the reply (the GUI handshake sends STATUS),
+     * so the GUI log always carries how the board came up - including a cold
+     * start whose own boot lines went out before the GUI connected. */
+    if (s_boot_told == 0U)
+    {
+      s_boot_told = 1U;
+      LOG_I("BOARD", "%s, init runs=%u, matrix tries=%u (last run), i2c %s",
+            (Board_IsReady() != 0U) ? "ready" : "NOT ready",
+            (unsigned)Board_InitRuns(), (unsigned)Board_MatrixTries(),
+            (BOARD_I2C_FAST != 0) ? "400k" : "100k");
+      Tasks_LogMatrixRecords();
+    }
   }
   else if (strcmp(t[0], "SAFE") == 0)
   {
@@ -590,7 +635,11 @@ static void proto_exec(char *line)
     {
       /* Arming is refused unless the harness has been moved to the HV fixture.
        * The GUI enforces this too, but it must not be the only thing that does. */
-      if (s_fixture != PROTO_FIXTURE_HV)
+      if (proto_hv_fitted() == 0)
+      {
+        /* ERR EHW already sent: there is no HV card to arm for. */
+      }
+      else if (s_fixture != PROTO_FIXTURE_HV)
       {
         proto_err("EFIXTURE", "move harness to the HV fixture");
       }
@@ -604,7 +653,7 @@ static void proto_exec(char *line)
     else if (strcmp(t[1], "RUN") == 0)
     {
       if (s_armed == 0U) { proto_err("ENOTARMED", "INSUL ARM first"); }
-      else if (proto_hw_ready() != 0) { proto_post_run(CMD_INSUL_RUN, 0U); }
+      else if (proto_hw_ready() != 0 && proto_hv_fitted() != 0) { proto_post_run(CMD_INSUL_RUN, 0U); }
     }
     else
     {

@@ -8,6 +8,7 @@
 /* USER CODE END Header */
 
 #include "cards/hv_card.h"
+#include "app/log.h"
 
 /* Settle time after asserting this board's bus-enable line, before the first
  * I2C transaction: the isolator's own propagation delay is nanoseconds, but
@@ -135,7 +136,7 @@ static HAL_StatusTypeDef hv_side_close_one(MCP23017_t side[HV_MCP_PER_SIDE], uin
 
   if (pin < 1U || pin > HV_PINS_PER_SIDE)
   {
-    return HAL_ERROR;
+    return DIAG_RET(HAL_ERROR);
   }
   hv_map(pin, &exp, &bit);
 
@@ -159,7 +160,7 @@ HAL_StatusTypeDef HvCard_OpenAllRelays(HvCard_t *hv)
   HAL_StatusTypeDef st;
   if (hv == NULL)
   {
-    return HAL_ERROR;
+    return DIAG_RET(HAL_ERROR);
   }
   hv_bus_claim(hv);
   st = hv_side_open(hv->inject);
@@ -190,7 +191,7 @@ HAL_StatusTypeDef HvCard_Init(HvCard_t *hv, const HvCardCfg_t *cfg)
 
   if (hv == NULL || cfg == NULL || cfg->en_port == NULL)
   {
-    return HAL_ERROR;
+    return DIAG_RET(HAL_ERROR);
   }
   hv->cfg = *cfg;
   hv->bus_depth = 0U;
@@ -198,12 +199,12 @@ HAL_StatusTypeDef HvCard_Init(HvCard_t *hv, const HvCardCfg_t *cfg)
   hv_bus_claim(hv);
   for (i = 0U; i < HV_MCP_PER_SIDE; i++)
   {
-    st = MCP23017_Init(&hv->inject[i], cfg->i2c, cfg->inject_strap[i]);
+    st = DIAG_ST(MCP23017_Init(&hv->inject[i], cfg->i2c, cfg->inject_strap[i]), "hv: inject expander init");
     if (st != HAL_OK)
     {
       break;
     }
-    st = MCP23017_Init(&hv->ret[i], cfg->i2c, cfg->return_strap[i]);
+    st = DIAG_ST(MCP23017_Init(&hv->ret[i], cfg->i2c, cfg->return_strap[i]), "hv: return expander init");
     if (st != HAL_OK)
     {
       break;
@@ -216,18 +217,18 @@ HAL_StatusTypeDef HvCard_Init(HvCard_t *hv, const HvCardCfg_t *cfg)
   }
 
   /* DAC8830 -> 0 V program (HV off). */
-  st = DAC8830_Init(&hv->dac, cfg->spi, cfg->dac_cs_port, cfg->dac_cs_pin);
+  st = DIAG_ST(DAC8830_Init(&hv->dac, cfg->spi, cfg->dac_cs_port, cfg->dac_cs_pin), "hv: DAC init");
   if (st != HAL_OK)
   {
     return st;
   }
   /* Two sense ADCs share the isolated SPI, each with its own soft-CS. */
-  st = AD7476_Init(&hv->adc_rail, cfg->spi, cfg->adc_rail_cs_port, cfg->adc_rail_cs_pin);
+  st = DIAG_ST(AD7476_Init(&hv->adc_rail, cfg->spi, cfg->adc_rail_cs_port, cfg->adc_rail_cs_pin), "hv: rail ADC init");
   if (st != HAL_OK)
   {
     return st;
   }
-  st = AD7476_Init(&hv->adc_leak, cfg->spi, cfg->adc_leak_cs_port, cfg->adc_leak_cs_pin);
+  st = DIAG_ST(AD7476_Init(&hv->adc_leak, cfg->spi, cfg->adc_leak_cs_port, cfg->adc_leak_cs_pin), "hv: leak ADC init");
   if (st != HAL_OK)
   {
     return st;
@@ -250,7 +251,7 @@ HAL_StatusTypeDef HvCard_CloseInject(HvCard_t *hv, uint8_t pin)
 
   if (hv == NULL)
   {
-    return HAL_ERROR;
+    return DIAG_RET(HAL_ERROR);
   }
   hv_bus_claim(hv);
   st = hv_side_close_one(hv->inject, pin);
@@ -270,7 +271,7 @@ HAL_StatusTypeDef HvCard_CloseReturn(HvCard_t *hv, uint8_t pin)
 
   if (hv == NULL)
   {
-    return HAL_ERROR;
+    return DIAG_RET(HAL_ERROR);
   }
   hv_bus_claim(hv);
   st = hv_side_close_one(hv->ret, pin);
@@ -298,7 +299,7 @@ HAL_StatusTypeDef HvCard_CloseReturnMask(HvCard_t *hv, uint64_t mask)
 
   if (hv == NULL || mask == 0ULL)
   {
-    return HAL_ERROR;
+    return DIAG_RET(HAL_ERROR);
   }
   hv_bus_claim(hv);
   st = hv_side_open(hv->ret);
@@ -385,7 +386,7 @@ HAL_StatusTypeDef HvCard_HvEnable(HvCard_t *hv, uint8_t on)
 {
   if (hv == NULL)
   {
-    return HAL_ERROR;
+    return DIAG_RET(HAL_ERROR);
   }
   return (on != 0U) ? HAL_OK : HvCard_HvOff(hv);
 }

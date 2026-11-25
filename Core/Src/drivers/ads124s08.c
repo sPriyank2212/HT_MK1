@@ -8,6 +8,7 @@
 /* USER CODE END Header */
 
 #include "drivers/ads124s08.h"
+#include "app/log.h"
 
 #ifndef ADS124S08_SPI_TIMEOUT
 #define ADS124S08_SPI_TIMEOUT   100U
@@ -58,12 +59,16 @@ static HAL_StatusTypeDef ads_xfer(ADS124S08_t *dev, const uint8_t *tx,
   {
     if (n > sizeof(scratch))
     {
-      return HAL_ERROR;
+      return DIAG_RET(HAL_ERROR);
     }
     rx = scratch;
   }
-  return HAL_SPI_TransmitReceive(dev->spi, (uint8_t *)tx, rx, n,
-                                 ADS124S08_SPI_TIMEOUT);
+  {
+    HAL_StatusTypeDef sst = HAL_SPI_TransmitReceive(dev->spi, (uint8_t *)tx, rx, n,
+                                                    ADS124S08_SPI_TIMEOUT);
+    if (sst != HAL_OK) { Diag_Spi(__FILE_NAME__, __LINE__, "ads124s08 xfer", sst, dev->spi); }
+    return sst;
+  }
 }
 
 /**
@@ -132,7 +137,7 @@ HAL_StatusTypeDef ADS124S08_Command(ADS124S08_t *dev, uint8_t cmd)
 
   if (dev == NULL)
   {
-    return HAL_ERROR;
+    return DIAG_RET(HAL_ERROR);
   }
   return ads_framed(dev, &tx, NULL, 1U);
 }
@@ -151,7 +156,7 @@ HAL_StatusTypeDef ADS124S08_WriteReg(ADS124S08_t *dev, uint8_t reg, uint8_t val)
 
   if (dev == NULL)
   {
-    return HAL_ERROR;
+    return DIAG_RET(HAL_ERROR);
   }
   tx[0] = (uint8_t)(ADS124S08_CMD_WREG | (reg & 0x1FU));
   tx[1] = 0U;      /* one register */
@@ -175,7 +180,7 @@ HAL_StatusTypeDef ADS124S08_ReadReg(ADS124S08_t *dev, uint8_t reg, uint8_t *val)
 
   if (dev == NULL || val == NULL)
   {
-    return HAL_ERROR;
+    return DIAG_RET(HAL_ERROR);
   }
   tx[0] = (uint8_t)(ADS124S08_CMD_RREG | (reg & 0x1FU));
 
@@ -201,7 +206,7 @@ HAL_StatusTypeDef ADS124S08_Reset(ADS124S08_t *dev)
 
   if (dev == NULL)
   {
-    return HAL_ERROR;
+    return DIAG_RET(HAL_ERROR);
   }
 
   st = dev->io.start(dev->io.ctx, 0U);
@@ -274,7 +279,7 @@ HAL_StatusTypeDef ADS124S08_SetIdac(ADS124S08_t *dev, uint8_t idac1_mux,
 
   if (dev == NULL)
   {
-    return HAL_ERROR;
+    return DIAG_RET(HAL_ERROR);
   }
   st = ADS124S08_WriteReg(dev, ADS124S08_REG_IDACMUX,
                           (uint8_t)(((idac2_mux & 0x0FU) << 4) | (idac1_mux & 0x0FU)));
@@ -298,7 +303,7 @@ HAL_StatusTypeDef ADS124S08_SetGain(ADS124S08_t *dev, ADS124S08_Gain_t gain)
 
   if (dev == NULL)
   {
-    return HAL_ERROR;
+    return DIAG_RET(HAL_ERROR);
   }
   st = ADS124S08_WriteReg(dev, ADS124S08_REG_PGA,
                           (uint8_t)(ADS124S08_PGA_ENABLE | ((uint8_t)gain & 0x07U)));
@@ -320,7 +325,7 @@ HAL_StatusTypeDef ADS124S08_BypassPga(ADS124S08_t *dev)
 
   if (dev == NULL)
   {
-    return HAL_ERROR;
+    return DIAG_RET(HAL_ERROR);
   }
   /* Datasheet requires GAIN[2:0] = 000 when the PGA is bypassed. */
   st = ADS124S08_WriteReg(dev, ADS124S08_REG_PGA, ADS124S08_PGA_BYPASS);
@@ -345,7 +350,7 @@ HAL_StatusTypeDef ADS124S08_SetRate(ADS124S08_t *dev, ADS124S08_Rate_t rate)
 
   if (dev == NULL)
   {
-    return HAL_ERROR;
+    return DIAG_RET(HAL_ERROR);
   }
   st = ADS124S08_WriteReg(dev, ADS124S08_REG_DATARATE,
                           (uint8_t)(0x10U | ((uint8_t)rate & 0x0FU)));
@@ -374,7 +379,7 @@ HAL_StatusTypeDef ADS124S08_Init(ADS124S08_t *dev, SPI_HandleTypeDef *spi,
   if (dev == NULL || spi == NULL || io == NULL ||
       io->cs == NULL || io->reset == NULL || io->start == NULL)
   {
-    return HAL_ERROR;
+    return DIAG_RET(HAL_ERROR);
   }
 
   dev->spi  = spi;
@@ -443,7 +448,7 @@ HAL_StatusTypeDef ADS124S08_SelfOffsetCal(ADS124S08_t *dev)
 
   if (dev == NULL)
   {
-    return HAL_ERROR;
+    return DIAG_RET(HAL_ERROR);
   }
   period = ADS124S08_PeriodMs(dev->rate);
 
@@ -512,7 +517,7 @@ HAL_StatusTypeDef ADS124S08_ConvertOnce(ADS124S08_t *dev, int32_t *code)
 
   if (dev == NULL || code == NULL)
   {
-    return HAL_ERROR;
+    return DIAG_RET(HAL_ERROR);
   }
 
   st = ADS124S08_Command(dev, ADS124S08_CMD_START);
@@ -537,6 +542,7 @@ HAL_StatusTypeDef ADS124S08_ConvertOnce(ADS124S08_t *dev, int32_t *code)
   {
     return st;
   }
+  if (ready == 0U) { DIAG_FAIL("ads124s08 DRDY timeout", HAL_TIMEOUT); }
   return (ready != 0U) ? HAL_OK : HAL_TIMEOUT;
 }
 
@@ -560,7 +566,7 @@ HAL_StatusTypeDef ADS124S08_ConvertAverage(ADS124S08_t *dev, uint16_t n, int32_t
 
   if (dev == NULL || code == NULL || n == 0U)
   {
-    return HAL_ERROR;
+    return DIAG_RET(HAL_ERROR);
   }
   period = ADS124S08_PeriodMs(dev->rate);
 

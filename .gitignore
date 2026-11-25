@@ -11,3 +11,12 @@ Release/
 *.bin
 *.hex
 tests/fw_host/out/
+
+# Python tool build output / virtualenv, packaged exes and archives (regenerable)
+gui_client_required/venv/
+gui_client_required/build/
+gui_client_required/dist/
+__pycache__/
+/Customer_Export.zip
+/Firmware_Debug_Package.zip
+/Firmware_Debug_Package_.zip

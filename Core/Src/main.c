@@ -107,7 +107,12 @@ int main(void)
    * from starting. Board_IsReady() latches the outcome; the sequencer
    * (proto.c) checks it before any hardware command and refuses with a clean
    * ERR EHW instead of running against un-initialised card state. */
+  /* Simple boot trail (polled, bounded 20 ms each; USART2 is already up). If the
+   * board ever goes quiet, the last "#[boot]" line says how far it got. */
+#define BOOT_PRINT(s) (void)HAL_UART_Transmit(&huart2, (uint8_t *)(s), (uint16_t)(sizeof(s) - 1U), 20U)
+  BOOT_PRINT("#[boot] main: peripherals up, Board_Init start\r\n");
   (void)Board_Init();
+  BOOT_PRINT("#[boot] main: Board_Init done, starting scheduler\r\n");
   /* USER CODE END 2 */
 
   /* Init scheduler */

@@ -87,6 +87,13 @@ typedef struct
 void Tasks_Init(void);
 
 /**
+  * @brief  Log one "BOARD: mx ..." line per matrix-stage attempt of the last
+  *         Board_Init() (I2C2 state before the bus clear, result). CL-105.
+  * @retval None
+  */
+void Tasks_LogMatrixRecords(void);
+
+/**
   * @brief  Post a test command to the sequencer. Non-blocking.
   * @retval 0 on success, non-zero if the queue was full.
   */
@@ -95,7 +102,9 @@ int Tasks_PostCommand(const TestCmd_t *cmd);
 /**
   * @brief  Raise a system fault; the safety task forces a safe state.
   */
-void Safety_SignalFault(const char *reason);
+void Safety_SignalFaultAt(const char *reason, const char *file, int line);
+/* Logs the reason with the file:line of the caller, then latches the fault. */
+#define Safety_SignalFault(reason) Safety_SignalFaultAt((reason), __FILE_NAME__, __LINE__)
 
 /**
   * @brief  Clear the fault latch (after the cause is handled).

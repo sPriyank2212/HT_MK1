@@ -8,6 +8,7 @@
 /* USER CODE END Header */
 
 #include "drivers/ad7476.h"
+#include "app/log.h"
 
 /* The HV-card chip-selects arrive as GPIO pins that CubeMX leaves in INPUT mode
  * (PC13/PC14/PC0). WritePin on an input only changes the output latch, so the
@@ -40,7 +41,7 @@ HAL_StatusTypeDef AD7476_Init(AD7476_t *dev, SPI_HandleTypeDef *hspi,
 {
   if (dev == NULL || hspi == NULL || cs_port == NULL)
   {
-    return HAL_ERROR;
+    return DIAG_RET(HAL_ERROR);
   }
   dev->hspi    = hspi;
   dev->cs_port = cs_port;
@@ -69,18 +70,38 @@ HAL_StatusTypeDef AD7476_ReadRaw(AD7476_t *dev, uint16_t *code)
 
   if (dev == NULL || dev->hspi == NULL || code == NULL)
   {
-    return HAL_ERROR;
+    return DIAG_RET(HAL_ERROR);
   }
 
   /* CS low starts the conversion; the 16-clock frame reads the result. */
   HAL_GPIO_WritePin(dev->cs_port, dev->cs_pin, GPIO_PIN_RESET);
   st = HAL_SPI_Receive(dev->hspi, (uint8_t *)&rx, 1U, AD7476_SPI_TIMEOUT);
+  if (st != HAL_OK) { Diag_Spi(__FILE_NAME__, __LINE__, "ad7476 rx", st, dev->hspi); }
   HAL_GPIO_WritePin(dev->cs_port, dev->cs_pin, GPIO_PIN_SET);
 
+  dev->last_raw = rx;
   if (st == HAL_OK)
   {
     *code = (uint16_t)(rx & AD7476_CODE_MASK);
   }
+  return st;
+}
+
+/**
+  * @brief  CL-112: one dummy conversion after power-up, result discarded.
+  * @note   Bench 2026-11-23: the first reading after boot was 0x0FFF (open)
+  *         with the path shorted, every later one correct. The datasheet
+  *         says the first conversion after power-up is not valid, so it is
+  *         thrown away here. CS low for the full 16 clocks keeps the part
+  *         powered up afterwards.
+  * @param  dev : [in] bound driver instance.
+  * @retval HAL status of the dummy frame.
+  */
+HAL_StatusTypeDef AD7476_WakeUp(AD7476_t *dev)
+{
+  uint16_t dummy = 0U;
+  HAL_StatusTypeDef st = AD7476_ReadRaw(dev, &dummy);
+  (void)dummy;
   return st;
 }
 
@@ -113,7 +134,7 @@ HAL_StatusTypeDef AD7476_ReadVolts(AD7476_t *dev, float vref, float *volts)
 
   if (volts == NULL)
   {
-    return HAL_ERROR;
+    return DIAG_RET(HAL_ERROR);
   }
   st = AD7476_ReadRaw(dev, &code);
   if (st == HAL_OK)

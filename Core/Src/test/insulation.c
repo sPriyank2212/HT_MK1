@@ -8,6 +8,7 @@
 /* USER CODE END Header */
 
 #include "test/insulation.h"
+#include "app/log.h"
 
 /* Operator-set minimum insulation resistance, milliohms (FW-11). Written only
  * by Insulation_SetMinMohm(), which the protocol layer calls outside a run. */
@@ -19,7 +20,7 @@ HAL_StatusTypeDef Insulation_SetMinMohm(int64_t mohm)
 
   if (!Insulation_LimitValid(mohm))
   {
-    return HAL_ERROR;
+    return DIAG_RET(HAL_ERROR);
   }
   /* A 64-bit store is two 32-bit stores on Cortex-M4: keep an interrupt or a
    * preempting task from ever reading half of it. */
@@ -144,7 +145,7 @@ static HAL_StatusTypeDef insulation_run(uint8_t board, uint8_t inject_pin,
       return_mask == 0ULL || v_fraction < INSULATION_MIN_FRACTION ||
       Insulation_PassLimitVoltsFor(v_fraction, s_limit_mohm) < INSULATION_MIN_PASS_V)
   {
-    return HAL_ERROR;
+    return DIAG_RET(HAL_ERROR);
   }
   hv = &g_hv[board];
 
@@ -289,7 +290,7 @@ HAL_StatusTypeDef Insulation_HvSelfTest(uint8_t board, float *v_idle, float *v_h
 
   if (board >= (uint8_t)BOARD_HV_COUNT)
   {
-    return HAL_ERROR;
+    return DIAG_RET(HAL_ERROR);
   }
   hv = &g_hv[board];
   HvCard_Hold(hv);
@@ -327,7 +328,7 @@ HAL_StatusTypeDef Insulation_TestPair(uint8_t board, uint8_t inject_pin,
 {
   if (return_pin < 1U || return_pin > (uint8_t)HV_PINS_PER_SIDE)
   {
-    return HAL_ERROR;
+    return DIAG_RET(HAL_ERROR);
   }
   return insulation_run(board, inject_pin, 1ULL << (return_pin - 1U),
                         v_fraction, res);

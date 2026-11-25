@@ -9,6 +9,7 @@
 /* USER CODE END Header */
 
 #include "drivers/mcp23017.h"
+#include "app/log.h"
 
 /* HAL expects the address left-shifted into bits 7:1. */
 #define MCP23017_HAL_ADDR(dev)   ((uint16_t)((dev)->addr7 << 1))
@@ -28,12 +29,15 @@
   */
 HAL_StatusTypeDef MCP23017_WriteReg(MCP23017_t *dev, uint8_t reg, uint8_t val)
 {
+  HAL_StatusTypeDef st;
   if (dev == NULL || dev->hi2c == NULL)
   {
-    return HAL_ERROR;
+    return DIAG_RET(HAL_ERROR);
   }
-  return HAL_I2C_Mem_Write(dev->hi2c, MCP23017_HAL_ADDR(dev), reg,
-                           I2C_MEMADD_SIZE_8BIT, &val, 1U, MCP23017_I2C_TIMEOUT);
+  st = HAL_I2C_Mem_Write(dev->hi2c, MCP23017_HAL_ADDR(dev), reg,
+                         I2C_MEMADD_SIZE_8BIT, &val, 1U, MCP23017_I2C_TIMEOUT);
+  if (st != HAL_OK) { Diag_I2c(__FILE_NAME__, __LINE__, "wr", st, dev->hi2c, dev->addr7, reg); }
+  return st;
 }
 
 /**
@@ -47,12 +51,15 @@ HAL_StatusTypeDef MCP23017_WriteReg(MCP23017_t *dev, uint8_t reg, uint8_t val)
   */
 HAL_StatusTypeDef MCP23017_ReadReg(MCP23017_t *dev, uint8_t reg, uint8_t *val)
 {
+  HAL_StatusTypeDef st;
   if (dev == NULL || dev->hi2c == NULL || val == NULL)
   {
-    return HAL_ERROR;
+    return DIAG_RET(HAL_ERROR);
   }
-  return HAL_I2C_Mem_Read(dev->hi2c, MCP23017_HAL_ADDR(dev), reg,
-                          I2C_MEMADD_SIZE_8BIT, val, 1U, MCP23017_I2C_TIMEOUT);
+  st = HAL_I2C_Mem_Read(dev->hi2c, MCP23017_HAL_ADDR(dev), reg,
+                        I2C_MEMADD_SIZE_8BIT, val, 1U, MCP23017_I2C_TIMEOUT);
+  if (st != HAL_OK) { Diag_I2c(__FILE_NAME__, __LINE__, "rd", st, dev->hi2c, dev->addr7, reg); }
+  return st;
 }
 
 /**
@@ -70,16 +77,19 @@ HAL_StatusTypeDef MCP23017_ReadReg(MCP23017_t *dev, uint8_t reg, uint8_t *val)
 HAL_StatusTypeDef MCP23017_WriteReg16(MCP23017_t *dev, uint8_t reg_a, uint16_t val)
 {
   uint8_t buf[2];
+  HAL_StatusTypeDef st;
 
   if (dev == NULL || dev->hi2c == NULL)
   {
-    return HAL_ERROR;
+    return DIAG_RET(HAL_ERROR);
   }
   /* Sequential addressing: byte 0 -> port-A reg, byte 1 -> port-B reg. */
   buf[0] = (uint8_t)(val & 0xFFU);
   buf[1] = (uint8_t)(val >> 8);
-  return HAL_I2C_Mem_Write(dev->hi2c, MCP23017_HAL_ADDR(dev), reg_a,
-                           I2C_MEMADD_SIZE_8BIT, buf, 2U, MCP23017_I2C_TIMEOUT);
+  st = HAL_I2C_Mem_Write(dev->hi2c, MCP23017_HAL_ADDR(dev), reg_a,
+                         I2C_MEMADD_SIZE_8BIT, buf, 2U, MCP23017_I2C_TIMEOUT);
+  if (st != HAL_OK) { Diag_I2c(__FILE_NAME__, __LINE__, "wr16", st, dev->hi2c, dev->addr7, reg_a); }
+  return st;
 }
 
 /**
@@ -100,10 +110,11 @@ HAL_StatusTypeDef MCP23017_ReadReg16(MCP23017_t *dev, uint8_t reg_a, uint16_t *v
 
   if (dev == NULL || dev->hi2c == NULL || val == NULL)
   {
-    return HAL_ERROR;
+    return DIAG_RET(HAL_ERROR);
   }
   st = HAL_I2C_Mem_Read(dev->hi2c, MCP23017_HAL_ADDR(dev), reg_a,
                         I2C_MEMADD_SIZE_8BIT, buf, 2U, MCP23017_I2C_TIMEOUT);
+  if (st != HAL_OK) { Diag_I2c(__FILE_NAME__, __LINE__, "rd16", st, dev->hi2c, dev->addr7, reg_a); }
   if (st == HAL_OK)
   {
     *val = (uint16_t)buf[0] | ((uint16_t)buf[1] << 8);
@@ -134,7 +145,7 @@ HAL_StatusTypeDef MCP23017_Init(MCP23017_t *dev, I2C_HandleTypeDef *hi2c, uint8_
 
   if (dev == NULL || hi2c == NULL || a2a1a0 > 7U)
   {
-    return HAL_ERROR;
+    return DIAG_RET(HAL_ERROR);
   }
 
   dev->hi2c       = hi2c;
@@ -176,7 +187,7 @@ HAL_StatusTypeDef MCP23017_IsReady(MCP23017_t *dev)
 {
   if (dev == NULL || dev->hi2c == NULL)
   {
-    return HAL_ERROR;
+    return DIAG_RET(HAL_ERROR);
   }
   return HAL_I2C_IsDeviceReady(dev->hi2c, MCP23017_HAL_ADDR(dev), 3U,
                                MCP23017_I2C_TIMEOUT);
@@ -255,7 +266,7 @@ HAL_StatusTypeDef MCP23017_WritePin(MCP23017_t *dev, uint8_t pin, uint8_t state)
 
   if (dev == NULL || pin > 15U)
   {
-    return HAL_ERROR;
+    return DIAG_RET(HAL_ERROR);
   }
 
   next = dev->olat_cache;

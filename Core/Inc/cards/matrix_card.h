@@ -28,7 +28,7 @@
   *
   *          Exactly one segment may be enabled at a time. Every expander access
   *          therefore costs a segment selection first - which is itself an I2C
-  *          write to U21 on the Control Card.
+  *          write to U20 on the Control Card.
   *
   *          ENABLE BIT ORDER IS BYTE-SWAPPED. Within each 16-enable block the
   *          schematic wires GPB0..7 to EN1..8 and GPA0..7 to EN9..16. In the
@@ -77,11 +77,25 @@ typedef enum
   MATRIX_SEG_SENSE = 1    /* BUFF2, OE = LO_S3 */
 } MatrixSeg_t;
 
-/* BUFF1 - force enables. Straps read off Matrix_Card 2 sheet 3. */
+/* BUFF1 - force enables, plus U69 (strap 1) which shares this segment.
+ * Straps read off the fitted/DNP address resistors of Matrix_Card-9 sheet 3
+ * (A2,A1,A0 column order, DNP = crossed) and cross-checked 2026-11-20 against
+ * the MCP23017 datasheet (7-bit address = 0100 A2 A1 A0 = 0x20 + A2:A1:A0), the
+ * hardware checklist (Table 11) and the bus scan of 2026-11-19 17:52, where the
+ * force segment answered exactly 0x20 0x21 0x22 0x24 0x26.
+ * NOTE the force-sheet address labels (0x01000010, 0x01000100, 0x01000110) carry
+ * one 0 too many (8 digits against the sense sheet's 7); read as 8-bit
+ * "control byte" values they give 0x21/0x22/0x23, which is what this file used
+ * before 2026-11-20 and is wrong. The resistors decide:
+ *   U101 R113/R114/R115 fitted (pull-downs)          A=000 -> 0x20
+ *   U69  R91/R93 pull-downs, R95 pull-up   (sheet 9) A=001 -> 0x21
+ *   U102 R116 down, R111 up, R118 down               A=010 -> 0x22
+ *   U105 R162 up, R165 down, R167 down               A=100 -> 0x24
+ *   U106 R171 up, R173 up, R177 down                 A=110 -> 0x26         */
 #define MATRIX_HI_EN_LO_STRAP    0U   /* U101 0x20  HI_EN1..16  */
-#define MATRIX_LO_EN_LO_STRAP    1U   /* U102 0x21  LO_EN1..16  */
-#define MATRIX_HI_EN_HI_STRAP    2U   /* U105 0x22  HI_EN17..32 */
-#define MATRIX_LO_EN_HI_STRAP    3U   /* U106 0x23  LO_EN17..32 */
+#define MATRIX_LO_EN_LO_STRAP    2U   /* U102 0x22  LO_EN1..16  */
+#define MATRIX_HI_EN_HI_STRAP    4U   /* U105 0x24  HI_EN17..32 */
+#define MATRIX_LO_EN_HI_STRAP    6U   /* U106 0x26  LO_EN17..32 */
 
 /* BUFF2 - sense enables. Straps confirmed 2026-08-11 against Matrix_Card-7.pdf
  * sheet 9 (HW-12): each expander's binary address label was read directly off
@@ -95,25 +109,26 @@ typedef enum
 
 /* U69, the ADS124S08 control expander.
  *
- * RESOLVED 2026-08-11 (HW-12): the schematic swap that brought in
- * Matrix_Card-7.pdf also moved U69 to BUFF2 at strap 1 (0x21), sitting between
- * U66 (0x20) and U67 (0x22) - it no longer collides with U101 (which stays at
- * 0x20 on BUFF1, the force segment). Confirmed by reading both sheets, not
- * assumed. This layer never touches U69 - it belongs to the ADS124S08 driver
+ * CORRECTED 2026-11-20: U69 is on BUFF1 (the force segment) at strap 1 (0x21),
+ * NOT on BUFF2 as Matrix_Card-7 drew it (HW-12, 2026-08-11). Matrix_Card-9 sheet 9
+ * shows U69 on BUFF1_SDA/BUFF1_SCK; the bench scan of 2026-11-19 found 0x21 only
+ * with the force buffer on; and the firmware's lookup on the sense segment NAKed
+ * (init failed at ads124s08). On BUFF1 it does not clash with U101 (0x20) or
+ * U102 (0x22). This layer never touches U69 - it belongs to the ADS124S08 driver
  * (bsp/board.c) - but the strap is recorded here since it is the matrix's own
- * segment-select (U21/BUFF2) that every U69 access must go through first. */
+ * segment-select (U20/BUFF1) that every U69 access must go through first. */
 #ifndef MATRIX_ADCCTL_SEG
-#define MATRIX_ADCCTL_SEG        MATRIX_SEG_SENSE  /* BUFF2, confirmed */
+#define MATRIX_ADCCTL_SEG        MATRIX_SEG_FORCE  /* BUFF1, Matrix_Card-9 + bench */
 #endif
 #ifndef MATRIX_ADCCTL_STRAP
 #define MATRIX_ADCCTL_STRAP      1U                /* -> 0x21 on that segment */
 #endif
 
 /* -------------------------------------------------------------------------- */
-/* U21 - channel address + segment select, on the Control Card (I2C3)         */
+/* U20 - channel address + segment select, on the Control Card (I2C3)         */
 /* -------------------------------------------------------------------------- */
 
-/* Control_Card-4 sheet 11 wires U21 GPA0..GPA7 to
+/* Control_Card-4 sheet 11 wires U20 GPA0..GPA7 to
  *   LO_S1, LO_S2, LO_S3, LO_S4, HI_S1, HI_S2, HI_S3, HI_S4
  * and the Matrix Card names the same eight wires LO_S0..S3 / HI_S0..S3, i.e.
  * the two cards number them from a different base. Mapping Control Sn+1 to
@@ -138,18 +153,21 @@ typedef enum
 #define MATRIX_SEG_OE_ACTIVE_HIGH  1
 #endif
 
-/* U21's own strap. Not annotated - confirm by scan. U21 is local to the
- * Control Card on I2C3 and does NOT share a bus with the Matrix expanders -
- * see the bus-sharing note above matrix_card_t below. */
+/* U20's strap. CONFIRMED against Control_Card-6 sheet 11 (2026-11): the symbol's
+ * address box reads 0x0100000, i.e. A2:A1:A0 = 000 -> 7-bit 0x20. (Until
+ * 2026-11-16 this was assumed to be strap 7 / 0x27 and was never right: U20 never
+ * answered, MatrixCard_Init() failed at its first step and Board_Init() refused
+ * every hardware command.) U20 is local to the Control Card on I2C3 and does NOT
+ * share a bus with the Matrix expanders - see the bus-sharing note below. */
 #ifndef MATRIX_SEL_MCP_STRAP
-#define MATRIX_SEL_MCP_STRAP     7U   /* -> 0x27 (assumed) */
+#define MATRIX_SEL_MCP_STRAP     0U   /* -> 0x20 (Control_Card-6 sheet 11) */
 #endif
 
 /* -------------------------------------------------------------------------- */
 /* Card-level bus sharing (confirmed 2026-08-11, see Doc/i2c_bus_sharing.md)   */
 /* -------------------------------------------------------------------------- */
 
-/* The Matrix Card's own onboard expanders (everything above except U21, which
+/* The Matrix Card's own onboard expanders (everything above except U20, which
  * is local to the Control Card on I2C3) sit on the SAME isolated I2C bus as
  * HV Card 1 - confirmed against real hardware, not inferred. Every card on
  * that bus straps its expanders to the same 0x20..0x27, so the Matrix Card
@@ -179,16 +197,19 @@ typedef struct
   MCP23017_t hi_sns[MATRIX_EXP_PER_BANK];  /* HI_SENSE_EN1..16, 17..32 */
   MCP23017_t lo_sns[MATRIX_EXP_PER_BANK];  /* LO_SENSE_EN1..16, 17..32 */
 
-  MCP23017_t  sel;          /* U21 - channel address + segment OEs       */
-  uint16_t    sel_cache;    /* shadow of the U21 output word             */
+  MCP23017_t  sel;          /* U20 - channel address + segment OEs       */
+  uint16_t    sel_cache;    /* shadow of the U20 output word             */
   MatrixSeg_t seg;          /* which segment is currently enabled        */
   uint8_t     sense_paired; /* mirror every enable onto the sense array  */
 
   /* This card's segment enable on the shared I2C bus (HV_Card_EN1) - must be
    * asserted before, and deasserted after, every access to hi_en/lo_en/
    * hi_sns/lo_sns above (and, via MatrixCard_BusClaim/Release, U69 - see
-   * bsp/board.c). Never needed for sel (U21), which is local to I2C3. */
+   * bsp/board.c). Never needed for sel (U20), which is local to I2C3. */
   GPIO_TypeDef *en_port;    uint16_t en_pin;
+  /* CL-106: non-zero while a caller holds the bus for a whole scan row
+   * (MatrixCard_BusHold): Claim/Release then neither toggle EN1 nor wait. */
+  uint8_t       bus_hold;
 } MatrixCard_t;
 
 /* -------------------------------------------------------------------------- */
@@ -196,13 +217,13 @@ typedef struct
 /* -------------------------------------------------------------------------- */
 
 /**
-  * @brief  Bring up U21 and all eight enable expanders, and open every mux.
+  * @brief  Bring up U20 and all eight enable expanders, and open every mux.
   * @note   Walks both segments in turn. Leaves the force segment selected and
   *         sense pairing OFF. Claims the shared-bus enable (@p en_port/
   *         @p en_pin) around the expander bring-up, same as every other
   *         function that touches hi_en/lo_en/hi_sns/lo_sns.
   * @param  m          instance
-  * @param  hi2c_local  I2C bus for U21 only (I2C3 - local to the Control Card)
+  * @param  hi2c_local  I2C bus for U20 only (I2C3 - local to the Control Card)
   * @param  hi2c_shared I2C bus for the eight Matrix-card expanders (shared
   *                      with the HV cards - see the header note above)
   * @param  en_port/en_pin  this card's segment-enable line on the shared bus
@@ -212,6 +233,11 @@ typedef struct
 HAL_StatusTypeDef MatrixCard_Init(MatrixCard_t *m, I2C_HandleTypeDef *hi2c_local,
                                   I2C_HandleTypeDef *hi2c_shared,
                                   GPIO_TypeDef *en_port, uint16_t en_pin);
+
+/** @brief Last step MatrixCard_Init() reached ("U20", "flush", "seg-force", "force-exp", "seg-sense", "sense-exp", "seg-final"). Diagnostics. */
+const char *MatrixCard_InitStep(void);
+/** @brief 7-bit address of the expander that step was talking to (0 if not an expander step). */
+uint8_t MatrixCard_InitAddr(void);
 
 /**
   * @brief  Put the Matrix Card, and only the Matrix Card, on the shared bus.
@@ -228,8 +254,30 @@ void MatrixCard_BusClaim(MatrixCard_t *m);
 void MatrixCard_BusRelease(MatrixCard_t *m);
 
 /**
+  * @brief  Claim the shared bus and keep it claimed until MatrixCard_BusUnhold().
+  * @note   CL-106, for row scans: every Claim/Release in between is a no-op, so
+  *         the EN1 settle (MATRIX_BUS_EN_SETTLE_MS) is paid once per row, not
+  *         three times per pair. Caller must hold the hardware mutex.
+  */
+void MatrixCard_BusHold(MatrixCard_t *m);
+/** @brief End a MatrixCard_BusHold(): EN1 goes low again. */
+void MatrixCard_BusUnhold(MatrixCard_t *m);
+
+/**
+  * @brief  Move the LO side from @p prev_lo to @p lo_pin, leaving the HI side as it is.
+  * @note   CL-106, for row scans. The previous call must have left exactly
+  *         @p prev_lo connected on the LO bank (MatrixCard_ConnectPair or this
+  *         function). Break-before-make: the old LO enable goes off, U20's LO
+  *         channel bits are rewritten (only if they change), then the new LO
+  *         enable goes on - 3 I2C writes instead of ~13 for ConnectPair + AllOff.
+  *         Force array only: returns HAL_ERROR if sense pairing is on.
+  * @retval HAL_OK, HAL_ERROR on a bad argument / sense pairing, else propagated.
+  */
+HAL_StatusTypeDef MatrixCard_SwitchLo(MatrixCard_t *m, uint16_t prev_lo, uint16_t lo_pin);
+
+/**
   * @brief  Enable exactly one I2C segment. No-op if already selected.
-  * @note   Costs one I2C write to U21. Everything that touches an expander must
+  * @note   Costs one I2C write to U20. Everything that touches an expander must
   *         go through here first.
   */
 HAL_StatusTypeDef MatrixCard_SelectSegment(MatrixCard_t *m, MatrixSeg_t seg);
@@ -244,7 +292,7 @@ HAL_StatusTypeDef MatrixCard_SelectSegment(MatrixCard_t *m, MatrixSeg_t seg);
   *         expander. Call this BEFORE raising a line shared with the Matrix
   *         (hv_card.c does, through HvCardCfg_t.pre_enable). The next
   *         MatrixCard_SelectSegment() re-selects normally. Local to the Control
-  *         Card (U21 on I2C3): needs no bus claim.
+  *         Card (U20 on I2C3): needs no bus claim.
   * @retval HAL_OK on success (also when already off), HAL_ERROR on NULL, else the
   *         propagated I2C status.
   */
@@ -271,13 +319,13 @@ HAL_StatusTypeDef MatrixCard_BankOff(MatrixCard_t *m, MatrixBank_t bank);
 /**
   * @brief  Connect one harness pin (1..256) to the given bank's common bus.
   *         Break-before-make: the bank is opened, the shared 3-bit channel
-  *         address is driven via U21, then exactly one enable is asserted.
+  *         address is driven via U20, then exactly one enable is asserted.
   */
 HAL_StatusTypeDef MatrixCard_SelectPin(MatrixCard_t *m, MatrixBank_t bank, uint16_t pin);
 
 /**
   * @brief  Connect a HI pin and a LO pin. Both channel addresses live in one
-  *         U21 byte, so they are staged and flushed together.
+  *         U20 byte, so they are staged and flushed together.
   */
 HAL_StatusTypeDef MatrixCard_ConnectPair(MatrixCard_t *m, uint16_t hi_pin, uint16_t lo_pin);
 

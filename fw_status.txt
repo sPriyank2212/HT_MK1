@@ -30,6 +30,11 @@
      "build=YYYY-MM-DDTHH:MM:SS" (build PC's clock via __DATE__/__TIME__, no RTC).
      .cproject touches build_info.c in a pre-build step (Debug and Release) so
      every build is re-stamped.
+   - WATCHDOG START FIX (FW-22, 2026-11-14): the IWDG start-up waited for its update
+     flags before writing the start key, so the LSI never ran and tSafety (highest
+     priority) spun forever, starving comms and the logger: no PONG after boot. Now
+     the start key is written first and the wait is bounded (50 ms). Confirmed on
+     the bench (Control Card alone). The 2026-11-13 image has the hang; do not use.
    - HW-15 (decided by the hardware owner): HV card N -> Control slot J<N> / EN<N>;
      J1 (= Matrix J101) is shared by the Matrix Card and HV card 1; up to 4 cards
      (BOARD_HV_COUNT 1..4). board_init_hv() previously put HV 1 on EN2 and allowed 3.

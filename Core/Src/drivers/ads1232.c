@@ -141,7 +141,7 @@ static HAL_StatusTypeDef ads1232_read_retry(ADS1232_t *dev, int32_t *code,
     }
   }
   s_retries += (uint16_t)ADS1232_READ_ATTEMPTS;
-  return HAL_ERROR;
+  return DIAG_RET(HAL_ERROR);
 }
 
 /**
@@ -182,11 +182,11 @@ HAL_StatusTypeDef ADS1232_Init(ADS1232_t *dev, const ADS1232_Cfg_t *cfg)
 {
   if (dev == NULL || cfg == NULL)
   {
-    return HAL_ERROR;
+    return DIAG_RET(HAL_ERROR);
   }
   if (cfg->sclk.port == NULL || cfg->dout.port == NULL)
   {
-    return HAL_ERROR;   /* the two-wire interface is not optional */
+    return DIAG_RET(HAL_ERROR);   /* the two-wire interface is not optional */
   }
 
   dev->cfg         = *cfg;
@@ -218,11 +218,11 @@ HAL_StatusTypeDef ADS1232_SetGain(ADS1232_t *dev, ADS1232_Gain_t gain)
 {
   if (dev == NULL)
   {
-    return HAL_ERROR;
+    return DIAG_RET(HAL_ERROR);
   }
   if (dev->cfg.gain0.port == NULL || dev->cfg.gain1.port == NULL)
   {
-    return HAL_ERROR;   /* strapped - cannot change from firmware */
+    return DIAG_RET(HAL_ERROR);   /* strapped - cannot change from firmware */
   }
 
   dev->cfg.gain = gain;
@@ -241,11 +241,11 @@ HAL_StatusTypeDef ADS1232_SetChannel(ADS1232_t *dev, ADS1232_Channel_t ch)
 {
   if (dev == NULL)
   {
-    return HAL_ERROR;
+    return DIAG_RET(HAL_ERROR);
   }
   if (dev->cfg.a0.port == NULL)
   {
-    return HAL_ERROR;
+    return DIAG_RET(HAL_ERROR);
   }
 
   dev->cfg.channel = ch;
@@ -270,7 +270,7 @@ HAL_StatusTypeDef ADS1232_WaitReady(ADS1232_t *dev, uint32_t timeout_ms)
 
   if (dev == NULL)
   {
-    return HAL_ERROR;
+    return DIAG_RET(HAL_ERROR);
   }
 
   start = HAL_GetTick();
@@ -278,7 +278,7 @@ HAL_StatusTypeDef ADS1232_WaitReady(ADS1232_t *dev, uint32_t timeout_ms)
   {
     if ((HAL_GetTick() - start) > timeout_ms)
     {
-      return HAL_TIMEOUT;
+      return DIAG_RET(HAL_TIMEOUT);
     }
   }
   return HAL_OK;
@@ -303,7 +303,7 @@ HAL_StatusTypeDef ADS1232_ReadRaw(ADS1232_t *dev, int32_t *code, uint32_t timeou
 
   if (dev == NULL || code == NULL)
   {
-    return HAL_ERROR;
+    return DIAG_RET(HAL_ERROR);
   }
 
   st = ADS1232_WaitReady(dev, timeout_ms);
@@ -323,7 +323,7 @@ HAL_StatusTypeDef ADS1232_ReadRaw(ADS1232_t *dev, int32_t *code, uint32_t timeou
    * than handing back a plausible-looking zero. */
   if (HAL_GPIO_ReadPin(dev->cfg.dout.port, dev->cfg.dout.pin) == GPIO_PIN_RESET)
   {
-    return HAL_ERROR;
+    return DIAG_RET(HAL_ERROR);
   }
 
   /* Reject the two bus-failure signatures. All-zeros means DOUT was held low
@@ -333,7 +333,7 @@ HAL_StatusTypeDef ADS1232_ReadRaw(ADS1232_t *dev, int32_t *code, uint32_t timeou
    * them costs nothing real and removes the dominant error on a flaky link. */
   if (raw == 0x00000000U || raw == 0x00FFFFFFU)
   {
-    return HAL_ERROR;
+    return DIAG_RET(HAL_ERROR);
   }
 
   /* Sign-extend 24 -> 32 bits. */
@@ -360,7 +360,7 @@ HAL_StatusTypeDef ADS1232_ReadVolts(ADS1232_t *dev, float *volts, uint32_t timeo
 
   if (dev == NULL || volts == NULL)
   {
-    return HAL_ERROR;
+    return DIAG_RET(HAL_ERROR);
   }
 
   st = ADS1232_ReadRaw(dev, &code, timeout_ms);
@@ -391,7 +391,7 @@ HAL_StatusTypeDef ADS1232_Tare(ADS1232_t *dev, uint16_t n, uint32_t timeout_ms)
 
   if (dev == NULL || n == 0U)
   {
-    return HAL_ERROR;
+    return DIAG_RET(HAL_ERROR);
   }
 
   for (i = 0U; i < n; i++)
@@ -399,7 +399,7 @@ HAL_StatusTypeDef ADS1232_Tare(ADS1232_t *dev, uint16_t n, uint32_t timeout_ms)
     int32_t code;
     if (ads1232_read_retry(dev, &code, timeout_ms) != HAL_OK)
     {
-      return HAL_ERROR;
+      return DIAG_RET(HAL_ERROR);
     }
     acc += code;
   }
@@ -424,7 +424,7 @@ HAL_StatusTypeDef ADS1232_ReadAverage(ADS1232_t *dev, uint16_t n, float *volts,
 
   if (dev == NULL || volts == NULL || n == 0U)
   {
-    return HAL_ERROR;
+    return DIAG_RET(HAL_ERROR);
   }
 
   for (i = 0U; i < n; i++)
@@ -432,7 +432,7 @@ HAL_StatusTypeDef ADS1232_ReadAverage(ADS1232_t *dev, uint16_t n, float *volts,
     int32_t code;
     if (ads1232_read_retry(dev, &code, timeout_ms) != HAL_OK)
     {
-      return HAL_ERROR;
+      return DIAG_RET(HAL_ERROR);
     }
     acc += code;
   }
@@ -454,7 +454,7 @@ HAL_StatusTypeDef ADS1232_Ohms(float volts, float current_a, float *ohms)
 {
   if (ohms == NULL || current_a == 0.0f)
   {
-    return HAL_ERROR;
+    return DIAG_RET(HAL_ERROR);
   }
   *ohms = volts / current_a;
   return HAL_OK;
@@ -482,7 +482,7 @@ HAL_StatusTypeDef ADS1232_OhmsRatiometric(ADS1232_t *dev, float r_ref_ohms,
 
   if (dev == NULL || ohms == NULL || n == 0U)
   {
-    return HAL_ERROR;
+    return DIAG_RET(HAL_ERROR);
   }
 
   for (i = 0U; i < n; i++)
@@ -490,7 +490,7 @@ HAL_StatusTypeDef ADS1232_OhmsRatiometric(ADS1232_t *dev, float r_ref_ohms,
     int32_t code;
     if (ads1232_read_retry(dev, &code, timeout_ms) != HAL_OK)
     {
-      return HAL_ERROR;
+      return DIAG_RET(HAL_ERROR);
     }
     acc += code;
   }
@@ -522,7 +522,7 @@ HAL_StatusTypeDef ADS1232_Calibrate(ADS1232_t *dev, uint32_t timeout_ms)
 
   if (dev == NULL)
   {
-    return HAL_ERROR;
+    return DIAG_RET(HAL_ERROR);
   }
 
   /* Read and throw away one conversion so we are aligned to a frame boundary. */
