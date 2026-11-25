@@ -169,6 +169,7 @@ goto scaffold_done
 :have_windows
 echo   windows\ already present - reusing
 :scaffold_done
+powershell -NoProfile -ExecutionPolicy Bypass -File tools\patch_single_instance.ps1 -Path windows\runner\main.cpp
 
 rem ---------------------------------------------------------------------------
 echo.

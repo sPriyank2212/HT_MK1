@@ -476,8 +476,6 @@ class _DiagViewState extends State<DiagView> {
           ],
         );
       }),
-      // .panel{grid-column:1/-1}
-      _limits(context),
     ]);
   }
 
@@ -1059,83 +1057,6 @@ class _DiagViewState extends State<DiagView> {
           ]),
         ],
       )),
-    );
-  }
-
-  // Static known-issues reference kept in sync with PROJECT_LOG.md, not live
-  // diagnostic data (there is no protocol field for any of this). Both
-  // HW-01 and HW-02 were removed once closed (CL-08 and GUI-09/CL-40) - a
-  // resolved item staying in this list would itself become the same kind of
-  // stale claim this cleanup exists to prevent. FW-04 closed too (CL-19);
-  // its still-open bus-speed half carries forward as BU-03. The header tag
-  // is computed from the real list length rather than a hand-typed count
-  // that silently drifts from it (this list is verify-at-bring-up level,
-  // not "blocking" in the sense the old tag implied - see PROJECT_LOG.md).
-  Widget _limits(BuildContext context) {
-    final c = context.colors;
-    final t = context.type;
-    const blockers = [
-      (
-        'BU-03',
-        'Cross continuity is bus-bound.',
-        ' A full 256 × 256 sweep is roughly 70 s of I2C traffic at 100 kHz '
-            'against 18 s at 400 kHz. Netlist mode needs only ~624 reads. Raise '
-            'I2C3 to 400 kHz before cross mode is usable on the line.'
-      ),
-      (
-        'BU-06',
-        'Stack encoding lives in the cable.',
-        ' ISO_HV_CARD_ENx is set per slot by the harness build, not the '
-            'schematic. A miswired cable makes the console report a stack size '
-            'the instrument does not actually have — verify against the I2C2 '
-            'scan before trusting the HV netlist match.'
-      ),
-    ];
-
-    return HtPanel(
-      header: [
-        const PanelTitle('Instrument limits'),
-        const FlexSpacer(),
-        Tag(TagVariant.warn, '${blockers.length} known issue${blockers.length == 1 ? "" : "s"}'),
-      ],
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          for (var i = 0; i < blockers.length; i++)
-            Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
-              decoration: BoxDecoration(
-                border: i == blockers.length - 1
-                    ? null
-                    : Border(bottom: BorderSide(color: c.lineSoft)),
-              ),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  SizedBox(
-                    width: 46,
-                    child: Padding(
-                      padding: const EdgeInsets.only(top: 1),
-                      child: Text(blockers[i].$1, style: t.blockerId),
-                    ),
-                  ),
-                  const SizedBox(width: 11),
-                  Expanded(
-                    child: Text.rich(TextSpan(children: [
-                      TextSpan(
-                        text: blockers[i].$2,
-                        style: t.blockerText.copyWith(
-                            color: c.ink, fontWeight: FontWeight.w600),
-                      ),
-                      TextSpan(text: blockers[i].$3, style: t.blockerText),
-                    ])),
-                  ),
-                ],
-              ),
-            ),
-        ],
-      ),
     );
   }
 }

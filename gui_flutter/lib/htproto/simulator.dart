@@ -535,7 +535,7 @@ class InstrumentSim {
   /// does, all healthy — a plausible instrument's answer, not a claim that
   /// this is reading real hardware.
   static const List<String> _busDevices = [
-    'U21', 'U101', 'U105', 'U102', 'U106', 'U66', 'U67', 'U107', 'U108',
+    'U20', 'U101', 'U105', 'U102', 'U106', 'U66', 'U67', 'U107', 'U108',
     'U69', 'U68',
     // One HV card (the firmware default, BOARD_HV_COUNT = 1): 4 high-side +
     // 4 low-side relay expanders, straps 0x20..0x27 (HV_Card sheet 5).

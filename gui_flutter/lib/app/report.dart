@@ -10,6 +10,8 @@
 /// itself already has.
 library;
 
+import '../htproto/netlist_file.dart' show WireMeta;
+
 String _csvField(Object? v) {
   final s = v?.toString() ?? '';
   if (s.contains(',') || s.contains('"') || s.contains('\n')) {
@@ -36,6 +38,10 @@ class ReportMeta {
   /// Duration" row: not part of the CSV column shape.
   final Duration? testDuration;
 
+  /// The client app's Test Profile name; blank in the engineering console.
+  /// Only the client-format report prints it.
+  final String profile;
+
   const ReportMeta({
     required this.dutId,
     required this.operatorName,
@@ -43,6 +49,7 @@ class ReportMeta {
     required this.pass,
     required this.when,
     this.testDuration,
+    this.profile = '',
   });
 
   static String stampDateTime(DateTime t) {
@@ -95,11 +102,17 @@ class ContReportRow {
   /// (Total/CONNECTED/NOT CONNECTED — see required_format/README.md).
   final String status;
 
+  /// The netlist row's descriptive columns (Source, Destination, Colour, AWG,
+  /// Length, Harness No) — null when the netlist is not from a file. Only the
+  /// client-format report reads it; the engineering report leaves those blank.
+  final WireMeta? wire;
+
   const ContReportRow({
     required this.testNum,
     required this.srcPin,
     required this.dstPin,
     required this.status,
+    this.wire,
     this.srcConnId = '—',
     String? srcPinLabel,
     this.srcPartNumber = '',
@@ -157,12 +170,16 @@ class ResReportRow {
   final String dstPinLabel;
   final String dstPartNumber;
 
+  /// See [ContReportRow.wire].
+  final WireMeta? wire;
+
   const ResReportRow({
     required this.testNum,
     required this.srcPin,
     required this.dstPin,
     required this.resistanceMohm,
     required this.status,
+    this.wire,
     this.srcConnId = '—',
     String? srcPinLabel,
     this.srcPartNumber = '',

@@ -11,6 +11,52 @@ browser page.
 > the bottom, and **Known limitations** for the one thing that needs a
 > hardware fix, not a software one: resistance measurement.
 
+## Client-styled app (`lib/main_client.dart`)
+
+A second window on the same instrument link: the customer's own Harness Tester layout and
+terminology (`gui_client_required/`), running the MK1 tests. The engineering console above is
+unchanged; both share `AppState`, the protocol, the simulator and the HV safety gating, so a fix
+to one is a fix to both.
+
+```
+flutter run -d windows -t lib/main_client.dart --dart-entrypoint-args --sim
+build_client_exe.cmd              dist\Harness_Tester.exe + Harness_Tester_demo.exe
+```
+
+Every command-line option of the console works (`--serial`, `--sim`, `--scenario`, `--nets`, ...).
+
+| Client screen | Notes |
+|---|---|
+| Mode bar | Continuity, Cross Continuity, Resistance (4-wire Kelvin), HV Insulation. START needs a connection and (Standard) a netlist. F5 start, F6 stop. |
+| Connector View | Source / Destination connectors, one wire per pair, status pill; separate HV INSULATION band. |
+| Results Table | Filters, status badges, `Total / PASS / FAIL / OPEN / MISWIRE` chips; columns follow the mode. |
+| Left panel | Connection, Netlist / Test Mode (Standard, Auto-Scan, Use as Netlist), Test Profile (saved under `%LOCALAPPDATA%\HT_MK1\client\profiles`). DUT ID counts up after every test. |
+| HV | The insulation start walks the console's prerequisite, HV-netlist and verification prompts; the client's HV dialog needs all three boxes ticked and cannot be dismissed. A fault raises a non-dismissible fault dialog. |
+| Configuration | Test limits, HV netlist (Edit / New / Browse / Clear), HV card stack, connector layout (read from the netlist; not editable here). |
+
+**Reports** (`lib/client/client_report.dart`) are in the client's format: the continuity CSV/PDF are
+their current report (16 columns incl. Colour / AWG / Length / Harness No, CRLF CSV, landscape PDF
+with logo, `Page n of N`, `End of the report`). Resistance and insulation reports use the same page
+and colours with the MK1 columns. Source / Destination / Colour / AWG / Length / Harness No come
+from the netlist's own columns of those names.
+
+**Netlists** are created in the app (left panel Edit / New, File > Netlist Editor Ctrl+E, File > HV
+Netlist Editor Ctrl+H, Configuration > HV netlist). There are two, because the instrument has two:
+
+| Netlist | Used by | Rows |
+|---|---|---|
+| Continuity / Resistance (J-MTX) | Continuity, Cross Continuity, Resistance | one per wire: Src Pin # to Dst Pin #, plus Net, Source, Conn ID, Part Number, pin labels, Destination, Colour, AWG, Length, Harness No |
+| HV Insulation (J-HV) | HV Insulation | one per net: HS Pin (the HV card relay that injects; 1-64 card 1, 65-128 card 2, ...) and LS Pin (the return) |
+
+The editor checks as you type (empty file, pins 1..256, repeated pair, HS pin beyond the fitted HV
+cards), saves `.xlsx` in the client's columns, and **Apply to test** loads exactly what a saved file
+would. The instrument keeps one netlist and its insulation test reads it, so the client app sends the
+HV netlist just before the insulation run and sends the continuity netlist back before the next
+continuity / resistance run (`AppState.uploadHvNetlist`, off in the engineering console).
+
+Not in the client app: Golden Sample wizard, Profile Manager, Serial Monitor window, pin-detail
+dialog, Calibrate.
+
 ## Source to executable, in one script
 
 ```

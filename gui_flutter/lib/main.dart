@@ -185,6 +185,23 @@ void storeTheme(String value) {
 // ---------------------------------------------------------------------------
 
 Future<void> main(List<String> args) async {
+  await runConsole(
+    args,
+    (state) => HtApp(state: state, storedTheme: loadStoredTheme()),
+  );
+}
+
+/// The shared bootstrap: parse the command line, bring up the serial / TCP /
+/// simulator link, build [AppState], then hand it to [buildApp] for the UI.
+///
+/// The engineering console ([main]) and the client-styled app
+/// (`main_client.dart`) differ only in the widget tree they put on top of the
+/// same [AppState] — the protocol, simulator, safety gating and reports are
+/// shared, so a fix to one is a fix to both.
+Future<void> runConsole(
+  List<String> args,
+  Widget Function(AppState state) buildApp,
+) async {
   WidgetsFlutterBinding.ensureInitialized();
   final o = parseArgs(args);
 
@@ -306,7 +323,7 @@ Future<void> main(List<String> args) async {
   // enumeration does not (e.g. an unresolved "auto").
   if (o.serial != null) state.selPort = host;
 
-  runApp(HtApp(state: state, storedTheme: loadStoredTheme()));
+  runApp(buildApp(state));
 
   // live.js calls connect() as soon as the page is built. Without --serial
   // (or --sim, or an explicit TCP target) the app starts disconnected and

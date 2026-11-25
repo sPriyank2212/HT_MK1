@@ -19,6 +19,8 @@ import 'dart:typed_data';
 import 'package:archive/archive.dart';
 import 'package:excel/excel.dart';
 
+import 'netlist_formats.dart';
+
 /// The instrument only ever talks pins 1..256 (`AppState.rebuildNets`).
 const int kMaxNetlistPin = 256;
 
@@ -45,8 +47,42 @@ class ParsedNetPair {
   final String? srcLabel;
   final String? dstLabel;
   final String? detail;
+
+  /// The wire's free-text netlist columns (Source, Destination, Colour, AWG,
+  /// Length, Harness No, connector ids and part numbers). Display and report
+  /// only — the instrument never sees them.
+  final WireMeta? meta;
   const ParsedNetPair(this.hi, this.lo,
-      [this.name, this.srcLabel, this.dstLabel, this.detail]);
+      [this.name, this.srcLabel, this.dstLabel, this.detail, this.meta]);
+}
+
+/// The descriptive columns of one netlist row that the wire protocol has no
+/// place for: they travel from the spreadsheet to the on-screen tables and the
+/// PDF/CSV reports unchanged. Every field is blank when the sheet has no such
+/// column.
+class WireMeta {
+  final String source;
+  final String destination;
+  final String srcConnId;
+  final String dstConnId;
+  final String srcPart;
+  final String dstPart;
+  final String colour;
+  final String awg;
+  final String length;
+  final String harnessNo;
+  const WireMeta({
+    this.source = '',
+    this.destination = '',
+    this.srcConnId = '',
+    this.dstConnId = '',
+    this.srcPart = '',
+    this.dstPart = '',
+    this.colour = '',
+    this.awg = '',
+    this.length = '',
+    this.harnessNo = '',
+  });
 }
 
 /// The joint a `Connector Detail` cell declares, or null when it says nothing
@@ -81,7 +117,10 @@ class ParsedNetlist {
   /// operator confirmation before it becomes the active fixture.
   final List<GuessedConnector>? fixture;
 
-  const ParsedNetlist(this.pairs, this.cards, [this.fixture]);
+  /// The `Harness ID` column's first non-blank value, or null.
+  final String? harnessId;
+
+  const ParsedNetlist(this.pairs, this.cards, [this.fixture, this.harnessId]);
 }
 
 /// One connector as guessed from a netlist file's `Conn ID`/`Part Number`
@@ -163,6 +202,19 @@ const List<String> _detailHeaders = [
   'connector detail', 'wire detail', 'detail', 'joint',
 ];
 
+// Wire metadata columns (all optional) — see [WireMeta].
+const List<String> _sourceHeaders = ['source', 'src'];
+const List<String> _destHeaders = ['destination', 'dest'];
+const List<String> _colourHeaders = [
+  'colour', 'color', 'wire colour', 'wire color',
+];
+const List<String> _awgHeaders = ['awg', 'wire gauge', 'gauge'];
+const List<String> _lengthHeaders = ['length', 'wire length'];
+const List<String> _harnessNoHeaders = [
+  'harness no', 'harness no.', 'harness #', 'harness number',
+];
+const List<String> _harnessIdHeaders = ['harness id', 'harness num'];
+
 String _norm(String s) => s.trim().toLowerCase();
 
 /// `Data?.value` on every cell type prints the way an operator typed or read
@@ -222,8 +274,15 @@ Uint8List _normalizeRelationshipTargets(Uint8List bytes) {
 /// runs from a file-picker button, not a debugger, so "row 14: ..." beats a
 /// stack trace.
 ParsedNetlist parseNetlistWorkbook(Uint8List bytes, {required String fileName}) {
+  // .csv and SpreadsheetML .xls are converted to .xlsx bytes first.
+  final Uint8List xlsx;
   try {
-    return _parse(_normalizeRelationshipTargets(bytes), fileName);
+    xlsx = toXlsxBytes(bytes, fileName);
+  } on FormatException catch (exc) {
+    throw NetlistFileFormatException(exc.message);
+  }
+  try {
+    return _parse(_normalizeRelationshipTargets(xlsx), fileName);
   } on NetlistFileFormatException {
     rethrow;
   } on Object {
@@ -248,6 +307,8 @@ ParsedNetlist _parse(Uint8List bytes, String fileName) {
   int? hiCol, loCol, nameCol, cardCol;
   int? connACol, partACol, connBCol, partBCol;
   int? srcLabelCol, dstLabelCol, detailCol;
+  int? sourceCol, destCol, colourCol, awgCol, lengthCol, harnessNoCol;
+  int? harnessIdCol;
   final header = rows.first;
   for (var c = 0; c < header.length; c++) {
     final h = _cellText(header[c]);
@@ -268,6 +329,13 @@ ParsedNetlist _parse(Uint8List bytes, String fileName) {
     srcLabelCol ??= _srcLabelHeaders.contains(n) ? c : null;
     dstLabelCol ??= _dstLabelHeaders.contains(n) ? c : null;
     detailCol ??= _detailHeaders.contains(n) ? c : null;
+    sourceCol ??= _sourceHeaders.contains(n) ? c : null;
+    destCol ??= _destHeaders.contains(n) ? c : null;
+    colourCol ??= _colourHeaders.contains(n) ? c : null;
+    awgCol ??= _awgHeaders.contains(n) ? c : null;
+    lengthCol ??= _lengthHeaders.contains(n) ? c : null;
+    harnessNoCol ??= _harnessNoHeaders.contains(n) ? c : null;
+    harnessIdCol ??= _harnessIdHeaders.contains(n) ? c : null;
   }
   if (hiCol == null || loCol == null) {
     final seen = header.map(_cellText).whereType<String>().join(', ');
@@ -293,6 +361,9 @@ ParsedNetlist _parse(Uint8List bytes, String fileName) {
 
   final pairs = <ParsedNetPair>[];
   int? cards;
+  String? harnessId;
+  String text(List<Data?> row, int? col) =>
+      col == null ? '' : (_cellText(at(row, col)) ?? '');
   // Each harness END is observed on its own: `Conn ID` with the Src (HI) pins,
   // `Conn ID B` with the Dst (LO) pins. A designator that appears at both ends
   // is two connectors (see GuessedConnector.side).
@@ -328,6 +399,10 @@ ParsedNetlist _parse(Uint8List bytes, String fileName) {
     }
     observe(srcObs, connACol, partACol, row, hi);
     observe(dstObs, connBCol, partBCol, row, lo);
+    harnessId ??= () {
+      final h = text(row, harnessIdCol);
+      return h.isEmpty ? null : h;
+    }();
     pairs.add(ParsedNetPair(
       hi,
       lo,
@@ -335,6 +410,18 @@ ParsedNetlist _parse(Uint8List bytes, String fileName) {
       srcLabelCol == null ? null : _cellText(at(row, srcLabelCol)),
       dstLabelCol == null ? null : _cellText(at(row, dstLabelCol)),
       detailCol == null ? null : _cellText(at(row, detailCol)),
+      WireMeta(
+        source: text(row, sourceCol),
+        destination: text(row, destCol),
+        srcConnId: text(row, connACol),
+        dstConnId: text(row, connBCol),
+        srcPart: text(row, partACol),
+        dstPart: text(row, partBCol),
+        colour: text(row, colourCol),
+        awg: text(row, awgCol),
+        length: text(row, lengthCol),
+        harnessNo: text(row, harnessNoCol),
+      ),
     ));
   }
 
@@ -351,7 +438,8 @@ ParsedNetlist _parse(Uint8List bytes, String fileName) {
     }
   }
 
-  return ParsedNetlist(pairs, cards, _guessFixture(srcObs, dstObs));
+  return ParsedNetlist(
+      pairs, cards, _guessFixture(srcObs, dstObs), harnessId);
 }
 
 /// Pin range seen for one `Conn ID` on one harness end while scanning rows.

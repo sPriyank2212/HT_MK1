@@ -22,7 +22,7 @@ Future<(String name, Uint8List bytes)?> pickNetlistFile() async {
   final result = await FilePicker.pickFiles(
     dialogTitle: 'Select a netlist file',
     type: FileType.custom,
-    allowedExtensions: ['xlsx', 'xls'],
+    allowedExtensions: ['xlsx', 'xls', 'csv'],
   );
   if (result == null) return null; // operator cancelled
   final picked = result.files.single;

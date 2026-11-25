@@ -40,7 +40,7 @@ import '../htproto/connection.dart';
 import '../htproto/messages.dart' as msg;
 import '../htproto/netlist_file.dart';
 import 'report.dart';
-import 'report_pdf.dart';
+import 'report_format.dart';
 import 'run_history.dart';
 
 /// matches PROTO_HV_LIVE_MV in the firmware
@@ -55,7 +55,11 @@ class LogEntry {
   final String lvl;
   final String src;
   final String message;
-  const LogEntry(this.t, this.lvl, this.src, this.message);
+
+  /// Real wall-clock time the entry was made. [t] is a synthetic on-screen
+  /// clock for the engineering console; this is what a saved log file uses.
+  final DateTime? wall;
+  const LogEntry(this.t, this.lvl, this.src, this.message, [this.wall]);
 }
 
 /// One line of raw wire traffic — the exact text `SessionLogger` writes to
@@ -381,7 +385,7 @@ class AppState extends ChangeNotifier {
 
   /// The second half of the target: a TCP port on [TcpTransport], a baud rate
   /// on a serial link. `main.dart` resolves which via `linkPortFor`.
-  final int port;
+  int port;
 
   /// Whether the link is a COM port. False under `--sim` and `--host`, where
   /// the transport is a socket and a port picker would be meaningless — the
@@ -506,7 +510,7 @@ class AppState extends ChangeNotifier {
   /// `function log(lvl,src,msg)`
   void log(String lvl, String src, String message) {
     _lt += 0.03 + _rand.nextDouble() * 0.4;
-    logs.add(LogEntry(_lt, lvl, src, message));
+    logs.add(LogEntry(_lt, lvl, src, message, DateTime.now()));
     logLineText = '[${_lt.toStringAsFixed(3).padLeft(8)}] '
         '${lvl.toUpperCase().padRight(4)}  $src   $message';
     notifyListeners();
@@ -580,6 +584,9 @@ class AppState extends ChangeNotifier {
           'MTX netlist unloaded — netlist continuity and resistance blocked');
     } else {
       nlHv.loaded = false;
+      _hvRows = const [];
+      _hvPairs = const [];
+      _hvByHi = const {};
       log('warn', 'prog', 'HV netlist unloaded — insulation test blocked');
     }
     updateControls();
@@ -952,14 +959,23 @@ class AppState extends ChangeNotifier {
     final picked = await pickNetlistFile();
     if (picked == null) return; // operator cancelled
     final (name, bytes) = picked;
+    await loadMtxNetlistBytes(name, bytes);
+  }
+
+  /// Loads the continuity / resistance netlist from workbook [bytes] — the
+  /// second half of [browseMtxNetlist], also used by the client app's netlist
+  /// editor, which builds the workbook itself. Returns whether the instrument
+  /// accepted the upload.
+  Future<bool> loadMtxNetlistBytes(String name, Uint8List bytes) async {
     final ParsedNetlist parsed;
     try {
       parsed = parseNetlistWorkbook(bytes, fileName: name);
     } on NetlistFileFormatException catch (exc) {
       log('fail', 'nl', 'could not read $name — $exc');
-      return;
+      return false;
     }
     mdMtxOpen = false;
+    nlHarnessId = parsed.harnessId;
     // GUI-11: if the file had Conn ID/Part Number columns, apply the
     // guessed connector layout immediately (so the wiring diagram/tables
     // reflect it right away) and open the confirmation panel so the
@@ -982,12 +998,81 @@ class AppState extends ChangeNotifier {
             'pin blocks are shifted — check the wiring diagram.');
       }
     }
-    await _uploadNetlistPairs(
+    return _uploadNetlistPairs(
       [for (final p in parsed.pairs) (p.hi, p.lo)],
       name: name,
       origin: 'file',
       rows: parsed.pairs,
     );
+  }
+
+  /// The loaded continuity / resistance netlist's rows, in file order — what
+  /// the client app's editor opens for "Edit".
+  List<ParsedNetPair> get mtxRows => List.unmodifiable(_rowMeta.values);
+
+  /// The loaded HV netlist's rows, in file order.
+  List<ParsedNetPair> get hvRows => List.unmodifiable(_hvRows);
+
+  /// Whether the HV netlist is sent to the instrument before an insulation run
+  /// (and the continuity netlist put back afterwards).
+  ///
+  /// The instrument keeps ONE netlist, and `run_insulation_all()` reads it:
+  /// each pair's HI pin is the HV card/relay that injects, its LO pin the
+  /// return. Without this, a separate HV netlist only ever labelled the screen
+  /// and the insulation test ran over whatever continuity netlist was loaded.
+  /// Off by default so the engineering console's wire behaviour is unchanged;
+  /// the client app switches it on.
+  bool uploadHvNetlist = false;
+
+  List<ParsedNetPair> _hvRows = const [];
+  List<(int, int)> _hvPairs = const [];
+  Map<int, ParsedNetPair> _hvByHi = const {};
+  List<(int, int)> _mtxPairs = const [];
+
+  /// The instrument's netlist is currently the HV one, so the continuity
+  /// netlist has to be sent again before the next continuity / resistance run.
+  bool _hvNetlistOnInstrument = false;
+
+  /// Browse for an HV netlist file and load it, without starting the
+  /// insulation prompts (the Configuration tab's Browse...).
+  Future<void> loadHvNetlistFromFile() async {
+    final picked = await pickNetlistFile();
+    if (picked == null) return;
+    await loadHvNetlistBytes(picked.$1, picked.$2);
+  }
+
+  /// Loads the HV netlist from workbook [bytes]. With [continueToVerify] it
+  /// carries straight on into the 500 V confirmation (the HV prompts' flow);
+  /// without, it only loads (the editor's "Apply").
+  Future<bool> loadHvNetlistBytes(String name, Uint8List bytes,
+      {bool continueToVerify = false}) async {
+    final ParsedNetlist parsed;
+    try {
+      parsed = parseNetlistWorkbook(bytes, fileName: name);
+    } on NetlistFileFormatException catch (exc) {
+      log('fail', 'nl', 'could not read $name — $exc');
+      return false;
+    }
+    _hvRows = parsed.pairs;
+    _hvPairs = [for (final p in parsed.pairs) (p.hi, p.lo)];
+    _hvByHi = {for (final p in parsed.pairs.reversed) p.hi: p};
+    loadHv(name, parsed.cards ?? stack, parsed.pairs.length);
+    mdNlOpen = false;
+    if (continueToVerify) openVerify();
+    return true;
+  }
+
+  /// Sends [pairs] as the instrument's netlist (`NETLIST BEGIN/ADD/END`)
+  /// without touching the GUI's own harness model. False if refused.
+  Future<bool> _putNetlist(List<(int, int)> pairs) async {
+    final begin = await _cmd(proto.commands.netlistBegin(pairs.length));
+    if (_reportRefusal('netlist upload', begin)) return false;
+    for (final p in pairs) {
+      final add = await _cmd(proto.commands.netlistAdd(p.$1, p.$2));
+      if (_reportRefusal('netlist upload', add)) return false;
+    }
+    final end = await _cmd(proto.commands.netlistEnd());
+    return !_reportRefusal('netlist upload', end);
   }
 
   /// Builds a real [FixtureDef] from a netlist file's guessed connector
@@ -1380,16 +1465,7 @@ class AppState extends ChangeNotifier {
     final picked = await pickNetlistFile();
     if (picked == null) return; // operator cancelled
     final (name, bytes) = picked;
-    final ParsedNetlist parsed;
-    try {
-      parsed = parseNetlistWorkbook(bytes, fileName: name);
-    } on NetlistFileFormatException catch (exc) {
-      log('fail', 'nl', 'could not read $name — $exc');
-      return;
-    }
-    loadHv(name, parsed.cards ?? stack, parsed.pairs.length);
-    mdNlOpen = false;
-    openVerify();
+    await loadHvNetlistBytes(name, bytes, continueToVerify: true);
   }
 
   /// `function openVerify()`
@@ -1625,17 +1701,9 @@ class AppState extends ChangeNotifier {
     doneCount = 0;
     totalCount = 0;
     R[kind == 'insul' ? 'hv' : kind] = null;
-    switch (kind) {
-      case 'cont':
-        _contRows.clear();
-        for (final net in nets) {
-          net.clearResults();
-        }
-      case 'res':
-        _resRows.clear();
-      case 'insul':
-        _insulRows.clear();
-    }
+    // The result buffers were already cleared by [_prepareRun], before the
+    // command went out: clearing here would wipe results that arrived in the
+    // same read as the instrument's `<OK`.
     _abortedRun = false;
     _setDom(domSel, 'run');
     vTitle = 'RUNNING';
@@ -1661,11 +1729,77 @@ class AppState extends ChangeNotifier {
   }
 
   /// `function startRun(kind, wire, domSel, label, sub)`
+  /// Readies the result buffers for a run of [kind] — BEFORE the start command
+  /// is sent. The instrument streams results straight after its `<OK`, and over
+  /// a USB-UART the `<OK` and the first `!CONT` lines can arrive in one read,
+  /// so they are handled before the `await` on the command returns. If the
+  /// buffers were cleared only then ([_beginRun]), those first rows — often the
+  /// failing ones — would be recorded and then wiped.
+  ///
+  /// Returns an undo that puts the previous results back, for a refused start.
+  void Function() _prepareRun(String kind) {
+    runKind = kind;
+    switch (kind) {
+      case 'cont':
+        final rows = List.of(_contRows);
+        final saved = [
+          for (final n in nets)
+            (n, Set.of(n.openPairs), Set.of(n.reportedPairs), n.open),
+        ];
+        _contRows.clear();
+        for (final n in nets) {
+          n.clearResults();
+        }
+        return () {
+          _contRows
+            ..clear()
+            ..addAll(rows);
+          for (final (n, open, reported, flag) in saved) {
+            n.openPairs
+              ..clear()
+              ..addAll(open);
+            n.reportedPairs
+              ..clear()
+              ..addAll(reported);
+            n.open = flag;
+          }
+        };
+      case 'res':
+        final rows = List.of(_resRows);
+        _resRows.clear();
+        return () => _resRows
+          ..clear()
+          ..addAll(rows);
+      case 'insul':
+        final rows = List.of(_insulRows);
+        _insulRows.clear();
+        return () => _insulRows
+          ..clear()
+          ..addAll(rows);
+    }
+    return () {};
+  }
+
   Future<void> _startRun(String kind, Uint8List wire, String domSel,
       String label, String sub) async {
+    // An insulation run left the HV netlist on the instrument; netlist-mode
+    // continuity and resistance must not run over it.
+    if (_hvNetlistOnInstrument &&
+        ((kind == 'cont' && cmode == 'net') || kind == 'res')) {
+      if (!await _putNetlist(_mtxPairs)) {
+        updateControls();
+        return;
+      }
+      _hvNetlistOnInstrument = false;
+      log('info', 'nl',
+          'continuity netlist sent back to the instrument — ${_mtxPairs.length} nets');
+    }
+    final undo = _prepareRun(kind);
     // Never mark a run started until the instrument has accepted it.
     final res = await _cmd(wire);
     if (_reportRefusal(label, res)) {
+      undo();
+      runKind = null;
       running = null;
       updateControls();
       return;
@@ -1710,6 +1844,25 @@ class AppState extends ChangeNotifier {
   /// `function runHv()` — arming is a separate, explicit step and the
   /// instrument enforces it too.
   Future<void> runHv() async {
+    if (uploadHvNetlist && nlHv.loaded && _hvPairs.isNotEmpty) {
+      // Same limit the firmware enforces (fault F05): every HS pin must be on
+      // a fitted HV card. Refuse here, before anything is sent or armed.
+      final maxHs = _hvPairs.fold<int>(0, (m, p) => math.max(m, p.$1));
+      if (maxHs > stack * 64) {
+        log('fail', 'nl',
+            'HV netlist uses HS pin $maxHs but only $stack HV card(s) '
+            '(${stack * 64} pins) are fitted — not armed');
+        updateControls();
+        return;
+      }
+      if (!await _putNetlist(_hvPairs)) {
+        updateControls();
+        return;
+      }
+      _hvNetlistOnInstrument = true;
+      log('info', 'nl',
+          'HV netlist sent to the instrument — ${_hvPairs.length} nets');
+    }
     final res = await _cmd(proto.commands.insulArm());
     if (_reportRefusal('arm', res)) return;
     armed = true;
@@ -1809,7 +1962,9 @@ class AppState extends ChangeNotifier {
     String dstId,
     String? dstLabel,
     String dstPart,
+    WireMeta? wire,
   }) _ends(Net? n, int hi, int lo) {
+    final wire = _withDefaults(_rowMeta['$hi:$lo']?.meta);
     if (n == null) {
       return (
         srcId: '—',
@@ -1818,6 +1973,7 @@ class AppState extends ChangeNotifier {
         dstId: '—',
         dstLabel: null,
         dstPart: '',
+        wire: wire,
       );
     }
     NetPair? pr;
@@ -1833,6 +1989,7 @@ class AppState extends ChangeNotifier {
       dstId: connName(dst.c),
       dstLabel: pr?.dstLabel ?? 'Pin ${dst.p}',
       dstPart: kConn[dst.c]?.partNumber ?? '',
+      wire: wire,
     );
   }
 
@@ -1900,6 +2057,7 @@ class AppState extends ChangeNotifier {
         srcPin: m.hi,
         dstPin: m.lo,
         status: pass ? 'CONNECTED' : 'NOT CONNECTED',
+        wire: e.wire,
         srcConnId: e.srcId,
         srcPinLabel: n == null ? null : e.srcLabel,
         srcPartNumber: e.srcPart,
@@ -1928,6 +2086,7 @@ class AppState extends ChangeNotifier {
       dstPin: m.lo,
       resistanceMohm: m.milliohms.toDouble(),
       status: m.status.wire.toUpperCase(),
+      wire: e.wire,
       srcConnId: e.srcId,
       srcPinLabel: n == null ? null : e.srcLabel,
       srcPartNumber: e.srcPart,
@@ -1951,7 +2110,10 @@ class AppState extends ChangeNotifier {
     // display, and light up the relay grid on whichever net was actually
     // under test - this only resolves once a real netlist is loaded
     // (pinHi is null on the demo harness, see buildNets()).
-    final n = _netByHiPin(m.net);
+    // When the HV netlist is the one on the instrument, `m.net` is an HS pin of
+    // THAT netlist: name it from there, not from the continuity nets.
+    final hv = _hvNetlistOnInstrument ? _hvByHi[m.net] : null;
+    final n = hv != null ? null : _netByHiPin(m.net);
     if (n != null) {
       n.ins = m.leakMohm / 1.0e9;
       n.insFail = !pass;
@@ -1960,9 +2122,13 @@ class AppState extends ChangeNotifier {
     final insMohm = m.leakMohm / 1.0e9;
     _insulRows.add(InsulReportRow(
       testNum: _insulRows.length + 1,
-      net: n?.name ?? '—',
-      hvCard: n != null ? 'H${n.card + 1}' : '—',
-      hsPin: n != null ? 'HS-${pad(n.relay, 2)}' : '—',
+      net: hv != null ? (hv.name ?? 'HS ${m.net}') : (n?.name ?? '—'),
+      hvCard: hv != null
+          ? 'H${(m.net - 1) ~/ 64 + 1}'
+          : (n != null ? 'H${n.card + 1}' : '—'),
+      hsPin: hv != null
+          ? 'HS-${pad((m.net - 1) % 64 + 1, 2)}'
+          : (n != null ? 'HS-${pad(n.relay, 2)}' : '—'),
       leakV: _leakVoltsFor(insMohm),
       insulationMohm: insMohm,
       status: pass ? 'PASS' : 'FAIL',
@@ -2031,10 +2197,13 @@ class AppState extends ChangeNotifier {
     final reportMeta = ReportMeta(
       dutId: dutId,
       operatorName: operatorName,
-      netlistName: nlMtx.loaded ? nlMtx.name : null,
+      netlistName: kind == 'insul' && _hvNetlistOnInstrument && nlHv.loaded
+          ? nlHv.name
+          : (nlMtx.loaded ? nlMtx.name : null),
       pass: pass,
       when: DateTime.now(),
       testDuration: start == null ? null : DateTime.now().difference(start),
+      profile: profileName,
     );
     switch (kind) {
       case 'cont':
@@ -2208,6 +2377,9 @@ class AppState extends ChangeNotifier {
             '${m.pass ? "pass" : "fail"}');
         notifyListeners();
       case msg.Fault():
+        lastFaultCode = m.code;
+        lastFaultText = m.text;
+        lastFaultAt = DateTime.now();
         log('fail', 'seq', '${m.code} ${m.text}');
         notifyListeners();
       case msg.LogLine():
@@ -2625,6 +2797,12 @@ class AppState extends ChangeNotifier {
   /// arrives (or the next run starts).
   bool _abortedRun = false;
 
+  /// The most recent `!FAULT` the instrument reported, for the client app's
+  /// fault dialog. Null until one arrives.
+  String? lastFaultCode;
+  String? lastFaultText;
+  DateTime? lastFaultAt;
+
   /// `>FAULT CLEAR` — the only recovery from a latched fault (brief §3.2.1,
   /// FW-10): forces safe first, then clears the latch. A deliberate operator
   /// action only, offered from the status pill — never automatic.
@@ -2655,6 +2833,42 @@ class AppState extends ChangeNotifier {
   /// pressing Export. `null` (tests, or no writable location) disables it.
   final Directory? reportsDir;
 
+  /// What a saved/exported report looks like. The console's own format by
+  /// default; the client-styled app replaces it (see [ReportFormat]).
+  ReportFormat reportFormat = const ConsoleReportFormat();
+
+  /// The client app's Test Profile name, printed in the client PDF's metadata
+  /// block. Blank in the engineering console (it has no profile concept).
+  String profileName = '';
+
+  /// The loaded netlist's `Harness ID` column, if it had one.
+  String? nlHarnessId;
+
+  /// The client app's "Connection Defaults" (Connector / Source / Destination):
+  /// what a report row shows when its netlist row leaves that field empty, or
+  /// when there is no netlist at all (Auto-Scan). Only `srcConnId`, `source`
+  /// and `destination` are used.
+  WireMeta wireDefaults = const WireMeta();
+
+  /// [w] with the blanks filled from [wireDefaults].
+  WireMeta _withDefaults(WireMeta? w) {
+    final d = wireDefaults;
+    String pick(String? v, String fallback) =>
+        (v == null || v.isEmpty) ? fallback : v;
+    return WireMeta(
+      source: pick(w?.source, d.source),
+      destination: pick(w?.destination, d.destination),
+      srcConnId: pick(w?.srcConnId, d.srcConnId),
+      dstConnId: pick(w?.dstConnId, d.dstConnId),
+      srcPart: w?.srcPart ?? '',
+      dstPart: w?.dstPart ?? '',
+      colour: w?.colour ?? '',
+      awg: w?.awg ?? '',
+      length: w?.length ?? '',
+      harnessNo: w?.harnessNo ?? '',
+    );
+  }
+
   /// Writes the report snapshot of [kind] (`cont` | `res` | `insul`) next to the
   /// run history. Failure to write is logged, never thrown: a full disk must not
   /// take down the run that just finished.
@@ -2669,27 +2883,27 @@ class AppState extends ChangeNotifier {
         final r = lastContReport;
         if (r == null) return;
         name = 'continuity';
-        csv = r.toCsv();
-        pdf = () => buildContReportPdf(r);
+        csv = reportFormat.contCsv(r);
+        pdf = () => reportFormat.contPdf(r);
       case 'res':
         final r = lastResReport;
         if (r == null) return;
         name = 'resistance';
-        csv = r.toCsv();
-        pdf = () => buildResReportPdf(r);
+        csv = reportFormat.resCsv(r);
+        pdf = () => reportFormat.resPdf(r);
       case 'insul':
         final r = lastInsulReport;
         if (r == null) return;
         name = 'insulation';
-        csv = r.toCsv();
-        pdf = () => buildInsulReportPdf(r);
+        csv = reportFormat.insulCsv(r);
+        pdf = () => reportFormat.insulPdf(r);
       default:
         return;
     }
     try {
       dir.createSync(recursive: true);
-      final stem =
-          '${dir.path}${Platform.pathSeparator}report_${_csvStamp(DateTime.now())}_$name';
+      final stem = '${dir.path}${Platform.pathSeparator}'
+          '${reportFormat.fileStem(name, _csvStamp(DateTime.now()), dutId)}';
       await File('$stem.csv').writeAsString(csv);
       await File('$stem.pdf').writeAsBytes(await pdf());
       log('ok', 'rpt', '$name report saved to $stem.(csv|pdf)');
@@ -2794,7 +3008,7 @@ class AppState extends ChangeNotifier {
     }
     final path = await _pickReportPath('continuity', 'csv');
     if (path == null) return false;
-    await File(path).writeAsString(r.toCsv());
+    await File(path).writeAsString(reportFormat.contCsv(r));
     log('ok', 'rpt', 'continuity report exported to $path');
     return true;
   }
@@ -2807,7 +3021,7 @@ class AppState extends ChangeNotifier {
     }
     final path = await _pickReportPath('continuity', 'pdf');
     if (path == null) return false;
-    await File(path).writeAsBytes(await buildContReportPdf(r));
+    await File(path).writeAsBytes(await reportFormat.contPdf(r));
     log('ok', 'rpt', 'continuity report exported to $path');
     return true;
   }
@@ -2820,7 +3034,7 @@ class AppState extends ChangeNotifier {
     }
     final path = await _pickReportPath('resistance', 'csv');
     if (path == null) return false;
-    await File(path).writeAsString(r.toCsv());
+    await File(path).writeAsString(reportFormat.resCsv(r));
     log('ok', 'rpt', 'resistance report exported to $path');
     return true;
   }
@@ -2833,7 +3047,7 @@ class AppState extends ChangeNotifier {
     }
     final path = await _pickReportPath('resistance', 'pdf');
     if (path == null) return false;
-    await File(path).writeAsBytes(await buildResReportPdf(r));
+    await File(path).writeAsBytes(await reportFormat.resPdf(r));
     log('ok', 'rpt', 'resistance report exported to $path');
     return true;
   }
@@ -2846,7 +3060,7 @@ class AppState extends ChangeNotifier {
     }
     final path = await _pickReportPath('insulation', 'csv');
     if (path == null) return false;
-    await File(path).writeAsString(r.toCsv());
+    await File(path).writeAsString(reportFormat.insulCsv(r));
     log('ok', 'rpt', 'insulation report exported to $path');
     return true;
   }
@@ -2859,7 +3073,7 @@ class AppState extends ChangeNotifier {
     }
     final path = await _pickReportPath('insulation', 'pdf');
     if (path == null) return false;
-    await File(path).writeAsBytes(await buildInsulReportPdf(r));
+    await File(path).writeAsBytes(await reportFormat.insulPdf(r));
     log('ok', 'rpt', 'insulation report exported to $path');
     return true;
   }
@@ -3036,6 +3250,10 @@ class AppState extends ChangeNotifier {
     _rowMeta = {
       for (final r in rows ?? const <ParsedNetPair>[]) '${r.hi}:${r.lo}': r,
     };
+    // This is now the instrument's netlist, and the one to put back after an
+    // insulation run that borrowed it for the HV netlist.
+    _mtxPairs = List.of(pairs);
+    _hvNetlistOnInstrument = false;
     rebuildNets([for (final p in pairs) msg.NetEntry(hi: p.$1, lo: p.$2)]);
     loadMtx(name, origin);
     log(
