@@ -4,7 +4,7 @@ Everything needed to set up and run the HT_MK1 test, in one place.
 
 | Folder | Contents |
 |---|---|
-| `0_Documents/` | All documents (Word and PDF): overview, user manual, GUI functional description, flashing procedure, functional test procedure, code walkthrough |
+| `0_Documents/` | All documents (Word and PDF): overview, user manual, GUI functional description, flashing procedure, functional test procedure, code walkthrough, harness plan, power jumper and resistance checklist |
 | `1_Test_Harness_Plan/` | A blank netlist template and example netlists |
 | `2_Connector_Config/` | Connector configuration guide and the fixture connector layout |
 | `3_Test_Results/` | Results record sheet and sample reports in the formats the GUI writes |

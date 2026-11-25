@@ -2,19 +2,23 @@ HT_MK1 Customer Package - file manifest
 firmware commit f7479f8 (sources identical to 959de5a) + watchdog-start fix in Core/Src/app/tasks.c (not committed)
 
 SHA-256                                                           size  file
-c3e8dd054f58d04251f5e4bd3b47e491ea688350fa6748a1b8abc940be1ef1f2     663022  0_Documents/1_System_Overview.docx
-2e0300226d24e8afbc848a5ffb7dc4dca0dea047753d7dc644f1a90e891be21b     715243  0_Documents/1_System_Overview.pdf
-4959630aca78752925a8f623a63b91974ee8e28363f1f1de3262c4f2337dd733    1733189  0_Documents/2_User_Manual.docx
-8a9d76473bbd2fe3e6491a0861bdf3e7bfe72da86bbbe5ba274bf33131108bad    1594635  0_Documents/2_User_Manual.pdf
-76ab09811d6bc44bee475d1fe24d786ee9ddfc36b150f6336ad4bcc171be0e52    2281269  0_Documents/3_GUI_Functional_Description.docx
-19378bb6db15f80ceae54ab74479dff42f36d95e3bdc182965151155fd2d0e39    2200601  0_Documents/3_GUI_Functional_Description.pdf
-91baeb116f94f7cdfdc687ba8e2264c99d85a73a46651ba4fac9b215c2f59ec6     255250  0_Documents/4_Flashing_Procedure.docx
-d8ae0699433fa8ca111c7aba98a045cfc7f6a04a3ef885eb00eb5f2707e0c378     459607  0_Documents/4_Flashing_Procedure.pdf
-65f104ed5f67ae8f2d9760a1579c5bcfe0bd694a16f66e91affbc1bac2a286cf      96980  0_Documents/5_Functional_Test_Procedure.docx
-3f7914012b09edfc79cf1f07b96531c75df8225501403486df29183e7637a36f     346136  0_Documents/5_Functional_Test_Procedure.pdf
-38d2b38eb523566692a495b4593e29cfed06db563ab937bb21437b7e2d9d946c     111106  0_Documents/6_Code_Walkthrough.docx
-16797395280b38feda3a80cb9c0853a5e7b7e377744d993e399231d6fe937f23     450820  0_Documents/6_Code_Walkthrough.pdf
-45c922c6f7be986ca683bc167fcdafae187ab93ff3852b144d4f7942b0c4b005       1154  0_Documents/README.md
+738dc51e6d2d94bac172a14f4500dc68b82ff2c3a4b7e214bff16c86f7244968      967507  0_Documents/1_System_Overview.docx
+26b5e998837ad4981aef3f1ae3af5993e18b05660a0987db5fe9aa607dce9c91      682741  0_Documents/1_System_Overview.pdf
+b9e16addd938e61ffbdfb2fa1e739971fd55814b6ee14b72c04a4a7409b76b95     2037898  0_Documents/2_User_Manual.docx
+73020ff6e2de44a79bc374e9c6522f42b775dd1ac015fcaa2f1298f7a1dc1e2d     1568467  0_Documents/2_User_Manual.pdf
+9d1671937780e89cabc51fd263d57f9152ddefcdb984f82e27d4b04197876fdc     2580434  0_Documents/3_GUI_Functional_Description.docx
+c4f9c508d6f79150a44fbca4aef5950634ed750c7dccfc0e043ff321ed767b58     2192152  0_Documents/3_GUI_Functional_Description.pdf
+d2728bc79fc0ee88fa18d33ea8867fbdb8a5aacb5d724c51824ebc9e1db59691      559942  0_Documents/4_Flashing_Procedure.docx
+560d4569f75fb3021ebcb42eee30254b8326fa31985087da2dab9281c7cd85fc      430534  0_Documents/4_Flashing_Procedure.pdf
+7e2a8bf9c2fbdceb1b62e026c42e3def51090bd01f2faa6eea303e83cb4dc4e5      401168  0_Documents/5_Functional_Test_Procedure.docx
+b5e428f243cf24596b05d5b2d9f4dad0c3c9e6d7ddc39bd1b2fafe59a1779526      315746  0_Documents/5_Functional_Test_Procedure.pdf
+90d74e034362f920bee05790ca83156558e45edb10d6d411c7f47c110be30703      414329  0_Documents/6_Code_Walkthrough.docx
+5f34a96b5bc40cc84bc1de6f78f69a547096ae0ccbe645f9e5c50f852126b7ee      447210  0_Documents/6_Code_Walkthrough.pdf
+8b781fea49ef406234e21357d6e08291c2a08aa24cb7643b339c27d2ff669b27      424853  0_Documents/7_Harness_Plan.docx
+766975ad482ed4129bf39fe90f280f2a42a30e9adbf2af3556f8d5ccfa318a75      552805  0_Documents/7_Harness_Plan.pdf
+a28411b1dbf78dd2a33be37b706a05674ce08d9ea6a270e1e0604b889c3369b9      418120  0_Documents/8_Power_Jumper_Resistance_Checklist.docx
+d84a331425e48168e6c7752d9dc35110489d23e4c341c3511c79b96aa131ea83      465530  0_Documents/8_Power_Jumper_Resistance_Checklist.pdf
+3c1a15aede0ac9072d23c460223fdce5421d69f69544a9b32306708c05c0241b        1691  0_Documents/README.md
 781740b4e5755148640d89507936a9fe24a3ffdb16e441b2d40321566f3c1dfe      11815  1_Test_Harness_Plan/Example_Netlists/HW-01_dsub_family_mated_pairs.xlsx
 f917319fc3d4ac7a776f9fae91ff423f61fff06bf51f328c8dd00b835620392d       8089  1_Test_Harness_Plan/Example_Netlists/HW-02_circular_connectors.xlsx
 7718331a03adc810ceba074c1fb8b9b6da08b4caa01d14c17582c90bc6120c82       9077  1_Test_Harness_Plan/Example_Netlists/HW-03_rectangular_connectors.xlsx
