@@ -109,6 +109,9 @@ class ClientOutput {
       '${started.year}${_two(started.month)}${_two(started.day)}_'
       '${_two(started.hour)}${_two(started.minute)}${_two(started.second)}';
 
+  /// The `Netlists` folder (made on first use).
+  Directory get netlistsDir => _folder('Netlists');
+
   Directory _folder(String leaf) {
     final d = Directory('${root.path}${Platform.pathSeparator}$leaf');
     d.createSync(recursive: true);

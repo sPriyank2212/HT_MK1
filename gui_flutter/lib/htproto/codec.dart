@@ -68,7 +68,11 @@ enum Fixture {
 
 enum ContMode {
   verify('verify'),
-  discover('discover');
+  discover('discover'),
+
+  /// Cross continuity: every source pin of the netlist against every
+  /// destination pin of the netlist (firmware CL-114).
+  cross('cross');
 
   final String wire;
   const ContMode(this.wire);

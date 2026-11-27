@@ -10,10 +10,8 @@ import '../app/app_state.dart';
 import '../app/build_tag.dart';
 import '../design/model.dart';
 import 'client_controller.dart';
-import 'client_netlist_editor.dart';
 import 'client_theme.dart';
 import 'client_widgets.dart';
-import 'netlist_doc.dart';
 
 // ---------------------------------------------------------------------------
 // Log
@@ -356,60 +354,6 @@ class _ConfigTabState extends State<ConfigTab> {
                 compact: true,
                 onPressed: !s.link || ctl.running ? null : _apply),
           ),
-        ]),
-      ),
-      const SizedBox(height: 14),
-      GroupCard(
-        title: 'HV netlist',
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(
-            'The HV insulation test has its own netlist: the HS pin of each net is the HV card relay that injects, the LS pin its return. It is sent to the tester only for the insulation run.',
-            style: ctext(context, size: 12, color: c.muted),
-          ),
-          const SizedBox(height: 10),
-          Text(
-            s.nlHv.loaded
-                ? '${s.nlHv.name ?? ''}  -  ${s.nlHv.nets} nets, ${s.nlHv.cards}-card map'
-                : 'No HV netlist loaded.',
-            style: ctext(context, size: 13, weight: FontWeight.w600),
-          ),
-          const SizedBox(height: 10),
-          Row(children: [
-            CButton('Edit',
-                role: CRole.ghost,
-                compact: true,
-                onPressed: ctl.running
-                    ? null
-                    : () => openNetlistEditor(context, ctl, NetlistKind.hv)),
-            const SizedBox(width: 8),
-            CButton('New',
-                role: CRole.ghost,
-                compact: true,
-                onPressed: ctl.running
-                    ? null
-                    : () => openNetlistEditor(context, ctl, NetlistKind.hv,
-                        blank: true)),
-            const SizedBox(width: 8),
-            CButton('Browse…',
-                role: CRole.ghost,
-                compact: true,
-                onPressed: ctl.running ? null : () => s.loadHvNetlistFromFile()),
-            const SizedBox(width: 8),
-            CButton('Clear',
-                role: CRole.ghost,
-                compact: true,
-                onPressed: !s.nlHv.loaded || ctl.running
-                    ? null
-                    : () => s.unloadNetlist('hv')),
-            const SizedBox(width: 8),
-            CButton('Export',
-                role: CRole.ghost,
-                compact: true,
-                tooltip: 'Save the HV netlist as .xlsx, .xls or .csv',
-                onPressed: !s.nlHv.loaded || ctl.running
-                    ? null
-                    : () => ctl.exportNetlist(kind: NetlistKind.hv)),
-          ]),
         ]),
       ),
       const SizedBox(height: 14),

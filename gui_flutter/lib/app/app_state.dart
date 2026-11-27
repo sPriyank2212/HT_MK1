@@ -827,6 +827,31 @@ class AppState extends ChangeNotifier {
     }
   }
 
+  /// A cross-continuity run (not an auto scan) is being started: it is sent as
+  /// `CONT RUN cross`, limited to the netlist's own pins.
+  bool _crossLimited = false;
+
+  /// Cross Continuity: tests every source pin of the loaded netlist against
+  /// every destination pin of the loaded netlist - nothing outside the
+  /// netlist - and reports what is connected (`CONT RUN cross`). Like an auto
+  /// scan it is not Mode 1: it never unlocks insulation.
+  Future<void> runCrossContinuity() async {
+    if (!canAutoScan.$1 || !nlMtx.loaded) return;
+    _autoScanRun = true;
+    _autoModeRestore = true;
+    _crossLimited = true;
+    setMode('cross', quiet: true);
+    try {
+      await runCont();
+    } finally {
+      _crossLimited = false;
+    }
+    if (running == null) {
+      _autoScanRun = false;
+      if (view != 'auto') _restoreNetMode();
+    }
+  }
+
   void _restoreNetMode() {
     if (!_autoModeRestore || running != null) return;
     _autoModeRestore = false;
@@ -1781,11 +1806,13 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> _startRun(String kind, Uint8List wire, String domSel,
-      String label, String sub) async {
+      String label, String sub,
+      {Uint8List? fallbackWire}) async {
     // An insulation run left the HV netlist on the instrument; netlist-mode
     // continuity and resistance must not run over it.
     if (_hvNetlistOnInstrument &&
-        ((kind == 'cont' && cmode == 'net') || kind == 'res')) {
+        ((kind == 'cont' && (cmode == 'net' || _crossLimited)) ||
+            kind == 'res')) {
       if (!await _putNetlist(_mtxPairs)) {
         updateControls();
         return;
@@ -1796,7 +1823,15 @@ class AppState extends ChangeNotifier {
     }
     final undo = _prepareRun(kind);
     // Never mark a run started until the instrument has accepted it.
-    final res = await _cmd(wire);
+    var res = await _cmd(wire);
+    final first = res.reply;
+    if (fallbackWire != null && first is msg.ErrReply && first.code == 'ESYNTAX') {
+      // A firmware older than CL-114 has no `CONT RUN cross`: do the full scan
+      // instead; the results are cut down to the netlist's pins on the PC.
+      log('info', kind,
+          'this firmware has no cross-continuity scan - running the full scan and keeping the netlist pins');
+      res = await _cmd(fallbackWire);
+    }
     if (_reportRefusal(label, res)) {
       undo();
       runKind = null;
@@ -1818,15 +1853,21 @@ class AppState extends ChangeNotifier {
       saveNlEnabled = false;
       auNets = auNodes = auMulti = auCols = '0';
     }
+    final limited = cross && _crossLimited;
     await _startRun(
       'cont',
-      proto.commands
-          .contRun(cross ? proto.ContMode.discover : proto.ContMode.verify),
+      proto.commands.contRun(limited
+          ? proto.ContMode.cross
+          : (cross ? proto.ContMode.discover : proto.ContMode.verify)),
       'dCont',
       'Continuity · J-MTX',
-      cross
-          ? 'J-MTX — energising one HS at a time and reading all 256 LS.'
-          : 'J-MTX — testing the pairs the netlist expects.',
+      limited
+          ? 'J-MTX — every netlist source pin against every netlist destination pin.'
+          : cross
+              ? 'J-MTX — energising one HS at a time and reading all 256 LS.'
+              : 'J-MTX — testing the pairs the netlist expects.',
+      fallbackWire:
+          limited ? proto.commands.contRun(proto.ContMode.discover) : null,
     );
   }
 

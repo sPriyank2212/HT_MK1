@@ -28,6 +28,8 @@ class ClientLeftPanel extends StatelessWidget {
             const SizedBox(height: 12),
             _NetlistCard(ctl),
             const SizedBox(height: 12),
+            _HvNetlistCard(ctl),
+            const SizedBox(height: 12),
             _ProfileCard(ctl),
           ],
         ),
@@ -251,12 +253,25 @@ class _NetlistCard extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 6),
-          CButton('Use as Netlist',
-              role: CRole.secondary,
-              tooltip:
-                  'Load the connections found by the last Auto-Scan as the active netlist and switch to Standard mode',
-              onPressed:
-                  s.discoveredPairs.isEmpty || busy ? null : ctl.useAutoScanAsNetlist),
+          Row(children: [
+            Expanded(
+              child: CButton('Use as Netlist',
+                  role: CRole.secondary,
+                  tooltip:
+                      'Load the connections found by the last Auto-Scan as the active netlist and switch to Standard mode',
+                  onPressed: s.discoveredPairs.isEmpty || busy
+                      ? null
+                      : ctl.useAutoScanAsNetlist),
+            ),
+            const SizedBox(width: 8),
+            CButton('Export',
+                role: CRole.ghost,
+                tooltip:
+                    'Save the connections found by the last Auto-Scan as an .xlsx netlist in the Netlists folder',
+                onPressed: s.discoveredPairs.isEmpty || busy
+                    ? null
+                    : () => ctl.exportAutoScanNetlist()),
+          ]),
         ],
         const HLine(),
         Text('Connection Defaults',
@@ -280,6 +295,89 @@ class _NetlistCard extends StatelessWidget {
                 value: ctl.destination,
                 hint: 'e.g. Side B',
                 onChanged: (v) => ctl.setDefaults(destination: v))),
+      ]),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// HV Netlist (was on the Configuration tab)
+// ---------------------------------------------------------------------------
+
+/// The HV insulation netlist (HS pin = the HV card relay that injects, LS pin =
+/// its return). Sent to the tester only for the insulation run.
+class _HvNetlistCard extends StatelessWidget {
+  final ClientController ctl;
+  const _HvNetlistCard(this.ctl);
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.cc;
+    final s = ctl.s;
+    final busy = ctl.running;
+    return GroupCard(
+      title: 'HV Netlist',
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        Row(children: [
+          CButton('Browse…',
+              role: CRole.secondary,
+              compact: true,
+              tooltip:
+                  'Load the HV netlist (.xlsx, .xls or .csv with HS Pin and LS Pin columns)',
+              onPressed: busy ? null : () => s.loadHvNetlistFromFile()),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              s.nlHv.loaded ? (s.nlHv.name ?? '') : 'No HV netlist loaded',
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: ctext(context, size: 12.5),
+            ),
+          ),
+        ]),
+        if (s.nlHv.loaded) ...[
+          const SizedBox(height: 6),
+          Text('${s.nlHv.nets} nets, ${s.nlHv.cards}-card map',
+              style: ctext(context, size: 12, color: c.muted)),
+        ],
+        const SizedBox(height: 8),
+        Row(children: [
+          CButton('Edit',
+              role: CRole.ghost,
+              compact: true,
+              tooltip: 'Edit the loaded HV netlist',
+              onPressed: busy
+                  ? null
+                  : () => openNetlistEditor(context, ctl, NetlistKind.hv)),
+          const SizedBox(width: 8),
+          CButton('New',
+              role: CRole.ghost,
+              compact: true,
+              tooltip: 'Create an HV insulation netlist',
+              onPressed: busy
+                  ? null
+                  : () => openNetlistEditor(context, ctl, NetlistKind.hv,
+                      blank: true)),
+          const SizedBox(width: 8),
+          CButton('Clear',
+              role: CRole.ghost,
+              compact: true,
+              tooltip: 'Unload the HV netlist',
+              onPressed: !s.nlHv.loaded || busy
+                  ? null
+                  : () {
+                      s.unloadNetlist('hv');
+                      ctl.showToast('HV netlist cleared', kind: 'info');
+                    }),
+          const SizedBox(width: 8),
+          CButton('Export',
+              role: CRole.ghost,
+              compact: true,
+              tooltip: 'Save the HV netlist as .xlsx, .xls or .csv',
+              onPressed: !s.nlHv.loaded || busy
+                  ? null
+                  : () => ctl.exportNetlist(kind: NetlistKind.hv)),
+        ]),
       ]),
     );
   }

@@ -302,7 +302,7 @@ class InstrumentSim {
       if (head == 'CONT' &&
           t.length == 3 &&
           t[1] == 'RUN' &&
-          (t[2] == 'verify' || t[2] == 'discover')) {
+          (t[2] == 'verify' || t[2] == 'discover' || t[2] == 'cross')) {
         return _startRun('cont', t[2]);
       }
       if (head == 'RES' && t.length == 2 && t[1] == 'RUN') {
@@ -474,7 +474,9 @@ class InstrumentSim {
     if (kind == 'insul' && _st.state != State.hvArmed) {
       return 'ERR ENOTARMED insulation not armed';
     }
-    if (kind == 'cont' && mode == 'verify' && _st.netlist == null) {
+    if (kind == 'cont' &&
+        (mode == 'verify' || mode == 'cross') &&
+        _st.netlist == null) {
       // 8.1 answer 4: no golden-harness fallback, the firmware errors.
       return 'ERR ERANGE no netlist';
     }
@@ -702,15 +704,29 @@ class InstrumentSim {
       }
       await _endRun('cont', passed, failed, false);
     } else {
-      // discover: scan pins, report nets as found
+      // discover: scan pins, report nets as found. cross: the same, but only
+      // the netlist's own source (HI) / destination (LO) pins.
+      final cross = mode == 'cross';
+      final nlHi = <int>{};
+      final nlLo = <int>{};
+      if (cross) {
+        for (final n in _effectiveNets(_st.netlist)) {
+          nlHi.add(n.hi);
+          nlLo.add(n.lo);
+        }
+      }
       final byHi = <int, List<NetOutcome>>{};
-      for (final n in scenario.nets) {
+      // cross: the uploaded netlist's pins carry the scenario's outcomes (see
+      // _effectiveNets), so the fake harness answers for exactly those pins.
+      for (final n in cross ? _effectiveNets(_st.netlist) : scenario.nets) {
         byHi.putIfAbsent(n.hi, () => <NetOutcome>[]).add(n);
       }
-      const total = discoverPins;
+      final total = cross ? nlHi.length : discoverPins;
+      final hiPins = cross ? (nlHi.toList()..sort()) : null;
       var passed = 0;
-      for (var pin = 1; pin <= total; pin++) {
-        if (_maybeDisconnect(pin, total)) return;
+      for (var step = 1; step <= total; step++) {
+        final pin = hiPins == null ? step : hiPins[step - 1];
+        if (_maybeDisconnect(step, total)) return;
         if (_runStop) {
           final failed = scenario.nets
               .where((n) => n.cont != ContStatus.pass)
@@ -722,7 +738,7 @@ class InstrumentSim {
           _emitEvent('CONT ${n.hi} ${n.lo} ${n.cont.wire}');
           if (n.cont == ContStatus.pass) passed++;
         }
-        _emitEvent('PROGRESS $pin $total');
+        _emitEvent('PROGRESS $step $total');
         await Future<void>.delayed(interval);
       }
       final failed =

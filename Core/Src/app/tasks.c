@@ -534,7 +534,9 @@ static void run_command(const TestCmd_t *c)
   * @note   Streams one !CONT per pair as it goes rather than accumulating -
   *         a discovery scan is 65,536 points and the operator should see
   *         progress, not a frozen screen.
-  * @param  discover : [in] 0 = verify the loaded netlist, 1 = scan everything.
+  * @param  discover : [in] 0 = verify the loaded netlist, 1 = scan everything,
+  *                    2 = cross continuity: every source pin of the netlist
+  *                    against every destination pin of the netlist.
   * @retval None
   */
 /* ---- CL-107: continuity scan statistics ------------------------------------
@@ -659,11 +661,29 @@ static uint8_t cont_selftest(void)
   return (uint8_t)(ok_open != 0U && ok_loop != 0U);
 }
 
+/* CL-114: the source / destination pins a cross-continuity run scans, sorted and
+ * without duplicates (a pin used by several nets is tested once). */
+static uint16_t s_cross_hi[PROTO_NETLIST_MAX];
+static uint16_t s_cross_lo[PROTO_NETLIST_MAX];
+
+/* Insert v into the sorted list a[0..*n-1] unless it is already there. */
+static void cross_add(uint16_t *a, uint16_t *n, uint16_t v)
+{
+  uint16_t k = 0U, j;
+
+  while (k < *n && a[k] < v) { k++; }
+  if (k < *n && a[k] == v) { return; }
+  for (j = *n; j > k; j--) { a[j] = a[j - 1U]; }
+  a[k] = v;
+  (*n)++;
+}
+
 static void run_continuity_all(uint8_t discover)
 {
   ContStats_t cs;
   ContinuityResult_t r;
   uint16_t i, n, hi, lo;
+  uint16_t hi_n = 256U, lo_n = 256U, hi_i, lo_i;
   uint16_t pass = 0U, fail = 0U;
   uint32_t bus_err = 0U;   /* 32-bit: a scan of nothing but errors is 65,536 of them,
                             * which wrapped a uint16_t to 0 and read as a clean PASS */
@@ -688,6 +708,21 @@ static void run_continuity_all(uint8_t discover)
      * connection sheet, LO1..256 on the LV one), so every HI x LO pair is
      * still tested - no symmetry shortcut is possible. */
     cstat_init(&cs);
+    if (discover == 2U)
+    {
+      /* Cross continuity: only the netlist's own pins (CL-114). */
+      hi_n = 0U;
+      lo_n = 0U;
+      n = Proto_NetlistCount();
+      for (i = 0U; i < n; i++)
+      {
+        if (Proto_NetlistGet(i, &hi, &lo) != 0) { continue; }
+        cross_add(s_cross_hi, &hi_n, hi);
+        cross_add(s_cross_lo, &lo_n, lo);
+      }
+      LOG_I("CONT", "cross: %u source x %u destination pins = %lu combinations",
+            (unsigned)hi_n, (unsigned)lo_n, (unsigned long)hi_n * (unsigned long)lo_n);
+    }
     if (cont_selftest() == 0U)
     {
       /* CL-109: the instrument cannot see a known 1.5 mOhm loopback - a scan
@@ -697,12 +732,14 @@ static void run_continuity_all(uint8_t discover)
       Proto_EvtDone("cont", 0U, 1U);
       return;
     }
-    for (hi = 1U; hi <= 256U; hi++)
+    for (hi_i = 0U; hi_i < hi_n; hi_i++)
     {
       uint16_t prev = 0U;   /* LO pin left connected by the previous pair; 0 = none */
+      hi = (discover == 2U) ? s_cross_hi[hi_i] : (uint16_t)(hi_i + 1U);
       MatrixCard_BusHold(&g_matrix);
-      for (lo = 1U; lo <= 256U; lo++)
+      for (lo_i = 0U; lo_i < lo_n; lo_i++)
       {
+        lo = (discover == 2U) ? s_cross_lo[lo_i] : (uint16_t)(lo_i + 1U);
         HAL_StatusTypeDef pst = Continuity_TestPairRow(hi, prev, lo, &r);
         cstat_add(&cs, hi, lo, pst, &r);
         if (pst != HAL_OK)
@@ -726,7 +763,7 @@ static void run_continuity_all(uint8_t discover)
       (void)MatrixCard_AllOff(&g_matrix);
       MatrixCard_BusUnhold(&g_matrix);
       if (giveup != 0U) { break; }
-      Proto_EvtProgress(hi, 256U);
+      Proto_EvtProgress((uint16_t)(hi_i + 1U), hi_n);
       if (s_fault != 0U || Proto_AbortRequested() != 0U) { break; }
     }
     cstat_report(&cs);

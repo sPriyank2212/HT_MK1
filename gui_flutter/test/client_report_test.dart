@@ -5,6 +5,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:ht_mk1_gui/app/pdf_fonts.dart';
 import 'package:ht_mk1_gui/app/report.dart';
 import 'package:ht_mk1_gui/client/client_report.dart';
 import 'package:ht_mk1_gui/htproto/netlist_file.dart';
@@ -153,6 +154,12 @@ void main() {
     }
 
     final out = Platform.environment['CLIENT_REPORT_OUT'];
+
+    test('the omega font is bundled (resistance headers read mΩ)', () async {
+      // Helvetica has no omega glyph; the Roboto fallback must load or the
+      // "R (mΩ)" / "Limit (mΩ)" headers print as boxes.
+      expect(await loadPdfTheme(), isNotNull);
+    });
 
     test('continuity — multi-page', () async {
       final b = await f.contPdf(ContReport(meta(), contRows(120)));

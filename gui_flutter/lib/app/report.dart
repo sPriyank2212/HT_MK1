@@ -126,7 +126,11 @@ class ContReportRow {
 class ContReport {
   final ReportMeta meta;
   final List<ContReportRow> rows;
-  const ContReport(this.meta, this.rows);
+
+  /// Which kind of continuity run this is, for the PDF title ("Continuity" when
+  /// empty; "Cross Continuity", "Auto-Scan").
+  final String label;
+  const ContReport(this.meta, this.rows, {this.label = ''});
 
   int get connected => rows.where((r) => r.status == 'CONNECTED').length;
 

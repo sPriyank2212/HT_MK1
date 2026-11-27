@@ -52,3 +52,4 @@ flutter:
   assets:
     - assets/company_logo.jpeg
     - assets/company_logo_symbol.png
+    - assets/fonts/Roboto-Regular.ttf

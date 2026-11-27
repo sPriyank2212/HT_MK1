@@ -616,9 +616,21 @@ static void proto_exec(char *line)
         proto_post_run(CMD_CONT_RUN, 1U);
       }
     }
+    else if (strcmp(t[2], "cross") == 0)
+    {
+      /* Cross continuity: every source (HI) pin of the netlist against every
+       * destination (LO) pin of the netlist - the netlist's own pins only,
+       * not the whole 256 x 256 grid. Needs the netlist, like verify. */
+      if (s_net_count == 0U) { proto_err("ERANGE", "no netlist"); }
+      else if (proto_hw_ready() != 0)
+      {
+        Proto_SetFixture(PROTO_FIXTURE_MTX);
+        proto_post_run(CMD_CONT_RUN, 2U);
+      }
+    }
     else
     {
-      proto_err("ESYNTAX", "verify|discover");
+      proto_err("ESYNTAX", "verify|discover|cross");
     }
   }
   else if (strcmp(t[0], "RES") == 0 && n >= 2U && strcmp(t[1], "RUN") == 0)

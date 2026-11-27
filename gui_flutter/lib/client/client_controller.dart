@@ -16,6 +16,7 @@ import 'package:flutter/foundation.dart';
 
 import '../app/app_state.dart';
 import '../app/report.dart';
+import '../design/model.dart' show kFix;
 import '../htproto/netlist_file.dart' show WireMeta;
 import '../htproto/netlist_formats.dart';
 import 'client_model.dart';
@@ -76,6 +77,10 @@ class ClientController extends ChangeNotifier {
   /// GUI folder (`client_output.dart`); null in tests.
   void Function()? saveOutputs;
   Timer? _outputTimer;
+
+  /// The folder Auto-Scan's Export writes into (the GUI folder's `Netlists`);
+  /// null in tests that do not set one.
+  Directory Function()? netlistsDir;
 
   /// A moment after a run ends, once its report files are on disk.
   void _scheduleOutputSave() {
@@ -175,6 +180,7 @@ class ClientController extends ChangeNotifier {
         if (!s.nlMtx.loaded) return 'Load a netlist first (Browse…)';
         return s.can('cont').$1 ? null : s.can('cont').$2;
       case ClientMode.cross:
+        if (!s.nlMtx.loaded) return 'Load a netlist first (Browse…)';
         return s.canAutoScan.$1 ? null : s.canAutoScan.$2;
       case ClientMode.resistance:
         if (!s.nlMtx.loaded) return 'Load a netlist first (Browse…)';
@@ -273,8 +279,12 @@ class ClientController extends ChangeNotifier {
     showTab(autoScan || mode == ClientMode.cross
         ? ClientTab.results
         : ClientTab.connector);
-    if (autoScan || mode == ClientMode.cross) {
+    if (autoScan) {
       s.runAutoScan();
+      return;
+    }
+    if (mode == ClientMode.cross) {
+      s.runCrossContinuity();
       return;
     }
     switch (mode) {
@@ -347,6 +357,7 @@ class ClientController extends ChangeNotifier {
         if (!s.nlMtx.loaded) return 'load a netlist first';
         return s.can(key).$1 ? null : s.can(key).$2;
       case ClientMode.cross:
+        if (!s.nlMtx.loaded) return 'load a netlist first';
         return s.canAutoScan.$1 ? null : s.canAutoScan.$2;
       default:
         return null; // insulation walks its own prerequisites and prompts
@@ -383,7 +394,7 @@ class ClientController extends ChangeNotifier {
         s.setMode('net');
         s.runTest('cont');
       case ClientMode.cross:
-        s.runAutoScan();
+        s.runCrossContinuity();
       case ClientMode.resistance:
         s.runTest('res');
       case ClientMode.insulation:
@@ -433,6 +444,51 @@ class ClientController extends ChangeNotifier {
     mode = ClientMode.continuity;
     showToast('Auto-Scan result loaded as the netlist', kind: 'success');
     notifyListeners();
+  }
+
+  /// Auto-Scan mode → Export: the connections the last scan found, saved as an
+  /// `.xlsx` netlist in the `Netlists` folder with no dialog (the name carries
+  /// the date and time). Returns the file written, or null.
+  ///
+  /// The pins are the real connector pins when the connector layout is known
+  /// (see [NetlistDoc.fromDiscovered]); the tester channels stay in the
+  /// `Src Pin #` / `Dst Pin #` columns so the file loads back.
+  Future<String?> exportAutoScanNetlist() async {
+    final pairs = s.discoveredPairs;
+    if (pairs.isEmpty) {
+      showToast('Run an Auto-Scan first', kind: 'warning');
+      return null;
+    }
+    final dirOf = netlistsDir;
+    if (dirOf == null) {
+      showToast('No netlist folder is set up', kind: 'warning');
+      return null;
+    }
+    final layout = s.nlFix.loaded;
+    final doc = NetlistDoc.fromDiscovered(
+      pairs,
+      name: 'autoscan_netlist_${_stamp(DateTime.now())}.xlsx',
+      connectors: layout ? kFix.connectors : null,
+      source: source.isEmpty ? 'Side A' : source,
+      destination: destination.isEmpty ? 'Side B' : destination,
+      connector: connector,
+    );
+    try {
+      final dir = dirOf()..createSync(recursive: true);
+      final file = File('${dir.path}${Platform.pathSeparator}${doc.name}');
+      file.writeAsBytesSync(doc.toBytes('xlsx'));
+      s.log('ok', 'nl', 'Auto-Scan netlist saved: ${file.path}');
+      showToast(
+          layout
+              ? 'Auto-Scan netlist saved: ${doc.name}'
+              : 'Auto-Scan netlist saved: ${doc.name} (no connector layout '
+                  'loaded, so pins are tester channels)',
+          kind: 'success');
+      return file.path;
+    } on Object catch (e) {
+      showToast('Could not save the Auto-Scan netlist: $e', kind: 'error');
+      return null;
+    }
   }
 
   Future<void> browseNetlist() async {
@@ -534,9 +590,11 @@ class ClientController extends ChangeNotifier {
             testNum: r.test,
             srcPin: r.pinA,
             dstPin: r.pinB,
-            status: r.status == RowStatus.connected
-                ? 'CONNECTED'
-                : 'NOT CONNECTED',
+            status: switch (r.status) {
+              RowStatus.connected => 'CONNECTED',
+              RowStatus.miswire => 'MISWIRE',
+              _ => 'NOT CONNECTED',
+            },
             srcConnId: r.connA,
             srcPinLabel: r.labelA,
             srcPartNumber: r.partA,
@@ -553,6 +611,7 @@ class ClientController extends ChangeNotifier {
             ),
           ),
       ],
+      label: autoScan ? 'Auto-Scan' : 'Cross Continuity',
     );
   }
 

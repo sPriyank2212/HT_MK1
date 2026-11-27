@@ -56,6 +56,7 @@ class _ClientAppState extends State<ClientApp> {
       _output = ClientOutput(ctl);
       _output!.prepare();
       ctl.saveOutputs = () => _output?.save();
+      ctl.netlistsDir = () => _output!.netlistsDir;
       _lifecycle = AppLifecycleListener(onExitRequested: () async {
         _output?.save();
         return AppExitResponse.exit;

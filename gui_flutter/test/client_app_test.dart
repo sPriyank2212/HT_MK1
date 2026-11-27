@@ -17,7 +17,9 @@ import 'package:ht_mk1_gui/client/client_dialogs.dart';
 import 'package:ht_mk1_gui/client/client_output.dart';
 import 'package:ht_mk1_gui/client/client_model.dart';
 import 'package:ht_mk1_gui/design/model.dart';
+import 'package:ht_mk1_gui/client/netlist_doc.dart';
 import 'package:ht_mk1_gui/htproto/connection.dart';
+import 'package:ht_mk1_gui/htproto/netlist_file.dart';
 import 'package:ht_mk1_gui/htproto/simulator.dart';
 
 const String kNetlistPath = 'required_format/example_netlist27072026.xlsx';
@@ -396,6 +398,38 @@ void main() {
     expect(r.s.discoveredPairs, isNotEmpty);
   });
 
+  testWidgets('Cross Continuity needs a netlist and tests only its pins',
+      (tester) async {
+    addTearDown(tester.view.reset);
+    final r = await newRig(tester);
+    await boot(tester, r.s);
+    final ctl = ctlOf(tester);
+    ctl.setMode(ClientMode.cross);
+    // limited to the netlist: nothing to test without one
+    expect(ctl.startBlocked, contains('netlist'));
+
+    await tester.runAsync(() => ctl.browseNetlist());
+    expect(ctl.startBlocked, isNull);
+    ctl.start();
+    await tester.pump();
+    await waitUntil(
+        tester, () => r.s.running == null && r.s.discoveredPairs.isNotEmpty,
+        ms: 60000);
+    // the run sent CONT RUN cross (the netlist's pins), not the 256 x 256 scan
+    // the fake harness has 22 nets of its own; a cross run answers only for
+    // the 20 pairs of the loaded netlist (a full scan would report all 22)
+    final listed = {
+      for (final n in r.s.nets) for (final p in n.pairs) (p.hi, p.lo)
+    };
+    expect(r.s.discoveredPairs.toSet(), listed);
+    final srcs = {for (final n in r.s.nets) for (final p in n.pairs) p.hi};
+    final dsts = {for (final n in r.s.nets) for (final p in n.pairs) p.lo};
+    for (final (hi, lo) in r.s.discoveredPairs) {
+      expect(srcs.contains(hi) && dsts.contains(lo), isTrue,
+          reason: 'found $hi-$lo, which is outside the netlist pins');
+    }
+  });
+
   testWidgets('insulation without pre-tests asks, then needs every box ticked',
       (tester) async {
     addTearDown(tester.view.reset);
@@ -470,6 +504,86 @@ void main() {
     await tester.pump();
     expect(ctl.autoScan, isFalse);
     expect(r.s.nlMtx.loaded, isTrue);
+    await tester.pumpAndSettle(const Duration(seconds: 6));
+  });
+
+  test('Auto-Scan netlist: real connector pins, channels kept for reload', () {
+    // Side A connector J1 starts at channel 17, Side B connector J2 at 33.
+    final conns = [
+      ConnectorDef(
+          id: 'J1',
+          label: 'J1',
+          type: ConnType.dsub,
+          pins: 16,
+          side: 'L',
+          base: 16,
+          partNumber: 'DB-A'),
+      ConnectorDef(
+          id: 'J2',
+          label: 'J2',
+          type: ConnType.dsub,
+          pins: 16,
+          side: 'R',
+          base: 32,
+          partNumber: 'DB-B'),
+    ];
+    final doc = NetlistDoc.fromDiscovered([(19, 37), (20, 40)],
+        name: 'x.xlsx', connectors: conns);
+    expect(doc.rows.length, 2);
+    final r0 = doc.rows[0];
+    expect(r0[NCol.connA], 'J1');
+    expect(r0[NCol.partA], 'DB-A');
+    expect(r0[NCol.labelA], 'Pin 3'); // channel 19 -> pin 3 of J1
+    expect(r0[NCol.srcPin], '19'); // the channel stays for reload
+    expect(r0[NCol.connB], 'J2');
+    expect(r0[NCol.labelB], 'Pin 5'); // channel 37 -> pin 5 of J2
+    expect(r0[NCol.dstPin], '37');
+    // saved as .xlsx and read back by the netlist loader: same channels
+    final back = parseNetlistWorkbook(doc.toBytes('xlsx'), fileName: 'x.xlsx');
+    expect([for (final p in back.pairs) (p.hi, p.lo)], [(19, 37), (20, 40)]);
+    expect(back.pairs.first.srcLabel, 'Pin 3');
+
+    // no layout: nothing to convert, the label is the channel
+    final bare = NetlistDoc.fromDiscovered([(19, 37)],
+        name: 'y.xlsx', connector: 'X1');
+    expect(bare.rows.single[NCol.labelA], 'Pin 19');
+    expect(bare.rows.single[NCol.connA], 'X1');
+  });
+
+  testWidgets('Auto-Scan Export saves an .xlsx without a dialog; HV netlist is in the left pane',
+      (tester) async {
+    addTearDown(tester.view.reset);
+    final r = await newRig(tester, nets: 12);
+    await boot(tester, r.s);
+    final ctl = ctlOf(tester);
+    final tmp = Directory.systemTemp.createTempSync('autoscan_export_');
+    addTearDown(() => tmp.deleteSync(recursive: true));
+    ctl.netlistsDir = () => tmp;
+
+    // the HV netlist controls live in the left pane, not the Configuration tab
+    expect(find.text('HV NETLIST'), findsOneWidget);
+    ctl.showTab(ClientTab.config);
+    await tester.pump();
+    expect(find.text('HV NETLIST'), findsOneWidget); // still just the left pane's
+    expect(find.textContaining('has its own netlist'), findsNothing);
+    expect(find.text('HV CARD STACK'), findsOneWidget);
+    ctl.showTab(ClientTab.connector);
+
+    // nothing scanned yet: Export has nothing to save
+    ctl.setAutoScan(true);
+    await tester.pump();
+    expect(await tester.runAsync(() => ctl.exportAutoScanNetlist()), isNull);
+
+    ctl.start();
+    await waitUntil(tester, () => r.s.running == null && r.s.discoveredPairs.isNotEmpty);
+    await tester.pump(const Duration(milliseconds: 100));
+    final path = await tester.runAsync(() => ctl.exportAutoScanNetlist());
+    expect(path, isNotNull);
+    expect(path, endsWith('.xlsx'));
+    expect(File(path!).existsSync(), isTrue);
+    final back = parseNetlistWorkbook(File(path).readAsBytesSync(),
+        fileName: path.split(RegExp(r'[\/]')).last);
+    expect([for (final p in back.pairs) (p.hi, p.lo)], r.s.discoveredPairs);
     await tester.pumpAndSettle(const Duration(seconds: 6));
   });
 

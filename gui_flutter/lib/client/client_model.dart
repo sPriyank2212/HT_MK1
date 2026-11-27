@@ -263,8 +263,19 @@ List<CRow> _discoveredRows(AppState s) {
 /// list is a `MISWIRE`. The firmware's cross scan is a discovery sweep; the
 /// comparison is the client's rule applied on the PC.
 List<CRow> _crossRows(AppState s) {
-  final found = {for (final (hi, lo) in s.discoveredPairs) '$hi:$lo'};
   final exp = _expected(s);
+  // Limited to the netlist: only the combinations of the netlist's own source
+  // and destination pins count (the instrument scans just those; an older
+  // firmware scans everything and the rest is dropped here).
+  final srcPins = {for (final e in exp) e.p.hi};
+  final dstPins = {for (final e in exp) e.p.lo};
+  final pairs = exp.isEmpty
+      ? s.discoveredPairs
+      : [
+          for (final p in s.discoveredPairs)
+            if (srcPins.contains(p.$1) && dstPins.contains(p.$2)) p,
+        ];
+  final found = {for (final (hi, lo) in pairs) '$hi:$lo'};
   final listed = {for (final e in exp) e.p.key};
   final rows = <CRow>[];
   var i = 0;
@@ -286,7 +297,7 @@ List<CRow> _crossRows(AppState s) {
       labelB: e.p.dstLabel ?? 'Pin ${e.p.lo}',
     ));
   }
-  for (final (hi, lo) in s.discoveredPairs) {
+  for (final (hi, lo) in pairs) {
     if (listed.contains('$hi:$lo')) continue;
     rows.add(CRow(
       test: ++i,

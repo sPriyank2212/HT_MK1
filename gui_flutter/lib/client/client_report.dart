@@ -23,6 +23,7 @@ import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 
 import '../app/report.dart';
+import '../app/pdf_fonts.dart';
 import '../app/report_format.dart';
 import '../htproto/netlist_file.dart' show WireMeta;
 
@@ -210,7 +211,8 @@ class ClientReportFormat extends ReportFormat {
   Future<Uint8List> contPdf(ContReport r) {
     final good = r.rows.where((x) => x.status == 'CONNECTED').length;
     return _pdf(
-      title: 'Integrated Harness Tester MKI Test Report',
+      title:
+          'Integrated Harness Tester MKI Test Report - ${r.label.isEmpty ? 'Continuity' : r.label}',
       meta: r.meta,
       totalLabel: 'Total Pins Tested:',
       total: r.rows.length,
@@ -244,7 +246,6 @@ class ClientReportFormat extends ReportFormat {
             w: x.wire,
           ).map((c) => '$c').toList(),
       ],
-      pinLabelCols: const {4, 8},
       isGood: (row) => row[6] == 'CONNECTED',
     );
   }
@@ -261,14 +262,14 @@ class ClientReportFormat extends ReportFormat {
       total: r.rows.length,
       extraMeta: [
         ['Excitation Current (mA):', r.excitationMa],
-        ['Resistance Limit (mOhm):', r.limitMohm],
+        ['Resistance Limit (mΩ):', r.limitMohm],
       ],
       summaryHeaders: const ['Total', 'PASS', 'FAIL HIGH', 'FAIL LOW'],
       summaryValues: ['${r.rows.length}', '$pass', '$high', '$low'],
       summaryTints: const [null, true, false, false],
       headers: const [
         'Test #', 'Source', 'Part Number', 'Conn ID', 'Src Pin Label',
-        'Src Pin #', 'R (mOhm)', 'Limit (mOhm)', 'Status', 'Dst Pin #',
+        'Src Pin #', 'R (mΩ)', 'Limit (mΩ)', 'Status', 'Dst Pin #',
         'Dst Pin Label', 'Conn ID', 'Part Number', 'Destination', ..._tail, //
       ],
       widths: const [
@@ -292,7 +293,6 @@ class ClientReportFormat extends ReportFormat {
             w: x.wire,
           ).map((c) => '$c').toList(),
       ],
-      pinLabelCols: const {4, 10},
       isGood: (row) => row[8] == 'PASS',
     );
   }
@@ -326,7 +326,6 @@ class ClientReportFormat extends ReportFormat {
             r.limitMohm, x.status, //
           ],
       ],
-      pinLabelCols: const {},
       isGood: (row) => row[7] == 'PASS',
     );
   }
@@ -419,11 +418,10 @@ Future<Uint8List> _pdf({
   required List<double> widths,
   required int statusCol,
   required List<List<String>> rows,
-  required Set<int> pinLabelCols,
   required bool Function(List<String> row) isGood,
 }) async {
   final logo = await _logo();
-  final doc = pw.Document();
+  final doc = pw.Document(theme: await loadPdfTheme());
   final navy = kRptNavy;
 
   // reportlab: landscape(letter), margins 0.4in left/right, 0.8in top/bottom.
@@ -454,7 +452,7 @@ Future<Uint8List> _pdf({
               for (var c = 0; c < row.length; c++)
                 _cell(
                   row[c],
-                  pinLabelCols.contains(c) ? 6 : 7.5,
+                  7.5,
                   bold: c == statusCol,
                   bg: c == statusCol
                       ? (isGood(row) ? kRptPassBg : kRptFailBg)

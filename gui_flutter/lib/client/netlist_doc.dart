@@ -17,6 +17,7 @@ library;
 
 import 'dart:typed_data';
 
+import '../design/model.dart' show ConnectorDef;
 import '../htproto/netlist_file.dart';
 import '../htproto/netlist_formats.dart';
 
@@ -135,6 +136,56 @@ class NetlistDoc {
         r[NCol.hsPin] = '${p.hi}';
         r[NCol.lsPin] = '${p.lo}';
       }
+      d.rows.add(r);
+    }
+    return d;
+  }
+
+  /// An Auto-Scan result as a continuity netlist: one row per connection found.
+  ///
+  /// `Src Pin #` / `Dst Pin #` stay the tester channels (what the instrument
+  /// switched, and what loading the file back needs). With a connector layout
+  /// ([connectors], from the netlist the layout was read from) the row also
+  /// carries the REAL pin: `Src Pin Label` / `Dst Pin Label` read `Pin N` with N
+  /// counted from 1 on that connector (channel 19 on a connector whose first
+  /// channel is 17 is `Pin 3`), and Conn ID / Part Number name it. Without a
+  /// layout there is no real pin to compute: the labels read `Pin <channel>`
+  /// and Conn ID falls back to [connector].
+  factory NetlistDoc.fromDiscovered(List<(int, int)> pairs,
+      {required String name,
+      List<ConnectorDef>? connectors,
+      String source = 'Side A',
+      String destination = 'Side B',
+      String connector = ''}) {
+    ConnectorDef? find(int ch, String side) {
+      final cs = connectors;
+      if (cs == null) return null;
+      for (final c in cs) {
+        if (c.side == side && ch > c.base && ch <= c.base + c.pins) return c;
+      }
+      for (final c in cs) {
+        if (ch > c.base && ch <= c.base + c.pins) return c;
+      }
+      return null;
+    }
+
+    final d = NetlistDoc(NetlistKind.mtx, name: name);
+    var n = 0;
+    for (final (hi, lo) in pairs) {
+      final a = find(hi, 'L');
+      final b = find(lo, 'R');
+      final r = NetRowDraft();
+      r[NCol.net] = 'NET_${++n}';
+      r[NCol.source] = source;
+      r[NCol.connA] = a?.name ?? connector;
+      r[NCol.partA] = a?.partNumber ?? '';
+      r[NCol.labelA] = 'Pin ${a == null ? hi : hi - a.base}';
+      r[NCol.srcPin] = '$hi';
+      r[NCol.dstPin] = '$lo';
+      r[NCol.labelB] = 'Pin ${b == null ? lo : lo - b.base}';
+      r[NCol.connB] = b?.name ?? connector;
+      r[NCol.partB] = b?.partNumber ?? '';
+      r[NCol.destination] = destination;
       d.rows.add(r);
     }
     return d;

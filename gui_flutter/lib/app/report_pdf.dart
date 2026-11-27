@@ -18,6 +18,7 @@ import 'package:flutter/services.dart' show rootBundle;
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 
+import 'pdf_fonts.dart';
 import 'report.dart';
 
 final _title = pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold, color: PdfColors.blue800);
@@ -94,7 +95,7 @@ PdfColor _statusBg(String status) => _isGood(status) ? _passBg : _failBg;
 
 Future<Uint8List> buildContReportPdf(ContReport r) async {
   final logo = await _loadLogo();
-  final doc = pw.Document();
+  final doc = pw.Document(theme: await loadPdfTheme());
   doc.addPage(pw.MultiPage(
     build: (context) => [
       _header('Harness Tester Test Report', r.meta, logo),
@@ -147,7 +148,7 @@ Future<Uint8List> buildContReportPdf(ContReport r) async {
 
 Future<Uint8List> buildResReportPdf(ResReport r) async {
   final logo = await _loadLogo();
-  final doc = pw.Document();
+  final doc = pw.Document(theme: await loadPdfTheme());
   final passCount = r.rows.where((x) => x.status == 'PASS').length;
   final failHigh = r.rows.where((x) => x.status == 'FAIL_HIGH').length;
   final failLow = r.rows.where((x) => x.status == 'FAIL_LOW').length;
@@ -158,7 +159,7 @@ Future<Uint8List> buildResReportPdf(ResReport r) async {
       _metaRow('Operator:', r.meta.operatorName),
       _metaRow('Netlist:', r.meta.netlistName ?? '(none / auto-scan)'),
       _metaRow('Excitation Current (mA):', r.excitationMa),
-      _metaRow('Resistance Limit (mOhm):', r.limitMohm),
+      _metaRow('Resistance Limit (mΩ):', r.limitMohm),
       if (r.meta.testDuration != null)
         _metaRow(
             'Test Duration:', ReportMeta.stampDuration(r.meta.testDuration!)),
@@ -180,7 +181,7 @@ Future<Uint8List> buildResReportPdf(ResReport r) async {
       pw.TableHelper.fromTextArray(
         headers: const [
           'Test #', 'Source', 'Part Number', 'Conn ID', 'Src Pin Label',
-          'Src Pin #', 'R (mOhm)', 'Limit (mOhm)', 'Status', 'Dst Pin #',
+          'Src Pin #', 'R (mΩ)', 'Limit (mΩ)', 'Status', 'Dst Pin #',
           'Dst Pin Label', 'Conn ID', 'Part Number', 'Destination', //
         ],
         data: [
@@ -206,7 +207,7 @@ Future<Uint8List> buildResReportPdf(ResReport r) async {
 
 Future<Uint8List> buildInsulReportPdf(InsulReport r) async {
   final logo = await _loadLogo();
-  final doc = pw.Document();
+  final doc = pw.Document(theme: await loadPdfTheme());
   final passCount = r.rows.where((x) => x.status == 'PASS').length;
   doc.addPage(pw.MultiPage(
     build: (context) => [
